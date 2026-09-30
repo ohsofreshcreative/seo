@@ -36,6 +36,10 @@ final class StatusReport
 	 *     environment: string,
 	 *     role_problems: list<string>,
 	 *     log_level: string,
+	 *     google_missing: list<string>,
+	 *     google_errors: list<string>,
+	 *     google_redirect_uri: string,
+	 *     google_connections: array<string, int>|null,
 	 * } $facts
 	 * @return array{ok: bool, rows: list<array{check: string, value: string, status: string}>}
 	 */
@@ -80,6 +84,19 @@ final class StatusReport
 					: implode('; ', $facts['role_problems']),
 				$facts['role_problems'] === [],
 			),
+			self::googleOauth($facts['google_missing'], $facts['google_errors']),
+			['check' => 'google_redirect_uri', 'value' => $facts['google_redirect_uri'], 'status' => self::INFO],
+			[
+				'check' => 'google_connections',
+				'value' => $facts['google_connections'] === null
+					? 'unavailable (see db_tables)'
+					: implode(', ', array_map(
+						static fn (string $status, int $count): string => $status . ': ' . $count,
+						array_keys($facts['google_connections']),
+						$facts['google_connections'],
+					)),
+				'status' => self::INFO,
+			],
 			['check' => 'environment', 'value' => $facts['environment'], 'status' => self::INFO],
 			['check' => 'log_level', 'value' => $facts['log_level'], 'status' => self::INFO],
 		];
@@ -88,6 +105,27 @@ final class StatusReport
 			'ok' => ! in_array(self::FAIL, array_column($rows, 'status'), true),
 			'rows' => $rows,
 		];
+	}
+
+	/**
+	 * Brak konfiguracji Google to stan przejściowy (INFO, nie błąd) — błędna konfiguracja
+	 * (np. zły format klucza szyfrowania) to FAIL.
+	 *
+	 * @param list<string> $missing
+	 * @param list<string> $errors
+	 * @return array{check: string, value: string, status: string}
+	 */
+	private static function googleOauth(array $missing, array $errors): array
+	{
+		if ($errors !== []) {
+			return ['check' => 'google_oauth', 'value' => implode('; ', $errors), 'status' => self::FAIL];
+		}
+
+		if ($missing !== []) {
+			return ['check' => 'google_oauth', 'value' => 'not configured (missing: ' . implode(', ', $missing) . ')', 'status' => self::INFO];
+		}
+
+		return ['check' => 'google_oauth', 'value' => 'configured', 'status' => self::OK];
 	}
 
 	/**

@@ -13,6 +13,7 @@ use App\Http\Controllers\Panel\AuthController;
 use App\Http\Controllers\Panel\DashboardController;
 use App\Http\Controllers\Panel\ProjectController;
 use App\Http\Controllers\Panel\ProjectSectionController;
+use App\Http\Controllers\Panel\SearchConsoleController;
 use App\Http\Controllers\Panel\SettingsController;
 use App\Http\Middleware\Panel\Authenticate;
 use App\Http\Middleware\Panel\ResolveProject;
@@ -41,11 +42,21 @@ Route::middleware([Authenticate::class, VerifyNonce::class])->group(function () 
 		Route::post('/projects/{project}/pause', [ProjectController::class, 'pause']);
 	});
 
+	Route::middleware(ResolveProject::class . ':osf_seo_manage_connections')->group(function () {
+		Route::post('/projects/{project}/search-console/connect', [SearchConsoleController::class, 'connect']);
+		Route::post('/projects/{project}/search-console/disconnect', [SearchConsoleController::class, 'disconnect']);
+	});
+
 	Route::middleware(ResolveProject::class)->group(function () {
 		Route::get('/projects/{project}', [ProjectController::class, 'show']);
+		Route::get('/projects/{project}/search-console', [SearchConsoleController::class, 'show']);
 		Route::get('/projects/{project}/{section}', [ProjectSectionController::class, 'show'])
 			->whereIn('section', array_keys(ProjectSectionController::SECTIONS));
 	});
+
+	// Redirect URI OAuth (zarejestrowany w Google Cloud; = OsfSeo\Google\GoogleConfig::CALLBACK_PATH).
+	// `state` wiąże callback z zalogowanym użytkownikiem i projektem — weryfikuje go plugin.
+	Route::get('/oauth/google/callback', [SearchConsoleController::class, 'callback']);
 
 	// Nieznane adresy w przestrzeni projektów — 404 panelu zamiast strony motywu WordPressa.
 	Route::any('/projects/{path}', fn () => PanelResponse::notFound())->where('path', '.+');

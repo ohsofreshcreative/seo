@@ -165,6 +165,42 @@ final class ProjectRepository
 	}
 
 	/** Po usunięciu konta WordPress — usuwa jego przypisania do projektów. */
+	/**
+	 * Podpina połączenie Google do projektu (null = odłącza). Zmiana połączenia czyści wybrane property GSC.
+	 */
+	public function setConnection(int $projectId, ?int $connectionId): void
+	{
+		$table = $this->db->table('projects');
+
+		if ($connectionId === null) {
+			$this->db->execute(
+				"UPDATE `{$table}` SET connection_id = NULL, gsc_property = NULL, gsc_permission = NULL, updated_at = %s WHERE id = %d",
+				[$this->now(), $projectId],
+			);
+
+			return;
+		}
+
+		// MySQL wykonuje przypisania SET od lewej — IF() widzi jeszcze poprzednie connection_id.
+		$this->db->execute(
+			"UPDATE `{$table}`
+			SET gsc_property = IF(connection_id <=> %d, gsc_property, NULL),
+				gsc_permission = IF(connection_id <=> %d, gsc_permission, NULL),
+				connection_id = %d,
+				updated_at = %s
+			WHERE id = %d",
+			[$connectionId, $connectionId, $connectionId, $this->now(), $projectId],
+		);
+	}
+
+	public function countByConnection(int $connectionId): int
+	{
+		return (int) $this->db->fetchValue(
+			"SELECT COUNT(*) FROM `{$this->db->table('projects')}` WHERE connection_id = %d",
+			[$connectionId],
+		);
+	}
+
 	public function removeUserEverywhere(int $userId): void
 	{
 		$this->db->delete($this->db->table('project_users'), ['user_id' => $userId]);

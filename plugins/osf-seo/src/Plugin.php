@@ -10,11 +10,22 @@ use OsfSeo\Auth\RoleManager;
 use OsfSeo\Auth\WpAdminAccess;
 use OsfSeo\Auth\WpRoleStore;
 use OsfSeo\Cli\DbCommand;
+use OsfSeo\Cli\GoogleCommand;
 use OsfSeo\Cli\ProjectCommand;
 use OsfSeo\Cli\StatusCommand;
 use OsfSeo\Database\Connection;
 use OsfSeo\Database\Migrator;
 use OsfSeo\Database\SchemaInspector;
+use OsfSeo\Google\AccessTokenProvider;
+use OsfSeo\Google\ConnectionRepository;
+use OsfSeo\Google\GoogleApi;
+use OsfSeo\Google\GoogleConfig;
+use OsfSeo\Google\OAuthClient;
+use OsfSeo\Google\OAuthFlow;
+use OsfSeo\Google\OAuthStateStore;
+use OsfSeo\Google\TokenVault;
+use OsfSeo\Http\HttpTransport;
+use OsfSeo\Http\WpHttpTransport;
 use OsfSeo\Projects\ProjectRepository;
 use OsfSeo\Projects\ProjectService;
 use OsfSeo\Setup\Installer;
@@ -26,7 +37,7 @@ use OsfSeo\Support\SystemClock;
 final class Plugin
 {
 	/** Musi być zgodna z nagłówkiem `Version` w osf-seo.php (pilnuje tego test). */
-	public const VERSION = '0.4.0';
+	public const VERSION = '0.5.0';
 
 	public const MIN_PHP = '8.2';
 
@@ -82,6 +93,48 @@ final class Plugin
 			$c->get(Logger::class),
 		));
 
+		$container->singleton(HttpTransport::class, static fn (): HttpTransport => new WpHttpTransport());
+		$container->singleton(GoogleConfig::class, static fn (Container $c): GoogleConfig => new GoogleConfig(
+			$c->get(Config::class),
+			home_url(GoogleConfig::CALLBACK_PATH),
+		));
+		// Klucz czytany przy każdym użyciu (nie jest kopiowany do pól obiektów ani do bazy).
+		$container->singleton(TokenVault::class, static fn (Container $c): TokenVault => new TokenVault(
+			static fn (): ?string => $c->get(GoogleConfig::class)->encryptionKey(),
+		));
+		$container->singleton(OAuthClient::class, static fn (Container $c): OAuthClient => new OAuthClient(
+			$c->get(GoogleConfig::class),
+			$c->get(HttpTransport::class),
+		));
+		$container->singleton(OAuthStateStore::class, static fn (Container $c): OAuthStateStore => new OAuthStateStore($c->get(Clock::class)));
+		$container->singleton(ConnectionRepository::class, static fn (Container $c): ConnectionRepository => new ConnectionRepository(
+			$c->get(Connection::class),
+			$c->get(Clock::class),
+		));
+		$container->singleton(AccessTokenProvider::class, static fn (Container $c): AccessTokenProvider => new AccessTokenProvider(
+			$c->get(ConnectionRepository::class),
+			$c->get(TokenVault::class),
+			$c->get(OAuthClient::class),
+			$c->get(Clock::class),
+			$c->get(Logger::class),
+		));
+		$container->singleton(GoogleApi::class, static fn (Container $c): GoogleApi => new GoogleApi(
+			$c->get(AccessTokenProvider::class),
+			$c->get(HttpTransport::class),
+		));
+		$container->singleton(OAuthFlow::class, static fn (Container $c): OAuthFlow => new OAuthFlow(
+			$c->get(GoogleConfig::class),
+			$c->get(OAuthClient::class),
+			$c->get(OAuthStateStore::class),
+			$c->get(TokenVault::class),
+			$c->get(ConnectionRepository::class),
+			$c->get(ProjectRepository::class),
+			$c->get(ProjectGuard::class),
+			$c->get(AccessTokenProvider::class),
+			$c->get(Clock::class),
+			$c->get(Logger::class),
+		));
+
 		return $container;
 	}
 
@@ -105,6 +158,7 @@ final class Plugin
 			StatusCommand::register($this);
 			DbCommand::register($this);
 			ProjectCommand::register($this);
+			GoogleCommand::register($this);
 		}
 	}
 

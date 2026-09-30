@@ -102,6 +102,11 @@ Motyw powstał z marketingowego motywu `h2otwock` i wciąż zawiera jego kod: bl
   zielonego `ProjectAuthorizationTest` (test IDOR).
   `public_id` (ULID) tylko utrudnia enumerację — zabezpieczeniem zawsze jest autoryzacja.
 - Uprawnienia sprawdzaj przez capabilities (`current_user_can`), nigdy przez nazwę roli.
+- Google (STEP 5, `src/Google`): ruch do Google wyłącznie przez `OsfSeo\Http\HttpTransport`
+  (WP HTTP API, w testach `pre_http_request`); refresh token tylko zaszyfrowany `TokenVault`,
+  access token tylko w pamięci (`AccessTokenProvider`); żądania API przez `GoogleApi` (Bearer tylko do
+  `https://*.googleapis.com`, po 401 jedno ponowienie). Kodów, weryfikatorów PKCE, `state` i tokenów
+  nie loguj ani nie zapisuj; w testach używaj losowych fałszywych wartości (`tests/Support/GoogleFakes`).
 
 ⸻
 
@@ -214,6 +219,8 @@ wp osf-seo project:list [--status=…]            # projekty widoczne dla --user
 wp osf-seo project:create --name=… --domain=…   # --porcelain zwraca public_id
 wp osf-seo project:assign <public_id> <user> [--role=viewer|manager]
 wp osf-seo project:unassign <public_id> <user>
+wp osf-seo google:status        # konfiguracja OAuth (tylko nazwy i stan, bez wartości), redirect URI, połączenia
+wp osf-seo google:generate-key  # nowy OSF_SEO_ENCRYPTION_KEY do wp-config.php (nigdzie nie zapisywany)
 ```
 
 Testy integracyjne czyszczą i usuwają tabele — **nigdy nie wskazuj bazy strony**. Zmienne:

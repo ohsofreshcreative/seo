@@ -21,7 +21,8 @@ final class Redactor
 
 	/**
 	 * Klucze kontekstu (bez rozróżniania wielkości liter), których wartość zawsze maskujemy.
-	 * `code` to kod autoryzacyjny OAuth — kody błędów/HTTP logujemy pod innymi nazwami (`error_code`, `status`).
+	 * `code` to kod autoryzacyjny OAuth — kody błędów/HTTP logujemy pod innymi nazwami (`error_code`, `status`);
+	 * `state` to jednorazowy parametr OAuth (CSRF).
 	 */
 	private const SENSITIVE_KEYS = [
 		'api_key',
@@ -38,6 +39,7 @@ final class Redactor
 		'secret',
 		'secret_key',
 		'set-cookie',
+		'state',
 		'token',
 	];
 

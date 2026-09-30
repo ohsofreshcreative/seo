@@ -122,11 +122,19 @@ Sekrety i konfigurację środowiska ustawiamy **wyłącznie** w `wp-config.php` 
 lub w zmiennych środowiskowych. Przykłady zawierają tylko placeholdery:
 
 ```php
-// wp-config.php — przyszłe stałe (integracja Google powstaje w MVP 1)
+// wp-config.php — integracja z Google Search Console (placeholdery!)
 define('OSF_SEO_GOOGLE_CLIENT_ID', 'your-client-id');
 define('OSF_SEO_GOOGLE_CLIENT_SECRET', 'your-client-secret');
-define('OSF_SEO_ENCRYPTION_KEY', 'your-encryption-key');
+define('OSF_SEO_ENCRYPTION_KEY', 'base64:...'); // wygeneruj: wp osf-seo google:generate-key
 ```
+
+- `OSF_SEO_ENCRYPTION_KEY` szyfruje refresh tokeny Google w bazie (32 losowe bajty w base64). Klucz
+  musi być stały dla środowiska i mieć bezpieczną kopię — jego zmiana wymaga ponownego połączenia
+  kont Google. Każde środowisko (Local, staging, produkcja) ma własny klucz.
+- Authorized redirect URI w Google Cloud = `home_url('/oauth/google/callback')`, np.
+  `https://seo.ohsofresh.top/oauth/google/callback`. Google wymaga `https` (poza `localhost`), więc
+  lokalnie potrzebna jest strona Local z włączonym SSL i jej własny URI dopisany w Google Cloud.
+- Stan konfiguracji (bez wartości sekretów): `wp osf-seo google:status` albo panel → Ustawienia.
 
 Pełna lista stałych: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md), sekcja 12.
 

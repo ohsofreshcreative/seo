@@ -19,7 +19,7 @@ final class RedactorTest extends TestCase
 	 */
 	public static function sensitiveKeys(): iterable
 	{
-		foreach (['access_token', 'Refresh_Token', 'client_secret', 'Authorization', 'password', 'code', 'code_verifier', 'id_token', 'private_key', 'encryption_key', 'api_key', 'cookie'] as $key) {
+		foreach (['access_token', 'Refresh_Token', 'client_secret', 'Authorization', 'password', 'code', 'code_verifier', 'id_token', 'private_key', 'encryption_key', 'api_key', 'cookie', 'state', 'State'] as $key) {
 			yield $key => [$key];
 		}
 

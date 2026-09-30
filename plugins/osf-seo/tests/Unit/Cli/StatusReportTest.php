@@ -28,6 +28,10 @@ final class StatusReportTest extends TestCase
 			'environment' => 'local',
 			'role_problems' => [],
 			'log_level' => 'warning',
+			'google_missing' => [],
+			'google_errors' => [],
+			'google_redirect_uri' => 'https://seo.example.test/oauth/google/callback',
+			'google_connections' => ['active' => 2, 'needs_reauth' => 1, 'revoked' => 0],
 		]);
 	}
 
@@ -52,7 +56,10 @@ final class StatusReportTest extends TestCase
 
 		self::assertTrue($report['ok']);
 		self::assertSame(
-			['plugin_active', 'plugin_version', 'installed_version', 'php_version', 'wordpress_version', 'db_schema_version', 'db_tables', 'roles_and_capabilities', 'environment', 'log_level'],
+			[
+				'plugin_active', 'plugin_version', 'installed_version', 'php_version', 'wordpress_version', 'db_schema_version',
+				'db_tables', 'roles_and_capabilities', 'google_oauth', 'google_redirect_uri', 'google_connections', 'environment', 'log_level',
+			],
 			array_column($report['rows'], 'check'),
 		);
 		self::assertSame('1 (latest 1)', self::row($report, 'db_schema_version')['value']);
@@ -129,5 +136,40 @@ final class StatusReportTest extends TestCase
 		self::assertSame(StatusReport::INFO, self::row($report, 'environment')['status']);
 		self::assertSame(StatusReport::INFO, self::row($report, 'log_level')['status']);
 		self::assertTrue($report['ok']);
+	}
+
+	public function test_configured_google_oauth_passes(): void
+	{
+		$report = self::report();
+
+		self::assertSame(['check' => 'google_oauth', 'value' => 'configured', 'status' => StatusReport::OK], self::row($report, 'google_oauth'));
+		self::assertSame('active: 2, needs_reauth: 1, revoked: 0', self::row($report, 'google_connections')['value']);
+		self::assertSame('https://seo.example.test/oauth/google/callback', self::row($report, 'google_redirect_uri')['value']);
+	}
+
+	public function test_missing_google_configuration_is_informational(): void
+	{
+		$report = self::report(['google_missing' => ['OSF_SEO_GOOGLE_CLIENT_ID', 'OSF_SEO_ENCRYPTION_KEY']]);
+
+		self::assertTrue($report['ok']);
+		self::assertSame(StatusReport::INFO, self::row($report, 'google_oauth')['status']);
+		self::assertSame('not configured (missing: OSF_SEO_GOOGLE_CLIENT_ID, OSF_SEO_ENCRYPTION_KEY)', self::row($report, 'google_oauth')['value']);
+	}
+
+	public function test_invalid_google_configuration_fails(): void
+	{
+		$report = self::report(['google_missing' => ['OSF_SEO_GOOGLE_CLIENT_ID'], 'google_errors' => ['OSF_SEO_ENCRYPTION_KEY must be 32 random bytes']]);
+
+		self::assertFalse($report['ok']);
+		self::assertSame(StatusReport::FAIL, self::row($report, 'google_oauth')['status']);
+		self::assertSame('OSF_SEO_ENCRYPTION_KEY must be 32 random bytes', self::row($report, 'google_oauth')['value']);
+	}
+
+	public function test_unavailable_connections_table_is_reported(): void
+	{
+		$report = self::report(['google_connections' => null]);
+
+		self::assertSame('unavailable (see db_tables)', self::row($report, 'google_connections')['value']);
+		self::assertSame(StatusReport::INFO, self::row($report, 'google_connections')['status']);
 	}
 }

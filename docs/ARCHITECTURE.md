@@ -122,13 +122,20 @@ GET  /projects/{project}/{section}           keywords | opportunities | pages | 
 ANY  /projects/{cokolwiek innego}            → 404 panelu (nie strona motywu)
 ```
 
+Zaimplementowane w STEP 5:
+
+```
+GET  /projects/{project}/search-console      (stan połączenia; akcje dla osf_seo_manage_connections)
+POST /projects/{project}/search-console/connect | /disconnect           (osf_seo_manage_connections)
+GET  /oauth/google/callback                  (stały redirect URI; zalogowany użytkownik + state)
+```
+
 Kolejne etapy:
 
 ```
+POST /projects/{project}/search-console/property | …/sync
 GET  /projects/{project}/keywords/{keyword}
 GET  /projects/{project}/pages[/{page}]      (MVP 2)
-POST /projects/{project}/search-console/connect | …/property | …/sync | …/disconnect
-GET  /oauth/google/callback                  (stały redirect URI)
 ```
 
 ### 4.2 Struktura pluginu
@@ -142,10 +149,11 @@ plugins/osf-seo/
 │   ├── Auth/            # Capabilities, Roles, RoleManager, ProjectGuard, ProjectContext, ProjectNotFound, AccessDenied
 │   ├── Setup/           # Lifecycle (aktywacja/dezaktywacja), Installer (instalacja i aktualizacje, bez usuwania danych)
 │   ├── Support/         # Config (stałe/env), Logger, Redactor (maskowanie sekretów)
-│   ├── Cli/             # wp osf-seo status, db:migrate, db:status, project:list|create|assign|unassign
+│   ├── Cli/             # wp osf-seo status, db:*, project:*, google:status, google:generate-key
 │   ├── Database/        # Connection ($wpdb + wyjątki), Migrator, Migrations/, Schema (spec), SchemaInspector
 │   ├── Projects/        # Project, ProjectRepository, ProjectService, DomainNormalizer, statusy i role
-│   ├── Google/          # (MVP 1) OAuth, TokenVault, połączenia
+│   ├── Http/            # HttpTransport (WP HTTP API), HttpResponse — cały ruch do Google
+│   ├── Google/          # OAuthFlow, OAuthClient, OAuthStateStore, Pkce, TokenVault, ConnectionRepository, AccessTokenProvider, GoogleApi
 │   ├── Gsc/             # (MVP 1) klient API, importery
 │   ├── Sync/            # (MVP 1) planowanie i wykonywanie synchronizacji
 │   ├── Analytics/       # (MVP 1) porównania, TOP N, serie czasowe; Opportunity (MVP 2)
@@ -161,7 +169,7 @@ plugins/osf-seo/
 themes/seo/
 ├── functions.php                   # ->withRouting(using: …) + PanelMiddleware::GLOBAL
 ├── routes/web.php                  # trasy panelu (capabilities jako literały)
-├── app/Http/Controllers/Panel/     # Auth, Dashboard, Project, ProjectSection, Settings
+├── app/Http/Controllers/Panel/     # Auth, Dashboard, Project, ProjectSection, SearchConsole (OAuth), Settings
 ├── app/Http/Middleware/Panel/      # PanelHeaders, UnslashInput, RequirePlugin, Authenticate, VerifyNonce, ResolveProject
 ├── app/Panel/                      # PanelUrl (adresy, bezpieczny redirect), PanelResponse (404/403/503), Flash
 ├── app/View/Composers/Panel/       # Layout: użytkownik, projekty do przełącznika, bieżący projekt, flash
@@ -345,36 +353,58 @@ z `osf_pages.id`. SERP (przyszłość): osobna tabela snapshotów, wyłącznie z
 
 ## 7. Google OAuth
 
-Redirect URI (dokładnie ten zarejestrowany w Google Cloud): `https://seo.ohsofresh.top/oauth/google/callback`
-(lokalnie odpowiednik dla domeny Local).
+Zaimplementowane w STEP 5 (`plugins/osf-seo/src/Google`, `src/Http`; UI: `SearchConsoleController`).
+
+Redirect URI (dokładnie ten zarejestrowany w Google Cloud) = `home_url('/oauth/google/callback')`:
+**`https://seo.ohsofresh.top/oauth/google/callback`** na stagingu (lokalnie odpowiednik dla domeny Local z SSL).
 
 ```
-[Projekt → „Połącz Google Search Console”]   POST + CSRF + capability osf_seo_manage_connections
-   │  (jeśli użytkownik ma aktywne połączenie → „użyj istniejącego” bez ponownego OAuth)
+[Projekt → Search Console → „Połącz z Google Search Console”]
+   POST /projects/{project}/search-console/connect   (nonce + Origin, ResolveProject:osf_seo_manage_connections)
    ▼
-state = 32 losowe bajty; PKCE (S256): code_verifier + code_challenge
-zapis: state → {user_id, project_id, code_verifier}, TTL 10 min, jednorazowy
+OAuthFlow::start: PKCE — code_verifier = 32 losowe bajty (base64url), code_challenge = S256
+state = 32 losowe bajty; transient osf_seo_oauth_<sha256(state)> → {user_id, project public_id, verifier, expires_at}
+TTL 10 min, jednorazowy (usuwany przy pierwszym użyciu, także nieudanym); w bazie nie ma samego `state`
    ▼
 302 → accounts.google.com/o/oauth2/v2/auth
-      scope = webmasters.readonly openid email; access_type=offline; prompt=consent; state; code_challenge
+      client_id, redirect_uri, response_type=code, scope=webmasters.readonly openid email,
+      access_type=offline, prompt=consent, state, code_challenge, code_challenge_method=S256
    ▼   (logowanie i zgoda w Google)
-GET /oauth/google/callback?code&state        (wymaga zalogowania do WordPressa)
-   │  weryfikacja state: istnieje, nie zużyty, ten sam użytkownik, nie wygasł; obsługa ?error=
+GET /oauth/google/callback?state&code | ?state&error     (Authenticate: zalogowany użytkownik WP)
+OAuthFlow::complete:
+   1. state: istnieje, nie zużyty, nie wygasł, ten sam użytkownik WP (inaczej: state_invalid/expired/user_mismatch)
+   2. ProjectGuard::authorize(projekt ze state, użytkownik, osf_seo_manage_connections) — ponowna autoryzacja
+   3. ?error= (np. access_denied) → koniec bez wymiany kodu
+   4. POST oauth2.googleapis.com/token (code, code_verifier, redirect_uri, client_id, client_secret)
+   5. scope musi zawierać webmasters.readonly (ekran zgody pozwala go odznaczyć) — inaczej revoke i błąd
+   6. id_token: iss = accounts.google.com, aud = nasz client_id, exp → sub + e-mail (podpisu nie
+      weryfikujemy: token przychodzi bezpośrednio z endpointu tokenów przez TLS — OIDC Core §3.1.3.7)
+   7. refresh token → TokenVault → osf_connections (owner = użytkownik, google_sub, e-mail, scopes)
+      brak refresh tokenu → tylko istniejące aktywne połączenie tego konta, inaczej błąd
+   8. projects.connection_id = połączenie (zmiana połączenia czyści wybrane property GSC)
    ▼
-POST oauth2.googleapis.com/token (code + client_secret + code_verifier)
-   → access_token (~1 h), refresh_token, id_token (sub, email)
-   ▼
-refresh_token zaszyfrowany w osf_connections; access_token tylko w krótkim cache (TTL − 60 s)
-   ▼
-sites.list → wybór property (tylko permissionLevel ≥ full user) → zapis w projekcie
-   ▼
-start synchronizacji (sekcja 9)
+302 → /projects/{project}/search-console (komunikat); wybór property — kolejny etap
 ```
 
-- Odświeżanie access tokenu przed wygaśnięciem lub po 401.
-- `invalid_grant` (token cofnięty/wygasły) → połączenie `needs_reauth`, stop synchronizacji
-  powiązanych projektów, komunikat w UI; bez ślepych ponowień.
-- Rozłączenie: `revoke` w Google, potem usunięcie połączenia.
+- **TokenVault**: XChaCha20-Poly1305 IETF (libsodium; bez rozszerzenia działa polyfill `sodium_compat`
+  z WordPressa), losowy 24-bajtowy nonce, koperta `v1.<key id>.<base64url(nonce‖szyfrogram)>`,
+  AAD = właściciel + `google_sub` (szyfrogramu nie da się przenieść do innego wiersza). Klucz
+  `OSF_SEO_ENCRYPTION_KEY` tylko w `wp-config.php`/env; inny klucz → `key_mismatch` (połączenie nie
+  zmienia statusu — to błąd konfiguracji, nie cofnięcie dostępu).
+- **Access token** wyłącznie w pamięci procesu (`AccessTokenProvider`) do `expires_in − 60 s`; każdy nowy
+  proces (np. zadanie synchronizacji) odświeża go z refresh tokenu. Rotowany refresh token zapisujemy
+  zaszyfrowany.
+- **401 z API** (`GoogleApi`) → wymuszone odświeżenie i jedno ponowienie; drugie 401 wraca do wywołującego.
+  Bearer wysyłany wyłącznie do `https://*.googleapis.com`.
+- **`invalid_grant`** (token cofnięty/wygasły) → połączenie `needs_reauth` (+ `last_error`), wyjątek
+  `ReauthorizationRequired`, bez kolejnych prób; w UI „Połącz ponownie”. Inne błędy Google/sieci nie
+  zmieniają statusu.
+- **Rozłączenie** (`POST …/search-console/disconnect`): odpięcie projektu; jeśli połączenia nie używa
+  inny projekt — `revoke` w Google i usunięcie z bazy (lokalnie usuwamy także wtedy, gdy revoke się nie
+  powiedzie; UI podpowiada ręczne odwołanie). Revoke unieważnia całe nadanie dostępu dla konta Google.
+- **Logi**: bez kodów, `state`, weryfikatorów, tokenów i sekretu klienta (Redactor + brak takich danych
+  w kontekście); błędy Google tylko jako status HTTP + kod `error`.
+- **Konfiguracja**: `wp osf-seo google:status`, panel → Ustawienia (tylko nazwy brakujących stałych).
 - Tryb Testing (External): refresh token wygasa po 7 dniach, maks. 100 test users — przed produkcją
   publikacja aplikacji OAuth (weryfikacja wymagań Google w konsoli).
 
@@ -464,11 +494,12 @@ UI pokazuje rozbicie punktów słowami oraz **potencjał kliknięć**:
   analityczne przyjmują wyłącznie `ProjectContext`.
 - **wp-admin dla użytkowników panelu zablokowany** (przekierowanie, bez paska admina) — STEP 4;
   blokada enumeracji użytkowników przez REST dla anonimowych i wyłączenie XML-RPC — krok 15 (hardening).
-- **OAuth**: jednorazowy `state` związany z użytkownikiem i projektem, PKCE S256, dokładny redirect URI,
-  callback tylko dla zalogowanych; kodów i tokenów nie logujemy.
-- **Tokeny**: refresh token szyfrowany libsodium (`sodium_crypto_secretbox`), klucz w `wp-config.php`
-  (osobny od soli WordPressa, z identyfikatorem klucza do rotacji); access token tylko w krótkim cache;
-  tokeny nigdy nie trafiają do Blade, JS ani REST.
+- **OAuth** (STEP 5): jednorazowy `state` (TTL 10 min) związany z użytkownikiem i projektem, PKCE S256,
+  dokładny redirect URI, callback tylko dla zalogowanych z ponowną autoryzacją projektu, kontrola scope
+  i id_token (aud/iss/exp); kodów i tokenów nie logujemy ani nie zapisujemy jawnie.
+- **Tokeny** (STEP 5): refresh token szyfrowany XChaCha20-Poly1305 (AEAD, libsodium), klucz w
+  `wp-config.php` (osobny od soli WordPressa, identyfikator klucza w kopercie); access token tylko
+  w pamięci procesu; tokeny nigdy nie trafiają do Blade, JS, REST ani logów.
 - **SQL**: `$wpdb->prepare`, generator placeholderów `IN`, biała lista sortowania, walidacja dat i limitów.
 - **XSS**: frazy i URL-e z GSC to dane zewnętrzne — zawsze escapowane.
 - **CSRF**: nonce WordPressa w każdym formularzu panelu + kontrola Origin/Referer (STEP 4), nonce WP
@@ -491,16 +522,21 @@ samej nazwie. W repozytorium wyłącznie placeholdery.
 | Stała | Przeznaczenie | Od |
 |---|---|---|
 | `OSF_SEO_LOG_LEVEL` | poziom logowania: `debug`, `info`, `warning`, `error` (domyślnie `warning`; `debug` przy `WP_DEBUG`) | STEP 1 |
-| `OSF_SEO_GOOGLE_CLIENT_ID` | OAuth Client ID | MVP 1, krok 6 |
-| `OSF_SEO_GOOGLE_CLIENT_SECRET` | OAuth Client Secret | MVP 1, krok 6 |
-| `OSF_SEO_ENCRYPTION_KEY` | klucz szyfrowania refresh tokenów | MVP 1, krok 6 |
+| `OSF_SEO_GOOGLE_CLIENT_ID` | OAuth Client ID (typ „Web application”) | STEP 5 |
+| `OSF_SEO_GOOGLE_CLIENT_SECRET` | OAuth Client Secret | STEP 5 |
+| `OSF_SEO_ENCRYPTION_KEY` | klucz szyfrowania refresh tokenów: 32 losowe bajty w base64 (opcjonalny prefiks `base64:`) | STEP 5 |
 
 ```php
 // wp-config.php — przykład z placeholderami
 define('OSF_SEO_GOOGLE_CLIENT_ID', 'your-client-id');
 define('OSF_SEO_GOOGLE_CLIENT_SECRET', 'your-client-secret');
-define('OSF_SEO_ENCRYPTION_KEY', 'your-encryption-key');
+define('OSF_SEO_ENCRYPTION_KEY', 'base64:...'); // wp osf-seo google:generate-key
 ```
+
+- Klucz szyfrowania: osobny dla każdego środowiska, stały, z bezpieczną kopią poza serwerem. Zmiana klucza
+  = ponowne połączenie kont Google (stare szyfrogramy dają `key_mismatch`); rotacja z drugim kluczem — później.
+- Brak stałych = integracja wyłączona (panel pokazuje nazwy brakujących stałych, `wp osf-seo status`: INFO);
+  błędny format klucza = FAIL w `wp osf-seo status`.
 
 ## 13. Deployment (do ustalenia)
 
@@ -536,7 +572,7 @@ Warianty docelowe:
 | 3 | Domena projektów: repozytorium, `ProjectGuard`, `ProjectContext`, przypisania użytkowników, CLI | ✅ STEP 3 |
 | 4 | Powłoka panelu w Sage: routing, layout, osobne wejście Vite, logowanie, nagłówki, lista projektów | ✅ STEP 4 |
 | 5 | Projekty w UI: tworzenie, edycja, archiwizacja, przypisywanie klientów | ✅ STEP 4 (bez przypisywania w UI — na razie `wp osf-seo project:assign`) |
-| 6 | Google OAuth: PKCE/state, szyfrowanie tokenów, callback, połączenia | — |
+| 6 | Google OAuth: PKCE/state, szyfrowanie tokenów, callback, połączenia | ✅ STEP 5 (Google mockowany; prawdziwy OAuth — po konfiguracji) |
 | 7 | Wybór property GSC | — |
 | 8 | Klient GSC API: paginacja, błędy, backoff, `wp osf-seo gsc:probe` | — |
 | 9 | Importery `site_daily`, `query_daily`, normalizacja, zamiana zakresu w transakcji | — |

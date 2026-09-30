@@ -7,6 +7,8 @@ namespace OsfSeo\Cli;
 use OsfSeo\Auth\RoleManager;
 use OsfSeo\Database\Migrator;
 use OsfSeo\Database\SchemaInspector;
+use OsfSeo\Google\ConnectionRepository;
+use OsfSeo\Google\GoogleConfig;
 use OsfSeo\Plugin;
 use OsfSeo\Setup\Installer;
 use WP_CLI;
@@ -75,6 +77,10 @@ final class StatusCommand
 	 *     environment: string,
 	 *     role_problems: list<string>,
 	 *     log_level: string,
+	 *     google_missing: list<string>,
+	 *     google_errors: list<string>,
+	 *     google_redirect_uri: string,
+	 *     google_connections: array<string, int>|null,
 	 * }
 	 */
 	private function facts(): array
@@ -84,6 +90,7 @@ final class StatusCommand
 		}
 
 		$migrator = $this->plugin->get(Migrator::class);
+		$google = $this->plugin->get(GoogleConfig::class);
 
 		return [
 			'plugin_active' => is_plugin_active(plugin_basename($this->plugin->file())),
@@ -97,6 +104,22 @@ final class StatusCommand
 			'environment' => wp_get_environment_type(),
 			'role_problems' => $this->plugin->get(RoleManager::class)->problems(),
 			'log_level' => $this->plugin->logger()->level(),
+			'google_missing' => $google->missing(),
+			'google_errors' => $google->errors(),
+			'google_redirect_uri' => $google->redirectUri(),
+			'google_connections' => $this->googleConnections(),
 		];
+	}
+
+	/**
+	 * @return array<string, int>|null null, gdy tabela połączeń jest niedostępna (np. przed migracją)
+	 */
+	private function googleConnections(): ?array
+	{
+		try {
+			return $this->plugin->get(ConnectionRepository::class)->statusCounts();
+		} catch (\Throwable) {
+			return null;
+		}
 	}
 }
