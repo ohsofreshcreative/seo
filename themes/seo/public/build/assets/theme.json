@@ -1589,24 +1589,9 @@
           "color": "rgb(var(--t-600))"
         },
         {
-          "name": "Gray",
-          "slug": "gray",
-          "color": "var(--gray)"
-        },
-        {
           "name": "Action",
           "slug": "action",
           "color": "var(--action)"
-        },
-        {
-          "name": "Page",
-          "slug": "page",
-          "color": "var(--bg)"
-        },
-        {
-          "name": "Background (Light)",
-          "slug": "background-light",
-          "color": "var(--bg-light)"
         },
         {
           "name": "Background (Navy)",
