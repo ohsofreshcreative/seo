@@ -28,6 +28,29 @@ deploy/
 # === Env ===
 .env
 .env.*
+!.env.example
+
+# === Sekrety (repozytorium jest publiczne) ===
+*.key
+*.pem
+*.p12
+*.pfx
+id_rsa*
+id_dsa*
+id_ecdsa*
+id_ed25519*
+key
+key.pub
+auth.json
+credentials.json
+secrets.*
+.git-credentials
+.htpasswd
+sftp-config.json
+.ftpconfig
+wp-config.php
+*.sql
+*.sql.gz
 
 # === System & edytory ===
 .DS_Store
