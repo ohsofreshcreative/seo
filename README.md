@@ -96,12 +96,17 @@ yarn build        # build produkcyjny → public/build (śledzony w gicie)
 # plugin (runtime nie wymaga Composera; Composer tylko dla testów)
 cd plugins/osf-seo
 composer install
-composer test     # PHPUnit
+composer test     # PHPUnit (testy jednostkowe)
 composer lint     # php -l
+
+# testy integracyjne: prawdziwy WordPress + OSOBNA, pusta baza testowa (nigdy baza strony!)
+OSF_SEO_TEST_DB_NAME=osf_seo_test OSF_SEO_TEST_DB_USER=root OSF_SEO_TEST_DB_PASSWORD=... \
+OSF_SEO_TEST_DB_HOST="localhost:/ścieżka/do/mysqld.sock" composer test:integration
 
 # stan pluginu w WordPressie
 wp osf-seo status
-wp osf-seo status --format=json
+wp osf-seo db:status
+wp osf-seo db:migrate
 ```
 
 WP-CLI w Local wymaga socketu MySQL strony — gotowy szablon komendy jest w `AGENTS.md`.

@@ -126,8 +126,8 @@ plugins/osf-seo/
 │   ├── Auth/            # Capabilities, Roles, RoleManager, RoleStore/WpRoleStore (+ MVP 1: ProjectGuard, ProjectContext)
 │   ├── Setup/           # Lifecycle (aktywacja/dezaktywacja), Installer (instalacja i aktualizacje, bez usuwania danych)
 │   ├── Support/         # Config (stałe/env), Logger, Redactor (maskowanie sekretów)
-│   ├── Cli/             # wp osf-seo status (StatusCommand + StatusReport)
-│   ├── Database/        # (MVP 1) migracje schematu
+│   ├── Cli/             # wp osf-seo status, db:migrate, db:status
+│   ├── Database/        # Connection ($wpdb + wyjątki), Migrator, Migrations/, Schema (spec), SchemaInspector
 │   ├── Projects/        # (MVP 1)
 │   ├── Google/          # (MVP 1) OAuth, TokenVault, połączenia
 │   ├── Gsc/             # (MVP 1) klient API, importery
@@ -136,7 +136,7 @@ plugins/osf-seo/
 │   ├── Rest/            # (MVP 1) endpointy dla panelu
 │   ├── Serp/            # (przyszłość) wyłącznie interfejs SerpProvider
 │   └── Crawler/         # (MVP 3)
-└── tests/               # PHPUnit (Unit bez WordPressa)
+└── tests/               # PHPUnit: Unit (bez WordPressa), Integration (prawdziwy WP + MySQL/MariaDB)
 ```
 
 ### 4.3 Struktura panelu w motywie (MVP 1)
@@ -182,8 +182,12 @@ Zaimplementowane w STEP 1 (`plugins/osf-seo/src/Auth`). Kod sprawdza **capabilit
 
 ## 6. Model danych
 
-Prefiks `{$wpdb->prefix}osf_`. InnoDB, `utf8mb4` tylko w tabelach z tekstem. **Bez kluczy obcych
-na tabelach faktów** (kaskady na milionach wierszy blokują bazę) — projekt usuwamy zadaniem wsadowym.
+Zaimplementowane w STEP 2: migracja `plugins/osf-seo/src/Database/Migrations/M0001CreateCoreTables.php`,
+specyfikacja stanu docelowego `src/Database/Schema.php` (test integracyjny pilnuje, że migracje dają
+dokładnie ten stan). Prefiks `{$wpdb->prefix}osf_`, wszystkie tabele InnoDB, `utf8mb4_unicode_ci`
+(kolumny identyfikatorów technicznych: `ascii_bin`). **Bez kluczy obcych** (kaskady na milionach
+wierszy blokują bazę) — spójność pilnuje aplikacja, projekt usuwamy zadaniem wsadowym.
+Czasy (`*_at`) w UTC; kolumny `date` faktów GSC to daty GSC (czas pacyficzny).
 
 ### 6.1 Dlaczego nie jedna tabela `gsc_stats`
 
@@ -193,47 +197,75 @@ na tabelach faktów** (kaskady na milionach wierszy blokują bazę) — projekt 
    dlatego osobna tabela `site_daily` z prawdziwymi sumami.
 3. Fraza i URL jako ID zamiast tekstu w każdym wierszu; tabela `pages` będzie wspólnym kluczem GSC + crawler.
 
-### 6.2 Tabele MVP 1
+### 6.2 Tabele MVP 1 (schemat w wersji 1)
 
-**`osf_projects`** — `id` BIGINT UNSIGNED AI PK; `public_id` CHAR(26) ULID UNIQUE; `name` VARCHAR(190);
-`domain` VARCHAR(190); `country` CHAR(2); `language` VARCHAR(10); `connection_id` BIGINT NULL;
-`gsc_property` VARCHAR(255) NULL; `gsc_permission` VARCHAR(32) NULL; `status` ENUM(active, paused, archived);
-`settings` LONGTEXT (JSON); `last_synced_at` DATETIME NULL; `created_by`; `created_at`; `updated_at`.
-Indeksy: UNIQUE(`public_id`), (`status`), (`domain`). Wymiar `country` w API GSC ma kody 3-literowe (`pol`).
+**`osf_projects`** — `id` INT UNSIGNED AI; `public_id` CHAR(26) ascii_bin (ULID); `name` VARCHAR(190);
+`domain` VARCHAR(190); `country` CHAR(2) (domyślnie `pl`); `language` VARCHAR(10); `status`
+ENUM(active, paused, archived); `connection_id` INT UNSIGNED NULL; `gsc_property` VARCHAR(255) NULL;
+`gsc_permission` VARCHAR(32) NULL; `settings` LONGTEXT NULL (JSON); `last_synced_at` DATETIME NULL;
+`created_by` BIGINT UNSIGNED; `created_at`; `updated_at`.
+PK(`id`), UNIQUE(`public_id`), indeksy (`status`), (`domain`), (`connection_id`).
+Wymiar `country` w API GSC ma kody 3-literowe (`pol`) — mapowanie w kliencie GSC.
 
-**`osf_project_users`** — PK(`project_id`, `user_id`); `role` ENUM(manager, viewer); `created_at`;
-indeks (`user_id`, `project_id`).
+**`osf_project_users`** — `project_id` INT UNSIGNED; `user_id` BIGINT UNSIGNED; `role` ENUM(manager, viewer);
+`created_at`. PK(`project_id`, `user_id`), indeks (`user_id`, `project_id`).
 
-**`osf_connections`** (konto Google; jedno konto może obsługiwać wiele projektów) — `id`; `owner_user_id`;
-`provider` = `google`; `google_sub` VARCHAR(64); `email` VARCHAR(190); `refresh_token_enc` TEXT
-(zaszyfrowany); `scopes` TEXT; `status` ENUM(active, needs_reauth, revoked); `last_error`;
-`last_refreshed_at`; `created_at`; `updated_at`. Indeksy: UNIQUE(`provider`, `google_sub`, `owner_user_id`), (`owner_user_id`).
+**`osf_connections`** (konto Google; jedno konto może obsługiwać wiele projektów) — `id` INT UNSIGNED AI;
+`owner_user_id` BIGINT UNSIGNED; `provider` VARCHAR(20) ascii (`google`); `google_sub` VARCHAR(255) ascii;
+`email` VARCHAR(190); `refresh_token_enc` TEXT ascii (wyłącznie szyfrogram); `scopes` TEXT;
+`status` ENUM(active, needs_reauth, revoked); `last_error` VARCHAR(255); `last_refreshed_at`; `created_at`;
+`updated_at`. PK(`id`), UNIQUE(`provider`, `google_sub`, `owner_user_id`), indeks (`owner_user_id`).
 
-**`osf_keywords`** — `id`; `project_id`; `keyword` VARCHAR(500); `keyword_hash` BINARY(16);
-`first_seen` DATE; `last_seen` DATE; `created_at`. Indeksy: UNIQUE(`project_id`, `keyword_hash`), (`project_id`, `last_seen`).
+**`osf_keywords`** — `id` INT UNSIGNED AI; `project_id`; `keyword` VARCHAR(500); `keyword_hash` BINARY(16);
+`first_seen` DATE; `last_seen` DATE; `created_at`. UNIQUE(`project_id`, `keyword_hash`), indeks (`project_id`, `last_seen`).
 
-**`osf_pages`** — `id`; `project_id`; `url` VARCHAR(2048); `url_hash` BINARY(16); `path` VARCHAR(512);
-`first_seen`; `last_seen`. Indeks UNIQUE(`project_id`, `url_hash`).
+**`osf_pages`** — `id` INT UNSIGNED AI; `project_id`; `url` VARCHAR(2048); `url_hash` BINARY(16);
+`path` VARCHAR(2048); `first_seen`; `last_seen`; `created_at`. UNIQUE(`project_id`, `url_hash`).
 
-**Tabele faktów** — wspólne metryki: `clicks` INT UNSIGNED, `impressions` INT UNSIGNED,
-`position_sum` DOUBLE (= Σ position × impressions).
+**Tabele faktów** — `project_id` INT UNSIGNED, `date` DATE, wspólne metryki: `clicks` INT UNSIGNED,
+`impressions` INT UNSIGNED, `position_sum` DOUBLE (= Σ position × impressions).
 
 | Tabela | PK (klastrowy) | Indeksy dodatkowe | Dataset GSC |
 |---|---|---|---|
-| `osf_gsc_site_daily` (+ `device` TINYINT) | (`project_id`, `date`, `device`) | — | `[date, device]` — prawdziwe sumy |
+| `osf_gsc_site_daily` (+ `device` TINYINT UNSIGNED) | (`project_id`, `date`, `device`) | — | `[date, device]` — prawdziwe sumy |
 | `osf_gsc_query_daily` | (`project_id`, `date`, `keyword_id`) | (`project_id`, `keyword_id`, `date`) | `[date, query]` |
 | `osf_gsc_query_page_daily` (eksperymentalnie) | (`project_id`, `date`, `keyword_id`, `page_id`) | (`project_id`, `keyword_id`, `date`, `page_id`), (`project_id`, `page_id`, `date`, `keyword_id`) | `[date, query, page]` |
-| `osf_gsc_page_daily` (MVP 2) | (`project_id`, `date`, `page_id`) | (`project_id`, `page_id`, `date`) | `[date, page]` |
 | `osf_visibility_daily` | (`project_id`, `date`) | — | wyliczane: `top3`, `top10`, `top20`, `top50`, `top100`, `keywords_total` (okno kroczące 7 dni) |
 
-**`osf_sync_state`** — PK(`project_id`, `dataset`); `newest_date`; `oldest_date` (kursor backfillu);
-`status`; `consecutive_failures`; `last_success_at`; `last_attempt_at`; `last_error`.
+`osf_gsc_page_daily` (`[date, page]`, landing pages) powstanie w MVP 2 nową migracją.
 
-**`osf_sync_runs`** (historia widoczna w UI) — `id`; `project_id`; `dataset`; `trigger`
-ENUM(schedule, manual, backfill, connect); `window_start`; `window_end`; `status`
+**`osf_sync_state`** — PK(`project_id`, `dataset` VARCHAR(32) ascii); `status` ENUM(idle, queued, running, failed);
+`newest_date`; `oldest_date` (kursor backfillu); `consecutive_failures`; `last_success_at`;
+`last_attempt_at`; `last_error`; `updated_at`.
+
+**`osf_sync_runs`** (historia widoczna w UI) — `id` BIGINT UNSIGNED AI; `project_id`; `dataset`;
+`trigger_type` ENUM(schedule, manual, backfill, connect); `window_start`; `window_end`; `status`
 ENUM(queued, running, success, failed, skipped); `attempt`; `rows_fetched`; `rows_written`;
 `api_requests`; `error_code`; `error_message`; `queued_at`; `started_at`; `finished_at`.
 Indeksy: (`project_id`, `id`), (`status`, `queued_at`). Retencja 90 dni.
+
+**Wersja schematu**: opcja `osf_seo_db_version` (autoload), podbijana po każdej udanej migracji.
+
+**Migracje** (`src/Database/Migrator.php`):
+- migracja po wdrożeniu jest niezmienna; zmiana schematu = nowa migracja + aktualizacja `Schema.php`,
+- `up()` idempotentne (`CREATE TABLE IF NOT EXISTS`, sprawdzanie kolumn/indeksów przed `ALTER`),
+- blokada `GET_LOCK` (nazwa zależna od bazy i prefiksu) serializuje równoległe uruchomienia,
+- po uzyskaniu blokady wersja czytana wprost z bazy (inny proces mógł ją podbić),
+- uruchamiane: przy aktywacji, przy starcie pluginu po zmianie wersji pluginu **lub** schematu
+  (z backoffem 5 min po błędzie — awaria nie zatrzymuje obsługi żądań) oraz ręcznie `wp osf-seo db:migrate`,
+- żadna migracja nie usuwa danych bez osobnej, jawnej decyzji; dezaktywacja pluginu niczego nie usuwa.
+
+### 6.2a Zmiany względem pierwotnego planu (STEP 2)
+
+| Zmiana | Powód |
+|---|---|
+| ID encji `INT UNSIGNED` zamiast `BIGINT` (`user_id` pozostaje BIGINT jak `wp_users.ID`) | tabele faktów powtarzają klucze w PK i w każdym indeksie wtórnym — 4 zamiast 8 bajtów na kolumnę przy dziesiątkach milionów wierszy; zakres 4,29 mld wystarcza |
+| `sync_runs.trigger` → `trigger_type` | `TRIGGER` jest słowem zastrzeżonym MySQL |
+| `pages.path` VARCHAR(2048) zamiast 512 | ścieżka nie może być dłuższa niż URL, ale może przekraczać 512 znaków — bez obcinania danych |
+| `connections.google_sub` VARCHAR(255) ascii zamiast VARCHAR(64) | OIDC dopuszcza `sub` do 255 znaków ASCII; ascii skraca klucz UNIQUE |
+| `public_id`, `provider`, `google_sub`, `dataset`, `refresh_token_enc` w `ascii_bin` | identyfikatory techniczne: krótsze indeksy, porównanie binarne |
+| `osf_gsc_page_daily` przesunięta do MVP 2 | tabela potrzebna dopiero dla widoku Pages |
+| `sync_state.status` jako ENUM(idle, queued, running, failed) | wcześniej nieokreślony typ |
 
 ### 6.3 Zapytania (bez N+1, bez ładowania historii do PHP)
 
@@ -442,7 +474,7 @@ Warianty docelowe:
 |---|---|---|
 | 0 | Reorganizacja repo, bezpieczeństwo sekretów, dokumentacja | ✅ |
 | 1 | Fundament pluginu: bootstrap, autoloader, kontener, role i capabilities, logger, PHPUnit, `wp osf-seo status` | ✅ STEP 1 |
-| 2 | Instalator schematu i migracje tabel MVP 1 (`db:migrate`, `db:status`) | — |
+| 2 | Instalator schematu i migracje tabel MVP 1 (`db:migrate`, `db:status`) | ✅ STEP 2 |
 | 3 | Domena projektów: repozytorium, `ProjectGuard`, `ProjectContext`, przypisania użytkowników, CLI | — |
 | 4 | Powłoka panelu w Sage: routing, layout, osobne wejście Vite, logowanie, nagłówki, lista projektów | — |
 | 5 | Projekty w UI: tworzenie, edycja, archiwizacja, przypisywanie klientów | — |

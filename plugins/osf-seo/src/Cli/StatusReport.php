@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace OsfSeo\Cli;
 
 use OsfSeo\Auth\Roles;
+use OsfSeo\Database\Schema;
 use OsfSeo\Plugin;
 
 /**
@@ -19,6 +20,9 @@ final class StatusReport
 
 	public const INFO = 'info';
 
+	/** Ile rozbieżności schematu pokazać w jednym wierszu (reszta: `wp osf-seo db:status`). */
+	private const MAX_LISTED_PROBLEMS = 3;
+
 	/**
 	 * @param array{
 	 *     plugin_active: bool,
@@ -26,6 +30,9 @@ final class StatusReport
 	 *     installed_version: string|null,
 	 *     php_version: string,
 	 *     wp_version: string,
+	 *     db_version: int,
+	 *     db_latest: int,
+	 *     db_problems: list<string>,
 	 *     environment: string,
 	 *     role_problems: list<string>,
 	 *     log_level: string,
@@ -34,6 +41,8 @@ final class StatusReport
 	 */
 	public static function build(array $facts): array
 	{
+		$tables = count(Schema::tables());
+
 		$rows = [
 			self::check('plugin_active', $facts['plugin_active'] ? 'yes' : 'no', $facts['plugin_active']),
 			self::check('plugin_version', $facts['plugin_version'], true),
@@ -53,6 +62,18 @@ final class StatusReport
 				version_compare($facts['wp_version'], Plugin::MIN_WP, '>='),
 			),
 			self::check(
+				'db_schema_version',
+				sprintf('%d (latest %d)', $facts['db_version'], $facts['db_latest']),
+				$facts['db_version'] === $facts['db_latest'],
+			),
+			self::check(
+				'db_tables',
+				$facts['db_problems'] === []
+					? sprintf('%d/%d tables match the schema', $tables, $tables)
+					: self::summarize($facts['db_problems']),
+				$facts['db_problems'] === [],
+			),
+			self::check(
 				'roles_and_capabilities',
 				$facts['role_problems'] === []
 					? implode(', ', [...array_keys(Roles::definitions()), Roles::WP_ADMINISTRATOR])
@@ -67,6 +88,17 @@ final class StatusReport
 			'ok' => ! in_array(self::FAIL, array_column($rows, 'status'), true),
 			'rows' => $rows,
 		];
+	}
+
+	/**
+	 * @param list<string> $problems
+	 */
+	private static function summarize(array $problems): string
+	{
+		$listed = array_slice($problems, 0, self::MAX_LISTED_PROBLEMS);
+		$more = count($problems) - count($listed);
+
+		return implode('; ', $listed) . ($more > 0 ? sprintf(' (+%d more, see wp osf-seo db:status)', $more) : '');
 	}
 
 	/**

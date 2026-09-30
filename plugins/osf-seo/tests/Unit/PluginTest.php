@@ -5,6 +5,9 @@ declare(strict_types=1);
 namespace OsfSeo\Tests\Unit;
 
 use OsfSeo\Auth\RoleManager;
+use OsfSeo\Database\Connection;
+use OsfSeo\Database\Migrator;
+use OsfSeo\Database\SchemaInspector;
 use OsfSeo\Plugin;
 use OsfSeo\Setup\Installer;
 use OsfSeo\Support\Config;
@@ -61,11 +64,21 @@ final class PluginTest extends TestCase
 	{
 		$container = Plugin::createContainer();
 
-		foreach ([Config::class, Logger::class, RoleManager::class, Installer::class] as $service) {
+		// Usługi niezależne od bazy; pełny graf (z $wpdb) sprawdzają testy integracyjne.
+		foreach ([Config::class, Logger::class, RoleManager::class] as $service) {
 			$instance = $container->get($service);
 
 			self::assertInstanceOf($service, $instance);
 			self::assertSame($instance, $container->get($service));
+		}
+	}
+
+	public function test_container_registers_database_services_lazily(): void
+	{
+		$container = Plugin::createContainer();
+
+		foreach ([Connection::class, Migrator::class, SchemaInspector::class, Installer::class] as $service) {
+			self::assertTrue($container->has($service), $service);
 		}
 	}
 }

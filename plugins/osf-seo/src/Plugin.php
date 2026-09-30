@@ -6,7 +6,11 @@ namespace OsfSeo;
 
 use OsfSeo\Auth\RoleManager;
 use OsfSeo\Auth\WpRoleStore;
+use OsfSeo\Cli\DbCommand;
 use OsfSeo\Cli\StatusCommand;
+use OsfSeo\Database\Connection;
+use OsfSeo\Database\Migrator;
+use OsfSeo\Database\SchemaInspector;
 use OsfSeo\Setup\Installer;
 use OsfSeo\Support\Config;
 use OsfSeo\Support\Logger;
@@ -14,7 +18,7 @@ use OsfSeo\Support\Logger;
 final class Plugin
 {
 	/** Musi być zgodna z nagłówkiem `Version` w osf-seo.php (pilnuje tego test). */
-	public const VERSION = '0.1.0';
+	public const VERSION = '0.2.0';
 
 	public const MIN_PHP = '8.2';
 
@@ -37,6 +41,7 @@ final class Plugin
 
 	/**
 	 * Rejestr usług pluginu — jedyne miejsce, w którym składane są zależności.
+	 * Fabryki są leniwe: samo zbudowanie kontenera nie dotyka WordPressa ani bazy.
 	 */
 	public static function createContainer(): Container
 	{
@@ -44,9 +49,16 @@ final class Plugin
 
 		$container->singleton(Config::class, static fn (): Config => new Config());
 		$container->singleton(Logger::class, static fn (Container $c): Logger => Logger::fromConfig($c->get(Config::class)));
+		$container->singleton(Connection::class, static fn (): Connection => Connection::fromGlobals());
+		$container->singleton(Migrator::class, static fn (Container $c): Migrator => new Migrator(
+			$c->get(Connection::class),
+			$c->get(Logger::class),
+		));
+		$container->singleton(SchemaInspector::class, static fn (Container $c): SchemaInspector => new SchemaInspector($c->get(Connection::class)));
 		$container->singleton(RoleManager::class, static fn (): RoleManager => new RoleManager(new WpRoleStore()));
 		$container->singleton(Installer::class, static fn (Container $c): Installer => new Installer(
 			$c->get(RoleManager::class),
+			$c->get(Migrator::class),
 			$c->get(Logger::class),
 		));
 
@@ -65,6 +77,7 @@ final class Plugin
 
 		if (defined('WP_CLI') && WP_CLI) {
 			StatusCommand::register($this);
+			DbCommand::register($this);
 		}
 	}
 

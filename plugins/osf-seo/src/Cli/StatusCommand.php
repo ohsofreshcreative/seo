@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace OsfSeo\Cli;
 
 use OsfSeo\Auth\RoleManager;
+use OsfSeo\Database\Migrator;
+use OsfSeo\Database\SchemaInspector;
 use OsfSeo\Plugin;
 use OsfSeo\Setup\Installer;
 use WP_CLI;
@@ -67,6 +69,9 @@ final class StatusCommand
 	 *     installed_version: string|null,
 	 *     php_version: string,
 	 *     wp_version: string,
+	 *     db_version: int,
+	 *     db_latest: int,
+	 *     db_problems: list<string>,
 	 *     environment: string,
 	 *     role_problems: list<string>,
 	 *     log_level: string,
@@ -78,12 +83,17 @@ final class StatusCommand
 			require_once ABSPATH . 'wp-admin/includes/plugin.php';
 		}
 
+		$migrator = $this->plugin->get(Migrator::class);
+
 		return [
 			'plugin_active' => is_plugin_active(plugin_basename($this->plugin->file())),
 			'plugin_version' => Plugin::VERSION,
 			'installed_version' => $this->plugin->get(Installer::class)->installedVersion(),
 			'php_version' => PHP_VERSION,
 			'wp_version' => (string) get_bloginfo('version'),
+			'db_version' => $migrator->currentVersion(),
+			'db_latest' => $migrator->latestVersion(),
+			'db_problems' => $this->plugin->get(SchemaInspector::class)->problems(),
 			'environment' => wp_get_environment_type(),
 			'role_problems' => $this->plugin->get(RoleManager::class)->problems(),
 			'log_level' => $this->plugin->logger()->level(),

@@ -22,6 +22,9 @@ final class StatusReportTest extends TestCase
 			'installed_version' => Plugin::VERSION,
 			'php_version' => '8.2.20',
 			'wp_version' => '6.9.9',
+			'db_version' => 1,
+			'db_latest' => 1,
+			'db_problems' => [],
 			'environment' => 'local',
 			'role_problems' => [],
 			'log_level' => 'warning',
@@ -49,9 +52,11 @@ final class StatusReportTest extends TestCase
 
 		self::assertTrue($report['ok']);
 		self::assertSame(
-			['plugin_active', 'plugin_version', 'installed_version', 'php_version', 'wordpress_version', 'roles_and_capabilities', 'environment', 'log_level'],
+			['plugin_active', 'plugin_version', 'installed_version', 'php_version', 'wordpress_version', 'db_schema_version', 'db_tables', 'roles_and_capabilities', 'environment', 'log_level'],
 			array_column($report['rows'], 'check'),
 		);
+		self::assertSame('1 (latest 1)', self::row($report, 'db_schema_version')['value']);
+		self::assertSame('11/11 tables match the schema', self::row($report, 'db_tables')['value']);
 		self::assertSame('yes', self::row($report, 'plugin_active')['value']);
 		self::assertSame('8.2.20 (min ' . Plugin::MIN_PHP . ')', self::row($report, 'php_version')['value']);
 	}
@@ -95,6 +100,25 @@ final class StatusReportTest extends TestCase
 		self::assertSame(
 			'missing role osf_seo_client; role administrator lacks osf_seo_access',
 			self::row($report, 'roles_and_capabilities')['value'],
+		);
+	}
+
+	public function test_pending_schema_migration_fails(): void
+	{
+		$report = self::report(['db_version' => 0, 'db_latest' => 1]);
+
+		self::assertFalse($report['ok']);
+		self::assertSame('0 (latest 1)', self::row($report, 'db_schema_version')['value']);
+	}
+
+	public function test_schema_problems_fail_and_long_lists_are_truncated(): void
+	{
+		$report = self::report(['db_problems' => ['table projects is missing', 'table keywords is missing', 'table pages is missing', 'table sync_runs is missing']]);
+
+		self::assertFalse($report['ok']);
+		self::assertSame(
+			'table projects is missing; table keywords is missing; table pages is missing (+1 more, see wp osf-seo db:status)',
+			self::row($report, 'db_tables')['value'],
 		);
 	}
 

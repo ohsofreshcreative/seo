@@ -145,6 +145,11 @@ Motyw powstał z marketingowego motywu `h2otwock` i wciąż zawiera jego kod: bl
   wrażliwe dane w kontekście pod kluczami `*_token`, `*_secret`, `*_password`, `code`, `authorization` itd.
 - WP-CLI: komendy w przestrzeni `wp osf-seo …`; wyjście i logi po angielsku (jak rdzeń WP-CLI).
   Formaty maszynowe (`--format=json`) bez dodatkowych komunikatów.
+- Baza: wyłącznie przez `Database\Connection` (prepare zawsze, błędy SQL jako wyjątki). Tabele
+  `Connection::table('nazwa')` → `{prefix}osf_nazwa`. Wartości `NULL` przez `insert()`/`update()`, nie przez prepare.
+- Schemat: nowa zmiana = nowa migracja `src/Database/Migrations/MNNNN*.php` (dopisana w
+  `Migrator::defaultMigrations()`) + aktualizacja `Database\Schema`. Migracje po wdrożeniu są niezmienne,
+  idempotentne i nie usuwają danych. Test `MigratorTest` pilnuje zgodności migracji ze specyfikacją.
 
 ## 8. Panel (UI w motywie) — konwencje
 
@@ -186,8 +191,15 @@ cd plugins/osf-seo
 composer install      # tylko narzędzia dev (PHPUnit)
 composer test         # PHPUnit — testy jednostkowe bez WordPressa
 composer lint         # php -l dla osf-seo.php, src/ i tests/
+composer test:integration   # prawdziwy WordPress + OSOBNA testowa baza MySQL/MariaDB (zmienne OSF_SEO_TEST_DB_*)
 wp osf-seo status     # stan pluginu (kod wyjścia 1, gdy kontrola nie przejdzie); --format=json
+wp osf-seo db:migrate # oczekujące migracje (idempotentne)
+wp osf-seo db:status  # wersja schematu i stan tabel; --format=json
 ```
+
+Testy integracyjne czyszczą i usuwają tabele — **nigdy nie wskazuj bazy strony**. Zmienne:
+`OSF_SEO_TEST_DB_NAME` (domyślnie `osf_seo_test`), `OSF_SEO_TEST_DB_USER`, `OSF_SEO_TEST_DB_PASSWORD`,
+`OSF_SEO_TEST_DB_HOST` (np. `localhost:/ścieżka/mysqld.sock` dla socketu Local).
 
 WP-CLI w LocalWP (uzupełnij dane swojej strony; strona w Local musi być uruchomiona):
 
