@@ -1,0 +1,6 @@
+# Plugin OSF SEO: PHP pisany tabami (konwencja repozytorium).
+# Pozostałe ustawienia dziedziczone z .editorconfig w roocie repozytorium.
+
+[*.php]
+indent_style = tab
+indent_size = 4

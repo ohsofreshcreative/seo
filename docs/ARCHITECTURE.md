@@ -123,10 +123,10 @@ plugins/osf-seo/
 ├── composer.json        # PSR-4 OsfSeo\ → src/ (Composer tylko dla narzędzi dev)
 ├── src/
 │   ├── Plugin.php, Container.php, Autoloader.php, functions.php (osf_seo())
-│   ├── Auth/            # Capabilities, Roles, RoleManager (+ od MVP 1: ProjectGuard, ProjectContext)
-│   ├── Setup/           # aktywacja, dezaktywacja, aktualizacje (bez usuwania danych)
-│   ├── Support/         # Config, Logger (z redakcją sekretów)
-│   ├── Cli/             # wp osf-seo …
+│   ├── Auth/            # Capabilities, Roles, RoleManager, RoleStore/WpRoleStore (+ MVP 1: ProjectGuard, ProjectContext)
+│   ├── Setup/           # Lifecycle (aktywacja/dezaktywacja), Installer (instalacja i aktualizacje, bez usuwania danych)
+│   ├── Support/         # Config (stałe/env), Logger, Redactor (maskowanie sekretów)
+│   ├── Cli/             # wp osf-seo status (StatusCommand + StatusReport)
 │   ├── Database/        # (MVP 1) migracje schematu
 │   ├── Projects/        # (MVP 1)
 │   ├── Google/          # (MVP 1) OAuth, TokenVault, połączenia
@@ -155,7 +155,7 @@ themes/seo/
 
 ## 5. Uprawnienia
 
-Implementacja: STEP 1 (`plugins/osf-seo/src/Auth`). Kod sprawdza **capabilities**, nigdy nazwy ról.
+Zaimplementowane w STEP 1 (`plugins/osf-seo/src/Auth`). Kod sprawdza **capabilities**, nigdy nazwy ról.
 
 | Capability | Znaczenie |
 |---|---|
@@ -441,7 +441,7 @@ Warianty docelowe:
 | # | Krok | Stan |
 |---|---|---|
 | 0 | Reorganizacja repo, bezpieczeństwo sekretów, dokumentacja | ✅ |
-| 1 | Fundament pluginu: bootstrap, autoloader, kontener, role i capabilities, logger, PHPUnit, `wp osf-seo status` | ⏳ STEP 1 |
+| 1 | Fundament pluginu: bootstrap, autoloader, kontener, role i capabilities, logger, PHPUnit, `wp osf-seo status` | ✅ STEP 1 |
 | 2 | Instalator schematu i migracje tabel MVP 1 (`db:migrate`, `db:status`) | — |
 | 3 | Domena projektów: repozytorium, `ProjectGuard`, `ProjectContext`, przypisania użytkowników, CLI | — |
 | 4 | Powłoka panelu w Sage: routing, layout, osobne wejście Vite, logowanie, nagłówki, lista projektów | — |

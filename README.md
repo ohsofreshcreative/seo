@@ -4,8 +4,9 @@ Wewnętrzne narzędzie SEO agencji OhSoFresh: projekty klientów połączone z G
 automatyczne wykrywanie fraz, porównania okresów, wzrosty i spadki, szanse SEO oraz dashboardy.
 Jedynym źródłem danych w MVP jest Google Search Console API — koszt zewnętrznych usług: 0 zł.
 
-> **Status:** fundament. Aplikacja nie ma jeszcze panelu ani integracji z Google — plan i postęp
-> prac: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
+> **Status:** fundament (plugin: bootstrap, role i uprawnienia, logger, `wp osf-seo status`).
+> Aplikacja nie ma jeszcze panelu ani integracji z Google — plan i postęp prac:
+> [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 >
 > **Repozytorium jest publiczne.** Nie commituj żadnych sekretów (sekcja „Konfiguracja”).
 
@@ -91,6 +92,16 @@ Gdy wszystko działa, usuń `../seo-theme-old`.
 cd themes/seo
 yarn dev          # Vite dev server z HMR
 yarn build        # build produkcyjny → public/build (śledzony w gicie)
+
+# plugin (runtime nie wymaga Composera; Composer tylko dla testów)
+cd plugins/osf-seo
+composer install
+composer test     # PHPUnit
+composer lint     # php -l
+
+# stan pluginu w WordPressie
+wp osf-seo status
+wp osf-seo status --format=json
 ```
 
 WP-CLI w Local wymaga socketu MySQL strony — gotowy szablon komendy jest w `AGENTS.md`.

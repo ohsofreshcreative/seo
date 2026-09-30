@@ -54,7 +54,7 @@ Bez symlinków — każdy katalog leży dokładnie tam, gdzie oczekuje go WordPr
 
 | Ścieżka | Zawartość |
 |---|---|
-| `plugins/osf-seo/` | plugin (logika aplikacji) — powstaje w STEP 1 |
+| `plugins/osf-seo/` | plugin (logika aplikacji): `osf-seo.php` (bootstrap), `src/` (namespace `OsfSeo\`), `tests/` (PHPUnit) |
 | `themes/seo/` | motyw Sage 11 + Acorn 5 (namespace `App\` → `app/`), Vite, Tailwind 4 |
 | `docs/ARCHITECTURE.md` | architektura, model danych, OAuth, synchronizacja, decyzje, roadmapa |
 | `AGENTS.md`, `CLAUDE.md`, `README.md` | instrukcje i opis projektu |
@@ -128,6 +128,24 @@ Motyw powstał z marketingowego motywu `h2otwock` i wciąż zawiera jego kod: bl
 - Blade / JS / CSS: 2 spacje, LF, końcowy newline, single quotes.
 - Komentarze tylko tam, gdzie wyjaśniają nieoczywiste decyzje — nie tłumacz kodu na prozę.
 
+## 7a. Plugin `osf-seo` — konwencje
+
+- `osf-seo.php` musi się parsować na starym PHP (kontrola wersji przed załadowaniem kodu 8.2) —
+  nie dodawaj tam składni nowszej niż PHP 7.2.
+- Autoloader własny (`src/Autoloader.php`, PSR-4 `OsfSeo\` → `src/`): plugin działa bez
+  `composer install` na serwerze. Composer służy tylko narzędziom dev (PHPUnit); `config.platform.php` = 8.2.
+- Usługi rejestruj wyłącznie w `Plugin::createContainer()`; dostęp: `osf_seo()->get(Klasa::class)`.
+- Uprawnienia: stałe w `Auth\Capabilities`, role w `Auth\Roles`, synchronizacja `Auth\RoleManager::sync()`
+  (aktywacja + zmiana `Plugin::VERSION`). Nowe capability dopisz w `Capabilities::all()` i podbij wersję.
+- Aktywacja/aktualizacja: `Setup\Installer` (idempotentny). Dezaktywacja niczego nie usuwa.
+  Destrukcyjne operacje na danych tylko jawnie (opt-in) i po akceptacji.
+- `Plugin::VERSION` = nagłówek `Version` w `osf-seo.php` (pilnuje tego test).
+- Klasy z logiką testowalną bez WordPressa; dostęp do API WP za cienkim adapterem (wzór: `Auth\RoleStore` / `WpRoleStore`).
+- Logowanie: `osf_seo()->logger()` (poziom: `OSF_SEO_LOG_LEVEL`); `Support\Redactor` maskuje sekrety —
+  wrażliwe dane w kontekście pod kluczami `*_token`, `*_secret`, `*_password`, `code`, `authorization` itd.
+- WP-CLI: komendy w przestrzeni `wp osf-seo …`; wyjście i logi po angielsku (jak rdzeń WP-CLI).
+  Formaty maszynowe (`--format=json`) bez dodatkowych komunikatów.
+
 ## 8. Panel (UI w motywie) — konwencje
 
 Panel powstaje w MVP 1 (krok 4). Obowiązują proste zasady:
@@ -159,6 +177,16 @@ composer install
 yarn install
 yarn dev      # Vite dev server (seo.local:6011)
 yarn build    # produkcyjny build → public/build
+```
+
+Plugin (`plugins/osf-seo`):
+
+```bash
+cd plugins/osf-seo
+composer install      # tylko narzędzia dev (PHPUnit)
+composer test         # PHPUnit — testy jednostkowe bez WordPressa
+composer lint         # php -l dla osf-seo.php, src/ i tests/
+wp osf-seo status     # stan pluginu (kod wyjścia 1, gdy kontrola nie przejdzie); --format=json
 ```
 
 WP-CLI w LocalWP (uzupełnij dane swojej strony; strona w Local musi być uruchomiona):
