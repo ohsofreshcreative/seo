@@ -92,27 +92,43 @@ Przyszłe integracje płatne wyłącznie za interfejsem (`SerpProvider`), bez im
 - **REST pluginu** (`/wp-json/osf-seo/v1/...`) służy danym asynchronicznym (wykresy, zmiana zakresu);
   autoryzacja: ciasteczko WP + nonce (`X-WP-Nonce`), `permission_callback` używa `ProjectGuard`.
 - **Strony panelu renderowane serwerowo** (Blade); sortowanie, filtry i paginacja w query stringu.
-- **Routing**: trasy Acorn w motywie (`themes/seo/routes/web.php`, włączane przez
-  `->withRouting(web: ...)` w `functions.php`). Acorn 5 obsługuje trasę przed WordPressem
-  (`do_parse_request`); `/wp-admin`, `wp-login.php` i REST są wyłączone spod routera.
-- **Uwierzytelnianie** zawsze ciasteczkiem WordPressa; sesja Laravela (grupa `web`) tylko do CSRF
-  i komunikatów flash — wymaga zapisywalnego `storage/` na serwerze.
+- **Routing** (STEP 4): trasy Acorn w motywie (`themes/seo/routes/web.php`, włączane przez
+  `->withRouting(using: ...)` w `functions.php` z middleware `PanelMiddleware::GLOBAL`). Acorn 5
+  dopasowuje trasę przy starcie motywu i obsługuje ją w `parse_request` (przed zapytaniem WordPressa);
+  `/wp-admin`, `wp-login.php`, REST i pliki `*.php` są wyłączone spod routera. Ścieżki niepasujące do
+  żadnej trasy obsługuje dalej WordPress (strony legacy motywu) — do czasu porządków C2.
+  Wymagane „ładne” odnośniki WordPressa.
+- **Uwierzytelnianie** ciasteczkiem WordPressa (`wp_signon` w `/login` albo `wp-login.php`).
+  **Bez sesji Laravela** (`using:` pomija grupę `web`, więc nie są potrzebne `APP_KEY` ani zapisywalne
+  `storage/framework/sessions`): CSRF = nonce WordPressa (`VerifyNonce`) + zgodność Origin/Referer,
+  komunikaty flash = transient per użytkownik (`App\Panel\Flash`).
 
 ### 4.1 Trasy panelu (MVP 1)
 
-`{project}` = `public_id` projektu. Brak dostępu lub nieistniejący projekt → zawsze **404**.
+`{project}` = `public_id` projektu. Brak dostępu lub nieistniejący projekt → zawsze **404**
+(identyczna odpowiedź); widoczny projekt bez uprawnienia do operacji → **403**.
+
+Zaimplementowane w STEP 4:
 
 ```
-GET  /login                                  GET  /                    (dashboard projektów)
-GET  /projects                               GET  /projects/create     POST /projects
-GET  /projects/{project}                     (overview)
-GET  /projects/{project}/keywords            GET  /projects/{project}/keywords/{keyword}
-GET  /projects/{project}/opportunities       (MVP 2)
+GET  /login  POST /login                     (gość; nonce + Origin, limit prób LoginThrottle)
+POST /logout                                 GET  /                    (dashboard projektów)
+GET  /settings                               (osf_seo_manage_settings)
+GET  /projects[?status=archived]             GET  /projects/create     POST /projects
+GET  /projects/{project}                     (przegląd; pusty stan → Search Console)
+GET  /projects/{project}/edit                POST /projects/{project}  (osf_seo_manage_projects)
+POST /projects/{project}/archive | /restore | /pause                   (osf_seo_manage_projects)
+GET  /projects/{project}/{section}           keywords | opportunities | pages | search-console | audit (placeholdery)
+ANY  /projects/{cokolwiek innego}            → 404 panelu (nie strona motywu)
+```
+
+Kolejne etapy:
+
+```
+GET  /projects/{project}/keywords/{keyword}
 GET  /projects/{project}/pages[/{page}]      (MVP 2)
-GET  /projects/{project}/search-console      POST …/connect | …/property | …/sync | …/disconnect
+POST /projects/{project}/search-console/connect | …/property | …/sync | …/disconnect
 GET  /oauth/google/callback                  (stały redirect URI)
-GET  /projects/{project}/audit               (placeholder, MVP 3)
-GET  /settings
 ```
 
 ### 4.2 Struktura pluginu
@@ -139,19 +155,34 @@ plugins/osf-seo/
 └── tests/               # PHPUnit: Unit (bez WordPressa), Integration (prawdziwy WP + MySQL/MariaDB)
 ```
 
-### 4.3 Struktura panelu w motywie (MVP 1)
+### 4.3 Struktura panelu w motywie (STEP 4)
 
 ```
 themes/seo/
-├── routes/web.php
-├── app/Http/Controllers/Panel/     # Auth, Dashboard, Project, Keyword, SearchConsole, Settings…
-├── app/Http/Middleware/            # EnsureOsfAccess, ResolveProject (404), PanelHeaders
-├── app/Http/Requests/              # walidacja formularzy
-├── app/View/Composers/Panel/       # sidebar/topbar (projekty użytkownika), wybór zakresu dat
-├── resources/css/panel.css         # osobne wejście Vite: Tailwind + tokeny panelu
-├── resources/js/panel.js           # Alpine; Chart.js ładowany per widok
-└── resources/views/panel/          # layout (sidebar + topbar + content), widoki, components/panel/*
+├── functions.php                   # ->withRouting(using: …) + PanelMiddleware::GLOBAL
+├── routes/web.php                  # trasy panelu (capabilities jako literały)
+├── app/Http/Controllers/Panel/     # Auth, Dashboard, Project, ProjectSection, Settings
+├── app/Http/Middleware/Panel/      # PanelHeaders, UnslashInput, RequirePlugin, Authenticate, VerifyNonce, ResolveProject
+├── app/Panel/                      # PanelUrl (adresy, bezpieczny redirect), PanelResponse (404/403/503), Flash
+├── app/View/Composers/Panel/       # Layout: użytkownik, projekty do przełącznika, bieżący projekt, flash
+├── resources/css/panel.css         # osobne wejście Vite: Tailwind 4 (source(none)) + forms + tokeny brand-*
+├── resources/js/panel.js           # Alpine (bez jQuery, GSAP, Reacta, CDN)
+├── resources/views/panel/          # layouts/{base,guest,app}, auth/login, dashboard, projects/*, settings, error
+└── resources/views/components/panel/  # button, card, page-header, field, badge, flash, empty-state, nav-link, nonce
 ```
+
+### 4.4 Panel a wp-admin i motyw legacy
+
+- Użytkownicy z `osf_seo_access` bez `manage_options` (klienci, `osf_seo_admin`) nie wchodzą do
+  wp-admin (przekierowanie do panelu, `admin-post.php` i AJAX bez zmian), nie widzą paska admina,
+  a po `wp-login.php` trafiają do panelu (`OsfSeo\Auth\WpAdminAccess`). Administrator WordPressa — bez zmian.
+- Layout panelu nie woła `wp_head()`/`wp_footer()`: żadne skrypty ani style motywu marketingowego
+  (GTM, Leaflet, Google Fonts, GSAP, jQuery) nie trafiają do panelu.
+- `App\View\Composers\App` (composer dla `*`) nie wymaga już ACF (`get_field` tylko, gdy istnieje) —
+  jedyna zmiana w kodzie legacy potrzebna, żeby panel działał bez ACF Pro.
+- `panel.css` i `app.css` mają rozdzielone źródła klas; `app.css`/`editor.css` po dodaniu panelu są
+  bajtowo identyczne. `app.js` współdzieli z `panel.js` chunk Alpine (`module.esm-*.js`) — zmiana
+  tylko w podziale plików, nie w działaniu.
 
 ## 5. Uprawnienia
 
@@ -431,8 +462,8 @@ UI pokazuje rozbicie punktów słowami oraz **potencjał kliknięć**:
 
 - **Autoryzacja projektów**: `ProjectGuard` → `ProjectContext` albo 404; repozytoria i usługi
   analityczne przyjmują wyłącznie `ProjectContext`.
-- **wp-admin dla klientów zablokowany** (przekierowanie, bez paska admina); blokada enumeracji
-  użytkowników przez REST dla anonimowych; XML-RPC wyłączone.
+- **wp-admin dla użytkowników panelu zablokowany** (przekierowanie, bez paska admina) — STEP 4;
+  blokada enumeracji użytkowników przez REST dla anonimowych i wyłączenie XML-RPC — krok 15 (hardening).
 - **OAuth**: jednorazowy `state` związany z użytkownikiem i projektem, PKCE S256, dokładny redirect URI,
   callback tylko dla zalogowanych; kodów i tokenów nie logujemy.
 - **Tokeny**: refresh token szyfrowany libsodium (`sodium_crypto_secretbox`), klucz w `wp-config.php`
@@ -440,9 +471,15 @@ UI pokazuje rozbicie punktów słowami oraz **potencjał kliknięć**:
   tokeny nigdy nie trafiają do Blade, JS ani REST.
 - **SQL**: `$wpdb->prepare`, generator placeholderów `IN`, biała lista sortowania, walidacja dat i limitów.
 - **XSS**: frazy i URL-e z GSC to dane zewnętrzne — zawsze escapowane.
-- **CSRF**: token Laravela w formularzach, nonce WP w REST, `state` w OAuth.
-- **Nagłówki panelu**: `noindex, nofollow`, `Cache-Control: private, no-store`, `X-Frame-Options: DENY`,
-  `Referrer-Policy: same-origin`; brak zewnętrznych skryptów; wykluczenie panelu z page cache.
+- **CSRF**: nonce WordPressa w każdym formularzu panelu + kontrola Origin/Referer (STEP 4), nonce WP
+  w REST, `state` w OAuth.
+- **Logowanie**: `wp_signon` (działają wtyczki bezpieczeństwa podpięte pod `authenticate`), limit
+  nieudanych prób `LoginThrottle` (5 na login+IP, 20 na IP w 15 min; klucze HMAC, bez jawnych loginów/IP),
+  redirect po logowaniu tylko na lokalną ścieżkę (ochrona przed open redirect).
+- **Nagłówki panelu** (STEP 4, `PanelHeaders`): `X-Robots-Tag: noindex, nofollow`,
+  `Cache-Control: private, no-store, max-age=0`, `X-Frame-Options: DENY`, `Referrer-Policy: same-origin`,
+  `X-Content-Type-Options: nosniff`; brak zewnętrznych skryptów. Przy page cache na serwerze panel
+  trzeba z niego wykluczyć (nagłówek `no-store` zwykle wystarcza).
 - **Logi**: logger pluginu redaguje tokeny, sekrety, hasła, nagłówki `Authorization` i klucze prywatne.
 - **Repozytorium publiczne**: sekcja 12; skan sekretów przed commitem; `.gitignore` blokuje pliki z sekretami.
 
@@ -497,8 +534,8 @@ Warianty docelowe:
 | 1 | Fundament pluginu: bootstrap, autoloader, kontener, role i capabilities, logger, PHPUnit, `wp osf-seo status` | ✅ STEP 1 |
 | 2 | Instalator schematu i migracje tabel MVP 1 (`db:migrate`, `db:status`) | ✅ STEP 2 |
 | 3 | Domena projektów: repozytorium, `ProjectGuard`, `ProjectContext`, przypisania użytkowników, CLI | ✅ STEP 3 |
-| 4 | Powłoka panelu w Sage: routing, layout, osobne wejście Vite, logowanie, nagłówki, lista projektów | — |
-| 5 | Projekty w UI: tworzenie, edycja, archiwizacja, przypisywanie klientów | — |
+| 4 | Powłoka panelu w Sage: routing, layout, osobne wejście Vite, logowanie, nagłówki, lista projektów | ✅ STEP 4 |
+| 5 | Projekty w UI: tworzenie, edycja, archiwizacja, przypisywanie klientów | ✅ STEP 4 (bez przypisywania w UI — na razie `wp osf-seo project:assign`) |
 | 6 | Google OAuth: PKCE/state, szyfrowanie tokenów, callback, połączenia | — |
 | 7 | Wybór property GSC | — |
 | 8 | Klient GSC API: paginacja, błędy, backoff, `wp osf-seo gsc:probe` | — |

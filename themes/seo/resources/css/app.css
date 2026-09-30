@@ -5,6 +5,13 @@
 @source "../../app/**/*.php";
 @source "../js/**/*.{js,ts,jsx,tsx}";
 
+/* Panel OSF SEO ma własne wejście CSS (panel.css) — jego klasy nie trafiają do CSS strony. */
+@source not "../views/panel";
+@source not "../views/components/panel";
+@source not "../../app/Http";
+@source not "../../app/Panel";
+@source not "../js/panel.js";
+
 /* Twoje “źródłowe” zmienne RGB */
 :root {
   /* base */

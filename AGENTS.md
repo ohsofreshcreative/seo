@@ -157,22 +157,33 @@ Motyw powstał z marketingowego motywu `h2otwock` i wciąż zawiera jego kod: bl
 
 ## 8. Panel (UI w motywie) — konwencje
 
-Panel powstaje w MVP 1 (krok 4). Obowiązują proste zasady:
+Fundament panelu powstał w STEP 4 (`docs/ARCHITECTURE.md`, sekcje 4.1–4.4). Obowiązują proste zasady:
 
 1. UI po polsku; kod, trasy, klasy, pola i tabele po angielsku.
 2. Standardowe utilities Tailwind bez ograniczeń legacy (`text-sm`, `font-medium`, `rounded-*` itd.),
    gdy są uzasadnione UI. Nie komplikuj design systemu.
-3. Powtarzalne elementy → komponenty Blade `resources/views/components/panel/*` (`<x-panel.* />`),
+3. Powtarzalne elementy → komponenty Blade `resources/views/components/panel/*` (`<x-panel.* />`:
+   `button`, `card`, `page-header`, `field`, `badge`, `flash`, `empty-state`, `nav-link`, `nonce`),
    nie `@apply` ani własne klasy. Własny CSS tylko, gdy utilities nie wystarczają.
-4. Tokeny kolorów w jednym bloku `@theme` wejścia CSS panelu; bez hexów w Blade; bez dark mode w MVP.
-5. Kontrolery cienkie, bez SQL — dane z usług pluginu.
+4. Tokeny kolorów (`brand-*`) w bloku `@theme` w `resources/css/panel.css`; bez hexów w Blade;
+   bez dark mode w MVP. `panel.css` skanuje tylko pliki panelu (`source(none)` + `@source`),
+   a `app.css` motywu wyklucza je (`@source not`) — CSS strony i panelu się nie mieszają.
+5. Kontrolery (`app/Http/Controllers/Panel`) cienkie, bez SQL — dane z usług pluginu.
 6. Frazy i URL-e z GSC to dane zewnętrzne: zawsze `{{ }}`; `{!! !!}` tylko dla zaufanego HTML z kodu;
    linki tylko `http(s)` z `rel="noopener noreferrer"`.
-7. Każda trasa projektu przechodzi przez middleware `ResolveProject`; surowe ID z URL nigdy nie
-   trafia do zapytań.
-8. Bez CDN, zewnętrznych skryptów i fontów (self-host). Strony panelu: `noindex`,
-   `Cache-Control: private, no-store`.
-9. JS: Alpine + Chart.js ładowany per widok. Bez Reacta i jQuery.
+7. Każda trasa projektu przechodzi przez middleware `ResolveProject` (opcjonalnie z capability,
+   np. `ResolveProject::class . ':osf_seo_manage_projects'`); kontekst z
+   `$request->attributes->get(ResolveProject::ATTRIBUTE)`. Surowe ID z URL nigdy nie trafia do zapytań.
+8. Trasy poza `/login` są w grupie `[Authenticate, VerifyNonce]`. Każdy formularz POST zawiera
+   `<x-panel.nonce />`. Middleware globalne (`PanelMiddleware::GLOBAL`): nagłówki bezpieczeństwa,
+   `UnslashInput` (cofa `wp_magic_quotes`), `RequirePlugin` (503 bez pluginu).
+9. Bez sesji Laravela: logowanie = ciasteczko WordPressa (`wp_signon`), CSRF = nonce WP + kontrola
+   Origin/Referer, komunikaty flash = `App\Panel\Flash` (transient per użytkownik).
+10. Adresy przez `App\Panel\PanelUrl` (względem `home_url()`), błędy przez `App\Panel\PanelResponse`.
+11. Layout panelu (`panel/layouts/base`) nie woła `wp_head()`/`wp_footer()` — bez CDN, GTM, fontów
+    zewnętrznych i skryptów motywu. Strony panelu: `noindex`, `Cache-Control: private, no-store`.
+12. JS: Alpine (`resources/js/panel.js`); Chart.js dopiero z wykresami. Bez Reacta i jQuery.
+13. Panel wymaga „ładnych” odnośników WordPressa (Ustawienia → Bezpośrednie odnośniki ≠ „Prosty”).
 
 ⸻
 

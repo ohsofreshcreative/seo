@@ -1,4 +1,8 @@
 {
+  "_module.esm-BAvuMQKY.js": {
+    "file": "assets/module.esm-BAvuMQKY.js",
+    "name": "module.esm"
+  },
   "_navigation-_Ms0R5o1.css": {
     "file": "assets/navigation-_Ms0R5o1.css",
     "src": "_navigation-_Ms0R5o1.css"
@@ -62,6 +66,15 @@
       "assets/cta-mask-DkOSFVpY.svg"
     ]
   },
+  "resources/css/panel.css": {
+    "file": "assets/panel-BIC0OPz_.css",
+    "name": "panel",
+    "names": [
+      "panel.css"
+    ],
+    "src": "resources/css/panel.css",
+    "isEntry": true
+  },
   "resources/images/bottom-arrow.svg": {
     "file": "assets/bottom-arrow-BE5KB43S.svg",
     "src": "resources/images/bottom-arrow.svg"
@@ -79,10 +92,13 @@
     "src": "resources/images/pointer.svg"
   },
   "resources/js/app.js": {
-    "file": "assets/app-BMbc4myF.js",
+    "file": "assets/app-DOjETUl4.js",
     "name": "app",
     "src": "resources/js/app.js",
     "isEntry": true,
+    "imports": [
+      "_module.esm-BAvuMQKY.js"
+    ],
     "dynamicImports": [
       "resources/js/blocks/reviews.js",
       "resources/js/blocks/tabs.js",
@@ -230,5 +246,14 @@
     "name": "editor",
     "src": "resources/js/editor.js",
     "isEntry": true
+  },
+  "resources/js/panel.js": {
+    "file": "assets/panel-BrL_6FQw.js",
+    "name": "panel",
+    "src": "resources/js/panel.js",
+    "isEntry": true,
+    "imports": [
+      "_module.esm-BAvuMQKY.js"
+    ]
   }
 }

@@ -35,6 +35,12 @@ Application::configure()
 	->withProviders([
 		App\Providers\ThemeServiceProvider::class,
 	])
+	// Panel OSF SEO: trasy Acorn bez domyślnej grupy `web` Laravela (sesje, szyfrowane ciasteczka,
+	// APP_KEY) — logowanie, CSRF (nonce) i komunikaty flash obsługuje WordPress.
+	->withRouting(using: function () {
+		Illuminate\Support\Facades\Route::middleware(App\Http\Middleware\Panel\PanelMiddleware::GLOBAL)
+			->group(base_path('routes/web.php'));
+	})
 	->boot();
 
 /*

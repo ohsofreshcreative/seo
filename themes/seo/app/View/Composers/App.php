@@ -22,10 +22,19 @@ class App extends Composer
 	{
 		return [
 			'siteName' => $this->siteName(),
-			'logo' => get_field('logo', 'option'),
-			'logo_footer' => get_field('logo_footer', 'option'),
-			'footer_contact' => get_field('footer_contact', 'option'),
+			'logo' => $this->option('logo'),
+			'logo_footer' => $this->option('logo_footer'),
+			'footer_contact' => $this->option('footer_contact'),
 		];
+	}
+
+	/**
+	 * Opcja ACF albo null — composer działa dla wszystkich widoków (także panelu OSF SEO),
+	 * a instalacja aplikacji nie wymaga ACF.
+	 */
+	private function option(string $name): mixed
+	{
+		return function_exists('get_field') ? get_field($name, 'option') : null;
 	}
 
 	/**

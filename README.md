@@ -60,6 +60,11 @@ Root repozytorium odpowiada katalogowi `wp-content/` instalacji WordPress — be
    ```
 
 4. W panelu WordPress aktywuj motyw `seo` i plugin `OSF SEO`.
+5. Włącz „ładne” odnośniki (Ustawienia → Bezpośrednie odnośniki → np. „Nazwa wpisu”) — panel działa
+   pod ścieżkami `/login`, `/projects`… obsługiwanymi przez router Acorn.
+6. Panel: `https://<twoja-strona>/login` (konto z rolą Administrator, `OSF SEO — Administrator`
+   albo `OSF SEO — Klient`). Klientów przypisuje się do projektów przez
+   `wp osf-seo project:assign <public_id> <login>`.
 
 ### Migracja z dotychczasowej kopii roboczej (repo w `themes/seo`)
 

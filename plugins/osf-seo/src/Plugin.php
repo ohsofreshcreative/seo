@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace OsfSeo;
 
+use OsfSeo\Auth\LoginThrottle;
 use OsfSeo\Auth\ProjectGuard;
 use OsfSeo\Auth\RoleManager;
+use OsfSeo\Auth\WpAdminAccess;
 use OsfSeo\Auth\WpRoleStore;
 use OsfSeo\Cli\DbCommand;
 use OsfSeo\Cli\ProjectCommand;
@@ -24,7 +26,7 @@ use OsfSeo\Support\SystemClock;
 final class Plugin
 {
 	/** Musi być zgodna z nagłówkiem `Version` w osf-seo.php (pilnuje tego test). */
-	public const VERSION = '0.3.0';
+	public const VERSION = '0.4.0';
 
 	public const MIN_PHP = '8.2';
 
@@ -72,6 +74,7 @@ final class Plugin
 			$c->get(Connection::class),
 			$c->get(Clock::class),
 		));
+		$container->singleton(LoginThrottle::class, static fn (): LoginThrottle => new LoginThrottle());
 		$container->singleton(ProjectGuard::class, static fn (Container $c): ProjectGuard => new ProjectGuard($c->get(ProjectRepository::class)));
 		$container->singleton(ProjectService::class, static fn (Container $c): ProjectService => new ProjectService(
 			$c->get(ProjectRepository::class),
@@ -91,6 +94,8 @@ final class Plugin
 		$this->booted = true;
 
 		$this->get(Installer::class)->maybeUpgrade();
+
+		WpAdminAccess::register();
 
 		add_action('deleted_user', function (int $userId): void {
 			$this->get(ProjectService::class)->forgetDeletedUser($userId);

@@ -1,0 +1,30 @@
+/*
+ * Panel OSF SEO — osobne wejście CSS (bez marketingowego design systemu motywu).
+ * Źródła klas tylko z widoków panelu, jego komponentów i PHP panelu (source(none) wyłącza
+ * automatyczne skanowanie całego motywu i dokumentacji).
+ */
+@import 'tailwindcss' source(none);
+
+@source '../views/panel';
+@source '../views/components/panel';
+@source '../../app/Http';
+@source '../../app/Panel';
+
+@plugin '@tailwindcss/forms';
+
+@theme {
+  --font-sans: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+
+  --color-brand-50: #eef5fc;
+  --color-brand-100: #d7e6f6;
+  --color-brand-200: #afcdec;
+  --color-brand-500: #2f6aa3;
+  --color-brand-600: #1f5285;
+  --color-brand-700: #1a3955;
+  --color-brand-800: #132b40;
+  --color-brand-900: #0d1d2b;
+}
+
+[x-cloak] {
+  display: none !important;
+}
