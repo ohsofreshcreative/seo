@@ -4,21 +4,27 @@ declare(strict_types=1);
 
 namespace OsfSeo;
 
+use OsfSeo\Auth\ProjectGuard;
 use OsfSeo\Auth\RoleManager;
 use OsfSeo\Auth\WpRoleStore;
 use OsfSeo\Cli\DbCommand;
+use OsfSeo\Cli\ProjectCommand;
 use OsfSeo\Cli\StatusCommand;
 use OsfSeo\Database\Connection;
 use OsfSeo\Database\Migrator;
 use OsfSeo\Database\SchemaInspector;
+use OsfSeo\Projects\ProjectRepository;
+use OsfSeo\Projects\ProjectService;
 use OsfSeo\Setup\Installer;
+use OsfSeo\Support\Clock;
 use OsfSeo\Support\Config;
 use OsfSeo\Support\Logger;
+use OsfSeo\Support\SystemClock;
 
 final class Plugin
 {
 	/** Musi być zgodna z nagłówkiem `Version` w osf-seo.php (pilnuje tego test). */
-	public const VERSION = '0.2.0';
+	public const VERSION = '0.3.0';
 
 	public const MIN_PHP = '8.2';
 
@@ -48,6 +54,7 @@ final class Plugin
 		$container = new Container();
 
 		$container->singleton(Config::class, static fn (): Config => new Config());
+		$container->singleton(Clock::class, static fn (): Clock => new SystemClock());
 		$container->singleton(Logger::class, static fn (Container $c): Logger => Logger::fromConfig($c->get(Config::class)));
 		$container->singleton(Connection::class, static fn (): Connection => Connection::fromGlobals());
 		$container->singleton(Migrator::class, static fn (Container $c): Migrator => new Migrator(
@@ -59,6 +66,16 @@ final class Plugin
 		$container->singleton(Installer::class, static fn (Container $c): Installer => new Installer(
 			$c->get(RoleManager::class),
 			$c->get(Migrator::class),
+			$c->get(Logger::class),
+		));
+		$container->singleton(ProjectRepository::class, static fn (Container $c): ProjectRepository => new ProjectRepository(
+			$c->get(Connection::class),
+			$c->get(Clock::class),
+		));
+		$container->singleton(ProjectGuard::class, static fn (Container $c): ProjectGuard => new ProjectGuard($c->get(ProjectRepository::class)));
+		$container->singleton(ProjectService::class, static fn (Container $c): ProjectService => new ProjectService(
+			$c->get(ProjectRepository::class),
+			$c->get(ProjectGuard::class),
 			$c->get(Logger::class),
 		));
 
@@ -75,9 +92,14 @@ final class Plugin
 
 		$this->get(Installer::class)->maybeUpgrade();
 
+		add_action('deleted_user', function (int $userId): void {
+			$this->get(ProjectService::class)->forgetDeletedUser($userId);
+		});
+
 		if (defined('WP_CLI') && WP_CLI) {
 			StatusCommand::register($this);
 			DbCommand::register($this);
+			ProjectCommand::register($this);
 		}
 	}
 

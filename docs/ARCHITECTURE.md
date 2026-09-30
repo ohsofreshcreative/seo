@@ -123,12 +123,12 @@ plugins/osf-seo/
 ├── composer.json        # PSR-4 OsfSeo\ → src/ (Composer tylko dla narzędzi dev)
 ├── src/
 │   ├── Plugin.php, Container.php, Autoloader.php, functions.php (osf_seo())
-│   ├── Auth/            # Capabilities, Roles, RoleManager, RoleStore/WpRoleStore (+ MVP 1: ProjectGuard, ProjectContext)
+│   ├── Auth/            # Capabilities, Roles, RoleManager, ProjectGuard, ProjectContext, ProjectNotFound, AccessDenied
 │   ├── Setup/           # Lifecycle (aktywacja/dezaktywacja), Installer (instalacja i aktualizacje, bez usuwania danych)
 │   ├── Support/         # Config (stałe/env), Logger, Redactor (maskowanie sekretów)
-│   ├── Cli/             # wp osf-seo status, db:migrate, db:status
+│   ├── Cli/             # wp osf-seo status, db:migrate, db:status, project:list|create|assign|unassign
 │   ├── Database/        # Connection ($wpdb + wyjątki), Migrator, Migrations/, Schema (spec), SchemaInspector
-│   ├── Projects/        # (MVP 1)
+│   ├── Projects/        # Project, ProjectRepository, ProjectService, DomainNormalizer, statusy i role
 │   ├── Google/          # (MVP 1) OAuth, TokenVault, połączenia
 │   ├── Gsc/             # (MVP 1) klient API, importery
 │   ├── Sync/            # (MVP 1) planowanie i wykonywanie synchronizacji
@@ -176,9 +176,30 @@ Zaimplementowane w STEP 1 (`plugins/osf-seo/src/Auth`). Kod sprawdza **capabilit
   brakujące uprawnienia są dodawane, a nadmiarowe usuwane z ról `osf_seo_*` (definicja w kodzie
   jest źródłem prawdy).
 - Dezaktywacja pluginu niczego nie usuwa (role, opcje, w przyszłości dane i tokeny zostają).
-- Dostęp do projektu (MVP 1): `ProjectGuard::authorize(public_id, capability)` → `ProjectContext`
-  albo 404; użytkownik bez `osf_seo_view_all_projects` widzi tylko projekty z `osf_project_users`.
-  Test automatyczny przechodzi po wszystkich trasach jako użytkownik A i sprawdza 404 dla projektów B.
+### 5.1 Dostęp do projektów (STEP 3)
+
+`OsfSeo\Auth\ProjectGuard` jest jedyną bramą: `authorize(public_id, user_id, capability)` → `ProjectContext`.
+
+| Kto | Widzi |
+|---|---|
+| `osf_seo_view_all_projects` (administrator, `osf_seo_admin`) | wszystkie projekty, także zarchiwizowane |
+| pozostali z `osf_seo_access` (`osf_seo_client`) | wyłącznie projekty przypisane w `osf_project_users`, bez zarchiwizowanych |
+| bez `osf_seo_access` | nic (nawet przy wpisie w `osf_project_users`) |
+
+- Filtr widoczności jest w SQL (`ProjectRepository`), nie w PHP po pobraniu danych.
+- Brak dostępu jest nieodróżnialny od nieistnienia: `ProjectNotFound` (ta sama klasa, komunikat
+  i kod) → **404**. Najpierw widoczność, potem uprawnienie — obcy projekt nigdy nie daje 403.
+- Projekt widoczny, ale brak capability do operacji (np. klient próbuje edytować) → `AccessDenied` → **403**.
+- `ProjectContext` ma prywatny konstruktor — tworzy go wyłącznie `ProjectGuard`, więc usługi
+  przyjmujące kontekst nie mogą zostać wywołane dla projektu bez autoryzacji. Nie ma publicznej
+  metody pobierającej projekt po wewnętrznym ID; w URL-ach wyłącznie `public_id` (ULID).
+- Mutacje w `ProjectService` dodatkowo sprawdzają capability (obrona w głąb).
+- Rola w projekcie (`manager`/`viewer`) jest zapisywana i dostępna w kontekście; w MVP zmiany danych
+  wymagają globalnych capabilities (rozróżnienie ról — panel klienta, MVP 4).
+- Dostęp systemowy (bez użytkownika) tylko z WP-CLI (`authorizeSystem`).
+- Usunięcie konta WordPress usuwa jego przypisania do projektów (hook `deleted_user`).
+- Testy IDOR (`tests/Integration/Projects/ProjectAuthorizationTest.php`) sprawdzają m.in. surowe ID,
+  manipulacje identyfikatorem, zarchiwizowane projekty, brak `osf_seo_access` i nieodróżnialność błędów.
 
 ## 6. Model danych
 
@@ -475,7 +496,7 @@ Warianty docelowe:
 | 0 | Reorganizacja repo, bezpieczeństwo sekretów, dokumentacja | ✅ |
 | 1 | Fundament pluginu: bootstrap, autoloader, kontener, role i capabilities, logger, PHPUnit, `wp osf-seo status` | ✅ STEP 1 |
 | 2 | Instalator schematu i migracje tabel MVP 1 (`db:migrate`, `db:status`) | ✅ STEP 2 |
-| 3 | Domena projektów: repozytorium, `ProjectGuard`, `ProjectContext`, przypisania użytkowników, CLI | — |
+| 3 | Domena projektów: repozytorium, `ProjectGuard`, `ProjectContext`, przypisania użytkowników, CLI | ✅ STEP 3 |
 | 4 | Powłoka panelu w Sage: routing, layout, osobne wejście Vite, logowanie, nagłówki, lista projektów | — |
 | 5 | Projekty w UI: tworzenie, edycja, archiwizacja, przypisywanie klientów | — |
 | 6 | Google OAuth: PKCE/state, szyfrowanie tokenów, callback, połączenia | — |

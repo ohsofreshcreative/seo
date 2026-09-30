@@ -95,7 +95,11 @@ Motyw powstał z marketingowego motywu `h2otwock` i wciąż zawiera jego kod: bl
   przewiduje je architektura (docelowo Action Scheduler — jeszcze nie dodany).
 - Motyw korzysta z pluginu przez `osf_seo()` (kontener usług) — sprawdzaj `function_exists('osf_seo')`.
 - Dane SEO wyłącznie we własnych tabelach `{$wpdb->prefix}osf_*` — nigdy w posts/postmeta/ACF.
-- Dostęp do projektu wyłącznie przez `ProjectGuard` → `ProjectContext`; brak dostępu = 404.
+- Dostęp do projektu wyłącznie przez `ProjectGuard` → `ProjectContext`; brak dostępu = 404
+  (`ProjectNotFound`), brak uprawnienia do operacji na widocznym projekcie = 403 (`AccessDenied`).
+  Usługi operujące na projekcie przyjmują `ProjectContext`, nigdy surowe ID. Nie dodawaj metod
+  pobierających projekt po wewnętrznym ID bez filtra widoczności. Każda zmiana autoryzacji wymaga
+  zielonego `ProjectAuthorizationTest` (test IDOR).
   `public_id` (ULID) tylko utrudnia enumerację — zabezpieczeniem zawsze jest autoryzacja.
 - Uprawnienia sprawdzaj przez capabilities (`current_user_can`), nigdy przez nazwę roli.
 
@@ -195,6 +199,10 @@ composer test:integration   # prawdziwy WordPress + OSOBNA testowa baza MySQL/Ma
 wp osf-seo status     # stan pluginu (kod wyjścia 1, gdy kontrola nie przejdzie); --format=json
 wp osf-seo db:migrate # oczekujące migracje (idempotentne)
 wp osf-seo db:status  # wersja schematu i stan tabel; --format=json
+wp osf-seo project:list [--status=…]            # projekty widoczne dla --user (bez --user: wszystkie)
+wp osf-seo project:create --name=… --domain=…   # --porcelain zwraca public_id
+wp osf-seo project:assign <public_id> <user> [--role=viewer|manager]
+wp osf-seo project:unassign <public_id> <user>
 ```
 
 Testy integracyjne czyszczą i usuwają tabele — **nigdy nie wskazuj bazy strony**. Zmienne:

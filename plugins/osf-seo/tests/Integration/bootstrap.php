@@ -35,6 +35,12 @@ $GLOBALS['wp_filter']['deprecated_function_run'][10][] = [
 	'accepted_args' => 1,
 ];
 
+// Testy tworzą wielu użytkowników — minimalny koszt bcrypt (tylko w testach) skraca czas kilkukrotnie.
+$GLOBALS['wp_filter']['wp_hash_password_options'][10][] = [
+	'function' => static fn (array $options): array => ['cost' => 4] + $options,
+	'accepted_args' => 1,
+];
+
 require ABSPATH . 'wp-settings.php';
 
 // Plugin ładujemy ręcznie (nie jest aktywny w testowej instalacji) — hook plugins_loaded już minął,

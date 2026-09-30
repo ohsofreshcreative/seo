@@ -55,6 +55,8 @@ define('WP_ENVIRONMENT_TYPE', 'local');
 define('DISABLE_WP_CRON', true);
 define('WP_HTTP_BLOCK_EXTERNAL', true);
 define('AUTOMATIC_UPDATER_DISABLED', true);
+// Logger pluginu z kontenera — tylko błędy (testy logowania używają własnego loggera).
+define('OSF_SEO_LOG_LEVEL', 'error');
 
 $_SERVER['HTTP_HOST'] = 'osf-seo.test';
 $_SERVER['SERVER_NAME'] = 'osf-seo.test';
