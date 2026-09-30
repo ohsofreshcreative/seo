@@ -6,11 +6,11 @@ import path from 'path'
 
 export default defineConfig(({ command, mode }) => {
   const env = loadEnv(mode, process.cwd(), '')
-  const wpOrigin = env.WP_HOME || 'http://h2otwock.local'
+  const wpOrigin = env.WP_HOME || 'http://seo.local'
 
   return {
     server: {
-      host: 'h2otwock.local',
+      host: 'seo.local',
       port: 6011,
       strictPort: true,
       cors: true,
@@ -22,13 +22,13 @@ export default defineConfig(({ command, mode }) => {
       },
       hmr: {
         protocol: 'ws',
-        host: 'h2otwock.local',
+        host: 'seo.local',
         port: 6011,
       },
     },
 
     base: command === 'build'
-      ? '/wp-content/themes/h2otwock/public/build/'
+      ? '/wp-content/themes/seo/public/build/'
       : '/build/',
 
     plugins: [
