@@ -1,31 +1,120 @@
-<p align="center">
-  <a href="https://roots.io/sage/"><img alt="Sage" src="https://cdn.roots.io/app/uploads/logo-sage.svg" height="100"></a>
-</p>
+# OSF SEO
 
-<p align="center">
-  <a href="https://packagist.org/packages/roots/sage"><img alt="Packagist Installs" src="https://img.shields.io/packagist/dt/roots/sage?label=projects%20created&colorB=2b3072&colorA=525ddc&style=flat-square"></a>
-  <a href="https://github.com/roots/sage/actions/workflows/main.yml"><img alt="Build Status" src="https://img.shields.io/github/actions/workflow/status/roots/sage/main.yml?branch=main&logo=github&label=CI&style=flat-square"></a>
-  <a href="https://bsky.app/profile/roots.dev"><img alt="Follow roots.dev on Bluesky" src="https://img.shields.io/badge/follow-@roots.dev-0085ff?logo=bluesky&style=flat-square"></a>
-</p>
+Wewnętrzne narzędzie SEO agencji OhSoFresh: projekty klientów połączone z Google Search Console,
+automatyczne wykrywanie fraz, porównania okresów, wzrosty i spadki, szanse SEO oraz dashboardy.
+Jedynym źródłem danych w MVP jest Google Search Console API — koszt zewnętrznych usług: 0 zł.
 
-# Sage
+> **Status:** fundament. Aplikacja nie ma jeszcze panelu ani integracji z Google — plan i postęp
+> prac: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
+>
+> **Repozytorium jest publiczne.** Nie commituj żadnych sekretów (sekcja „Konfiguracja”).
 
-**Advanced hybrid WordPress starter theme with Laravel Blade and Tailwind CSS**
+## Struktura
 
-- 🔧 Clean, efficient theme templating with Laravel Blade
-- ⚡️ Modern front-end development workflow powered by Vite
-- 🎨 Out of the box support for Tailwind CSS
-- 🚀 Harness the power of Laravel with [Acorn integration](https://github.com/roots/acorn)
-- 📦 Block editor support built-in
+Root repozytorium odpowiada katalogowi `wp-content/` instalacji WordPress — bez symlinków.
 
-Sage brings proper PHP templating and modern JavaScript tooling to WordPress themes. Write organized, component-based code using Laravel Blade, enjoy instant builds and CSS hot-reloading with Vite, and leverage Laravel's robust feature set through Acorn.
+```
+<root repo> = wp-content/
+├── plugins/osf-seo/     # plugin: cała logika aplikacji (projekty, GSC, synchronizacja, analityka)
+├── themes/seo/          # motyw Sage 11: UI panelu (Blade, Tailwind, Alpine)
+├── docs/                # architektura, decyzje, roadmapa
+├── AGENTS.md            # instrukcje dla agentów AI (CLAUDE.md go importuje)
+└── README.md
+```
 
-[Read the docs to get started](https://roots.io/sage/docs/installation/)
+`.gitignore` działa jak whitelista: poza powyższymi ścieżkami wszystko w `wp-content/`
+(uploads, inne pluginy, cache) jest ignorowane.
 
-## Sponsors
+## Wymagania
 
-Sage is an open source project and completely free to use. If you've benefited from our projects and would like to support our future endeavors, [please consider sponsoring us](https://github.com/sponsors/roots).
+- PHP 8.2+, WordPress 6.6+, MySQL/MariaDB
+- Composer 2
+- Node.js 20+ i yarn (motyw)
 
-<div align="center">
-<a href="https://carrot.com/"><img src="https://cdn.roots.io/app/uploads/carrot.svg" alt="Carrot" width="120" height="90"></a> <a href="https://wordpress.com/"><img src="https://cdn.roots.io/app/uploads/wordpress.svg" alt="WordPress.com" width="120" height="90"></a> <a href="https://worksitesafety.ca/careers/"><img src="https://cdn.roots.io/app/uploads/worksite-safety.svg" alt="Worksite Safety" width="120" height="90"></a> <a href="https://40q.agency/"><img src="https://cdn.roots.io/app/uploads/40q.svg" alt="40Q" width="120" height="90"></a> <a href="https://www.itineris.co.uk/"><img src="https://cdn.roots.io/app/uploads/itineris.svg" alt="Itineris" width="120" height="90"></a> <a href="https://bonsai.so/"><img src="https://cdn.roots.io/app/uploads/bonsai.svg" alt="Bonsai" width="120" height="90"></a>
-</div>
+## Uruchomienie lokalne (LocalWP)
+
+### Nowa strona w Local
+
+1. Utwórz stronę w Local (np. `seo.local`) i uruchom ją.
+2. Zamień jej katalog `wp-content` w kopię roboczą repozytorium:
+
+   ```bash
+   cd "<ścieżka strony>/app/public/wp-content"
+   git init
+   git remote add origin https://github.com/ohsofreshcreative/seo.git
+   git fetch origin
+   git switch -c <branch> --track origin/<branch>
+   ```
+
+   `<branch>` to `main` po zmergowaniu reorganizacji repozytorium — do tego czasu `main` ma
+   jeszcze starą strukturę (motyw w roocie), więc użyj brancha roboczego.
+   Pliki WordPressa spoza whitelisty (uploads, domyślne motywy, `index.php`) zostają nietknięte.
+3. Zainstaluj zależności motywu i zbuduj assety:
+
+   ```bash
+   cd themes/seo
+   composer install
+   yarn install
+   yarn build
+   ```
+
+4. W panelu WordPress aktywuj motyw `seo` i plugin `OSF SEO`.
+
+### Migracja z dotychczasowej kopii roboczej (repo w `themes/seo`)
+
+Do tej pory root repozytorium był katalogiem motywu. Po reorganizacji:
+
+```bash
+cd "<ścieżka strony>/app/public/wp-content"
+
+# 1. Odłóż starą kopię roboczą (ma własne .git, vendor/, node_modules/, ewentualnie .env i deploy/)
+mv themes/seo ../seo-theme-old
+
+# 2. Zamień wp-content w kopię roboczą repozytorium
+git init
+git remote add origin https://github.com/ohsofreshcreative/seo.git
+git fetch origin
+git switch -c <branch> --track origin/<branch>
+
+# 3. Zależności motywu (albo przenieś vendor/ i node_modules/ ze starej kopii)
+cd themes/seo && composer install && yarn install
+
+# 4. Przenieś lokalne, nieśledzone pliki ze starej kopii, jeśli istnieją (np. .env, deploy/)
+```
+
+Gdy wszystko działa, usuń `../seo-theme-old`.
+
+## Komendy
+
+```bash
+# motyw
+cd themes/seo
+yarn dev          # Vite dev server z HMR
+yarn build        # build produkcyjny → public/build (śledzony w gicie)
+```
+
+WP-CLI w Local wymaga socketu MySQL strony — gotowy szablon komendy jest w `AGENTS.md`.
+
+## Konfiguracja
+
+Sekrety i konfigurację środowiska ustawiamy **wyłącznie** w `wp-config.php` (poza repozytorium)
+lub w zmiennych środowiskowych. Przykłady zawierają tylko placeholdery:
+
+```php
+// wp-config.php — przyszłe stałe (integracja Google powstaje w MVP 1)
+define('OSF_SEO_GOOGLE_CLIENT_ID', 'your-client-id');
+define('OSF_SEO_GOOGLE_CLIENT_SECRET', 'your-client-secret');
+define('OSF_SEO_ENCRYPTION_KEY', 'your-encryption-key');
+```
+
+Pełna lista stałych: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md), sekcja 12.
+
+## Bezpieczeństwo
+
+- Repozytorium jest publiczne: żadnych sekretów w kodzie, testach, fixture'ach, dokumentacji
+  i historii Git.
+- Zgłoszenia problemów bezpieczeństwa kieruj bezpośrednio do zespołu OhSoFresh, nie przez publiczne issues.
+
+## Licencja
+
+Motyw bazuje na [Sage](https://roots.io/sage/) (licencja MIT — `themes/seo/LICENSE.md`).

@@ -1,0 +1,71 @@
+# Root repozytorium = katalog wp-content/ instalacji WordPress
+# (LocalWP: app/public/wp-content). Działa jak whitelist: wszystko jest
+# ignorowane poza jawnie dopuszczonymi ścieżkami, więc uploads/, inne
+# pluginy, cache, logi itp. nigdy nie trafią do repozytorium.
+# Nowy katalog w roocie wymaga dopisania wyjątku poniżej.
+
+/*
+!/.editorconfig
+!/.gitignore
+!/.github/
+!/AGENTS.md
+!/CLAUDE.md
+!/README.md
+!/docs/
+
+!/themes/
+/themes/*
+!/themes/seo/
+
+!/plugins/
+/plugins/*
+!/plugins/osf-seo/
+
+# === Sekrety — repozytorium jest PUBLICZNE ===
+# Sekrety konfigurujemy wyłącznie w wp-config.php lub w zmiennych
+# środowiskowych. Nigdy nie commituj ich z `git add -f`.
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+*.p12
+*.pfx
+id_rsa*
+id_dsa*
+id_ecdsa*
+id_ed25519*
+key
+key.pub
+auth.json
+credentials.json
+secrets.*
+.git-credentials
+.htpasswd
+sftp-config.json
+.ftpconfig
+wp-config.php
+*.sql
+*.sql.gz
+
+# === Zależności, cache i narzędzia ===
+node_modules/
+vendor/
+.phpunit.cache/
+.phpunit.result.cache
+*.log
+
+# === LocalWP ===
+.local
+.localwp
+run/
+*.sock
+*.pid
+*.pid.lock
+
+# === System i edytory ===
+.DS_Store
+*.swp
+*.swo
+.idea/
+.vscode/
