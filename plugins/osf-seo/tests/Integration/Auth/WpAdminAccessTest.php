@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace OsfSeo\Tests\Integration\Auth;
 
+use OsfSeo\Auth\RoleManager;
 use OsfSeo\Auth\WpAdminAccess;
+use OsfSeo\Auth\WpRoleStore;
 use OsfSeo\Tests\Integration\IntegrationTestCase;
 
 /**
@@ -17,6 +19,8 @@ final class WpAdminAccessTest extends IntegrationTestCase
 	{
 		parent::setUp();
 
+		// Role pluginu muszą istnieć niezależnie od kolejności testów (świeża baza w CI).
+		(new RoleManager(new WpRoleStore()))->sync();
 		WpAdminAccess::register();
 	}
 
