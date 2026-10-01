@@ -30,6 +30,9 @@ final class Capabilities
 	/** Prowadzi szanse SEO: status, notatki, data wdrożenia, ręczne przeliczanie. */
 	public const MANAGE_OPPORTUNITIES = 'osf_seo_manage_opportunities';
 
+	/** Uruchamia płatną synchronizację danych rynkowych fraz (DataForSEO) i widzi jej koszty. */
+	public const MANAGE_MARKET_DATA = 'osf_seo_manage_market_data';
+
 	/**
 	 * @return list<string>
 	 */
@@ -43,6 +46,7 @@ final class Capabilities
 			self::MANAGE_USERS,
 			self::MANAGE_SETTINGS,
 			self::MANAGE_OPPORTUNITIES,
+			self::MANAGE_MARKET_DATA,
 		];
 	}
 }

@@ -68,7 +68,7 @@ $timer = static function (callable $callback, int $runs = 3): array {
 	return [$times[intdiv(count($times), 2)], $result];
 };
 
-const OSF_SEO_BENCHMARK_TABLES = ['projects', 'keywords', 'pages', 'gsc_site_daily', 'gsc_query_daily', 'gsc_query_page_daily', 'opportunities', 'opportunity_detections', 'opportunity_analyses'];
+const OSF_SEO_BENCHMARK_TABLES = ['projects', 'keywords', 'pages', 'gsc_site_daily', 'gsc_query_daily', 'gsc_query_page_daily', 'opportunities', 'opportunity_detections', 'opportunity_analyses', 'market_keywords', 'market_keyword_monthly', 'market_tasks', 'market_sync_state'];
 
 foreach (OSF_SEO_BENCHMARK_TABLES as $table) {
 	$db->execute("TRUNCATE TABLE `{$db->table($table)}`");
@@ -196,13 +196,50 @@ $db->execute(
 	SELECT id, p.days, project_id, last_priority, 2, 100, 5, %s, page_url, %s, %s FROM `' . $db->table('opportunities') . '` JOIN (SELECT 7 AS days UNION ALL SELECT 28 UNION ALL SELECT 90) p WHERE project_id = %d',
 	[$latest, '{}', $now, $noiseProject],
 );
+// Dane rynkowe (STEP 12): 70% fraz projektu z metrykami na rynku PL (+ historia 12 mies. dla 5000), 200 000 fraz
+// innego rynku (DE) w tej samej tabeli — sprawdza, że złączenie i wybór kandydatów nie skanują cudzych rynków.
+$marketStart = microtime(true);
+$marketInsert = new BulkInsert($db, $db->table('market_keywords'), ['provider', 'location_code', 'language_code', 'keyword_key', 'keyword', 'search_volume', 'keyword_difficulty', 'cpc', 'volume_fetched_at', 'volume_stale_after', 'difficulty_fetched_at', 'difficulty_stale_after', 'created_at', 'updated_at'], ['%s', '%d', '%s', 'UNHEX(%s)', '%s', '%d', '%d', '%f', '%s', '%s', '%s', '%s', '%s', '%s']);
+$stale = gmdate('Y-m-d H:i:s', time() + 30 * 86400);
+
+for ($i = 1; $i <= $keywordCount; $i++) {
+	if ($i % 10 < 7) {
+		$text = 'fraza testowa ' . $i;
+		$marketInsert->add(['dataforseo', 2616, 'pl', md5($text), $text, ($i * 37) % 20000, $i % 101, ($i % 500) / 100, $now, $stale, $now, $stale, $now, $now]);
+	}
+}
+
+for ($i = 1; $i <= 200000; $i++) {
+	$marketInsert->add(['dataforseo', 2276, 'de', md5('fraza testowa ' . $i), 'fraza testowa ' . $i, $i % 5000, $i % 101, 1.0, $now, $stale, $now, $stale, $now, $now]);
+}
+
+$marketInsert->flush();
+$db->execute(
+	'INSERT INTO `' . $db->table('market_keyword_monthly') . '` (market_keyword_id, month, search_volume, updated_at)
+	SELECT m.id, DATE_SUB(%s, INTERVAL n.n MONTH), m.search_volume, %s FROM `' . $db->table('market_keywords') . '` m
+	JOIN (SELECT 0 AS n UNION ALL SELECT 1 UNION ALL SELECT 2 UNION ALL SELECT 3 UNION ALL SELECT 4 UNION ALL SELECT 5 UNION ALL SELECT 6 UNION ALL SELECT 7 UNION ALL SELECT 8 UNION ALL SELECT 9 UNION ALL SELECT 10 UNION ALL SELECT 11) n
+	WHERE m.location_code = 2616 AND m.id <= (SELECT MIN(id) + 4999 FROM `' . $db->table('market_keywords') . '`)',
+	['2026-09-01', $now],
+);
+$backfillStart = microtime(true);
+$backfilled = (new OsfSeo\Market\MarketKeyBackfill($db))->fillAll(1000000);
+$backfillSeconds = microtime(true) - $backfillStart;
+$marketSeconds = microtime(true) - $marketStart;
+
 $generation = microtime(true) - $generationStart;
-$db->execute('ANALYZE TABLE `' . $db->table('gsc_query_daily') . '`, `' . $db->table('gsc_query_page_daily') . '`, `' . $db->table('keywords') . '`, `' . $db->table('pages') . '`, `' . $db->table('opportunities') . '`, `' . $db->table('opportunity_detections') . '`');
+$db->execute('ANALYZE TABLE `' . $db->table('gsc_query_daily') . '`, `' . $db->table('gsc_query_page_daily') . '`, `' . $db->table('keywords') . '`, `' . $db->table('pages') . '`, `' . $db->table('opportunities') . '`, `' . $db->table('opportunity_detections') . '`, `' . $db->table('market_keywords') . '`, `' . $db->table('market_keyword_monthly') . '`');
 $out(sprintf('Wygenerowano %s wierszy query_daily (+%s szumu), %s query_page_daily, słowniki i 30 000 szans innego projektu (200 000 fraz, 20 000 adresów, 90 000 wykryć) w %.1f s.', number_format($rows), number_format($noiseRows), number_format($pageRows), $generation));
+$out(sprintf('Dane rynkowe: %s metryk (PL: 70%% fraz projektu, DE: 200 000), %s wierszy historii; klucze rynkowe %s fraz wyliczone w %.1f s (generowanie danych rynkowych łącznie %.1f s).', number_format((int) $db->fetchValue('SELECT COUNT(*) FROM `' . $db->table('market_keywords') . '`')), number_format((int) $db->fetchValue('SELECT COUNT(*) FROM `' . $db->table('market_keyword_monthly') . '`')), number_format($backfilled), $backfillSeconds, $marketSeconds));
 $out();
 
 $context = osf_seo()->get(ProjectGuard::class)->authorizeSystem((string) $db->fetchValue('SELECT public_id FROM `' . $db->table('projects') . '` WHERE id = %d', [$projectId]));
-$keywordsReport = new KeywordReport($db);
+// Raport fraz bez danych rynkowych (stan sprzed STEP 12) i z nimi (produkcyjna konfiguracja) — ten sam przebieg.
+$plainReport = new KeywordReport($db);
+$keywordsReport = new KeywordReport($db, new OsfSeo\Support\Config(), osf_seo()->get(OsfSeo\Market\KeywordMetricsProvider::class), osf_seo()->get(OsfSeo\Market\MarketMetricsRepository::class));
+$marketSync = osf_seo()->get(OsfSeo\Market\MarketSyncService::class);
+$marketRepository = osf_seo()->get(OsfSeo\Market\MarketMetricsRepository::class);
+$plMarket = OsfSeo\DataForSeo\DataForSeoMarkets::resolve('pl', 'pl');
+$lookupKeys = array_map(static fn (int $i): string => OsfSeo\Market\MarketKeyword::key('fraza testowa ' . $i), range(1, 25));
 $overviewReport = new OverviewReport($db, $keywordsReport);
 $cachedOverview = new OverviewReport($db, $keywordsReport, new OsfSeo\Analytics\ReportCache());
 
@@ -235,11 +272,18 @@ $cases = [
 	'Szanse: lista 28 dni, strona 1' => static fn () => $opportunities->list($context, OsfSeo\Opportunities\OpportunityFilters::fromInput(['status' => 'all'])),
 	'Szanse: lista z wyszukiwaniem i filtrem typu' => static fn () => $opportunities->list($context, OsfSeo\Opportunities\OpportunityFilters::fromInput(['status' => 'all', 'type' => 'near_top', 'q' => 'testowa 1'])),
 	'Szanse: widok wg podstron' => static fn () => $opportunities->list($context, OsfSeo\Opportunities\OpportunityFilters::fromInput(['status' => 'all', 'view' => 'pages'])),
+	'Frazy bez danych rynkowych (jak przed STEP 12): 28 dni' => static fn () => $plainReport->keywords($context, KeywordFilters::fromInput([])),
+	'Frazy bez danych rynkowych (jak przed STEP 12): 90 dni' => static fn () => $plainReport->keywords($context, KeywordFilters::fromInput(['days' => 90, 'sort' => 'position_change'])),
 	'Frazy: 28 dni, sortowanie po kliknięciach, strona 1' => static fn () => $keywordsReport->keywords($context, KeywordFilters::fromInput([])),
 	'Frazy: 28 dni, strona 50' => static fn () => $keywordsReport->keywords($context, KeywordFilters::fromInput(['page' => 50])),
 	'Frazy: 90 dni, sortowanie po zmianie pozycji' => static fn () => $keywordsReport->keywords($context, KeywordFilters::fromInput(['days' => 90, 'sort' => 'position_change'])),
 	'Frazy: wyszukiwanie „testowa 12”' => static fn () => $keywordsReport->keywords($context, KeywordFilters::fromInput(['q' => 'testowa 12'])),
 	'Frazy: wzrosty (próg wyświetleń)' => static fn () => $keywordsReport->keywords($context, KeywordFilters::fromInput(['movement' => 'gains', 'sort' => 'position_change'])),
+	'Frazy: 28 dni, sortowanie po wolumenie' => static fn () => $keywordsReport->keywords($context, KeywordFilters::fromInput(['sort' => 'volume'])),
+	'Frazy: 90 dni, sortowanie po trudności SEO' => static fn () => $keywordsReport->keywords($context, KeywordFilters::fromInput(['days' => 90, 'sort' => 'difficulty'])),
+	'Frazy: filtr min. wolumen 1000 + maks. trudność 30' => static fn () => $keywordsReport->keywords($context, KeywordFilters::fromInput(['min_volume' => 1000, 'max_kd' => 30])),
+	'Dane rynkowe: plan synchronizacji (wybór kandydatów, bez API)' => static fn () => $marketSync->plan($context),
+	'Dane rynkowe: odczyt 25 fraz po kluczach (dowody szansy)' => static fn () => $marketRepository->findByKeys($plMarket, $lookupKeys),
 	'Dashboard: przegląd 28 dni (KPI, TOP N, wzrosty/spadki, seria)' => static fn () => $overviewReport->overview($context, 28),
 	'Dashboard: przegląd 90 dni' => static fn () => $overviewReport->overview($context, 90),
 	'Dashboard: przegląd 90 dni z cache (transient, kolejne wejście)' => static fn () => $cachedOverview->overview($context, 90),
@@ -259,6 +303,8 @@ foreach ($cases as $label => $case) {
 		$result instanceof OsfSeo\Analytics\KeywordPage => sprintf('%d wierszy, łącznie %s fraz', count($result->rows), number_format($result->total)),
 		$result instanceof OsfSeo\Opportunities\AnalysisResult => sprintf('%s: %d szans%s', $result->status, $result->opportunities, $result->reason !== null ? ' (' . $result->reason . ')' : ''),
 		$result instanceof OsfSeo\Opportunities\OpportunityPage => sprintf('%d na stronie, łącznie %d', count($result->rows) + count($result->groups), $result->total),
+		$result instanceof OsfSeo\Market\SyncPlan => sprintf('%d fraz do wzbogacenia, %d zadań (dozwolone %d)', $result->keywordCount(), count($result->tasks), count($result->allowedTasks())),
+		is_array($result) => sprintf('%d metryk', count($result)),
 		default => sprintf('TOP10 %d, wzrosty %d, spadki %d', $result->visibility->current[10], count($result->gains), count($result->losses)),
 	};
 	$out(sprintf('| %s | %.0f ms | %s |', $label, $ms, $summary));

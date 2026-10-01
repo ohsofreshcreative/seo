@@ -34,7 +34,17 @@ final class StatusReportTest extends TestCase
 			'google_connections' => ['active' => 2, 'needs_reauth' => 1, 'revoked' => 0],
 			'sync_heartbeat' => '2026-10-01 05:00:00',
 			'sync_pending' => 3,
+			'dataforseo_missing' => [],
 		]);
+	}
+
+	public function test_dataforseo_configuration_is_reported_without_values(): void
+	{
+		self::assertSame('info', self::row(self::report(), 'dataforseo')['status']);
+		self::assertStringStartsWith('configured', self::row(self::report(), 'dataforseo')['value']);
+		$missing = self::row(self::report(['dataforseo_missing' => ['OSF_SEO_DATAFORSEO_LOGIN', 'OSF_SEO_DATAFORSEO_PASSWORD']]), 'dataforseo');
+		self::assertSame(['check' => 'dataforseo', 'value' => 'not configured (missing: OSF_SEO_DATAFORSEO_LOGIN, OSF_SEO_DATAFORSEO_PASSWORD)', 'status' => 'info'], $missing);
+		self::assertTrue(self::report(['dataforseo_missing' => ['OSF_SEO_DATAFORSEO_LOGIN']])['ok'], 'Brak DataForSEO nie jest błędem instalacji.');
 	}
 
 	public function test_sync_queue_heartbeat_is_reported(): void
@@ -66,7 +76,7 @@ final class StatusReportTest extends TestCase
 		self::assertSame(
 			[
 				'plugin_active', 'plugin_version', 'installed_version', 'php_version', 'wordpress_version', 'db_schema_version',
-				'db_tables', 'roles_and_capabilities', 'google_oauth', 'google_redirect_uri', 'google_connections', 'sync_queue', 'environment', 'log_level',
+				'db_tables', 'roles_and_capabilities', 'google_oauth', 'google_redirect_uri', 'google_connections', 'sync_queue', 'dataforseo', 'environment', 'log_level',
 			],
 			array_column($report['rows'], 'check'),
 		);

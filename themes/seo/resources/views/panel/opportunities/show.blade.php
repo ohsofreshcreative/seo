@@ -160,6 +160,9 @@
           <div>
             <p class="text-sm font-semibold text-slate-900">„{{ $query['keyword'] }}”
               <span class="font-normal text-slate-500">· {{ Format::number($query['current']['impressions']) }} wyświetleń (suma adresów)</span>
+              @if (isset($marketMetrics[$query['keyword']]))
+                <span class="font-normal text-slate-500">· wolumen {{ Format::number($marketMetrics[$query['keyword']]->searchVolume) }}, trudność SEO {{ Format::number($marketMetrics[$query['keyword']]->keywordDifficulty) }}</span>
+              @endif
               @if ($query['dominant_changed'])
                 <span class="ml-1 rounded bg-amber-50 px-1.5 py-0.5 text-xs font-medium text-amber-800">dominujący adres zmienił się względem poprzedniego okresu</span>
               @endif
@@ -214,6 +217,10 @@
               <th class="py-2 pr-4 text-right font-medium">Kliknięcia</th>
               <th class="py-2 pr-4 text-right font-medium">CTR</th>
               <th class="py-2 pr-4 text-right font-medium">Średnia pozycja (GSC)</th>
+              @if ($marketMetrics !== [])
+                <th class="py-2 pr-4 text-right font-medium">Wolumen</th>
+                <th class="py-2 pr-4 text-right font-medium">Trudność SEO</th>
+              @endif
               <th class="py-2 text-right font-medium">
                 @switch($type)
                   @case(OpportunityType::LowCtr) Referencyjny CTR / luka @break
@@ -233,6 +240,10 @@
                 <td class="py-2 pr-4 text-right">{{ Format::number($itemPrevious->clicks) }} → {{ Format::number($itemCurrent->clicks) }}</td>
                 <td class="py-2 pr-4 text-right">{{ Format::percent($itemPrevious->ctr()) }} → {{ Format::percent($itemCurrent->ctr()) }}</td>
                 <td class="py-2 pr-4 text-right">{{ Format::position($itemPrevious->position()) }} → {{ Format::position($itemCurrent->position()) }}</td>
+                @if ($marketMetrics !== [])
+                  <td class="py-2 pr-4 text-right">{{ Format::number(($marketMetrics[$item['keyword']] ?? null)?->searchVolume) }}</td>
+                  <td class="py-2 pr-4 text-right">{{ Format::number(($marketMetrics[$item['keyword']] ?? null)?->keywordDifficulty) }}</td>
+                @endif
                 <td class="py-2 text-right text-slate-600">
                   @switch($type)
                     @case(OpportunityType::LowCtr)
@@ -255,6 +266,7 @@
         </table>
       </div>
       <p class="mt-3 text-xs text-slate-500">Wartości: poprzedni okres → bieżący. Pozycja to średnia pozycja (GSC) ważona wyświetleniami — nie dokładny ranking.
+        @if ($marketMetrics !== []) Wolumen i trudność SEO (DataForSEO) to dodatkowy kontekst rynkowy — nie wpływają na priorytet ani pewność szansy; „—” = brak danych. @endif
         @if ($type === OpportunityType::NearTop || $type === OpportunityType::WeakPosition) Potencjał = wyświetlenia × referencyjny CTR pozycji docelowej − obecne kliknięcia: szacunek, nie obietnica. @endif
       </p>
     @endif

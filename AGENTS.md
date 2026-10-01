@@ -1,4 +1,4 @@
-# AGENTS.md — OSF SEO
+# AGENTS.md — Wibble (techniczna nazwa: OSF SEO)
 
 Wspólne instrukcje dla Codex, GitHub Copilot i Claude Code. Edytuj wyłącznie ten plik —
 `CLAUDE.md` tylko go importuje (`@AGENTS.md`), bez symlinku.
@@ -9,7 +9,7 @@ Komunikacja z użytkownikiem: **po polsku** (wyjaśnienia, pytania, podsumowania
 
 ## 1. Czym jest projekt
 
-OSF SEO to wewnętrzna aplikacja SEO agencji OhSoFresh (docelowo także panel klienta).
+**Wibble** (dawniej OSF SEO) to wewnętrzna aplikacja SEO agencji OhSoFresh (docelowo także panel klienta).
 Działa jako osobna instalacja WordPress (staging: `https://seo.ohsofresh.top`) i składa się z:
 
 - **pluginu `osf-seo`** (`plugins/osf-seo`) — cała logika biznesowa: projekty, Google OAuth,
@@ -17,9 +17,19 @@ Działa jako osobna instalacja WordPress (staging: `https://seo.ohsofresh.top`) 
 - **motywu Sage 11 `seo`** (`themes/seo`) — wyłącznie UI panelu (routing Acorn, kontrolery,
   Blade, Tailwind, Alpine, Chart.js).
 
-Źródło danych MVP: wyłącznie **Google Search Console API** (koszt zewnętrznych usług: 0 zł).
-Nie dodawaj płatnych API (SERP API, Semrush, Ahrefs, Senuto, SeoStation…) ani scrapowania
-wyników Google. Przyszłe integracje płatne tylko za interfejsem (np. `SerpProvider`), bez implementacji.
+Nazwa produktu to Wibble, ale identyfikatory techniczne pozostają **celowo bez zmian**: plugin `osf-seo`,
+stałe `OSF_SEO_*`, tabele `osf_*`, namespace `OsfSeo\`, opcje/capabilities `osf_seo_*`, komendy `wp osf-seo …`.
+Nie zmieniaj ich mimochodem — techniczny rebrand będzie osobnym, zaplanowanym etapem.
+
+Źródła danych:
+- **Google Search Console API** — źródło prawdy o skuteczności strony (kliknięcia, wyświetlenia, CTR,
+  średnia pozycja GSC, strony docelowe, historia),
+- **DataForSEO** — jedyny zatwierdzony płatny dostawca danych SEO (decyzja D3, od STEP 12): wolumen, historia
+  wolumenu, CPC, konkurencja Ads, trudność SEO. Uzupełnia GSC, nigdy go nie zastępuje.
+
+Płatne API wymagają jawnej decyzji architektonicznej (tabela decyzji w `docs/ARCHITECTURE.md`). Nie dodawaj
+innych płatnych API (Semrush, Ahrefs, Senuto, SeoStation…) ani scrapowania wyników Google bez takiej decyzji.
+Dostawców integruj wyłącznie za interfejsem domenowym (np. `OsfSeo\Market\KeywordMetricsProvider`).
 
 Architektura, decyzje i roadmapa: **`docs/ARCHITECTURE.md`** — przeczytaj przed większą zmianą
 i aktualizuj przy zmianie decyzji.
@@ -29,10 +39,13 @@ i aktualizuj przy zmianie decyzji.
 ## 2. Repozytorium jest PUBLICZNE — sekrety
 
 - Żaden sekret nie może trafić do kodu, testów, fixture'ów, dokumentacji, commitów ani logów:
-  Google Client ID/Secret, klucz szyfrujący, tokeny OAuth (access/refresh), hasła, dane dostępowe
-  Hostingera, klucze SSH, dane dostępowe do bazy.
+  Google Client ID/Secret, klucz szyfrujący, tokeny OAuth (access/refresh), login i hasło API DataForSEO,
+  hasła, dane dostępowe Hostingera, klucze SSH, dane dostępowe do bazy.
 - Sekrety konfigurujemy wyłącznie przez stałe w `wp-config.php` lub zmienne środowiskowe
-  (np. `OSF_SEO_GOOGLE_CLIENT_ID`, `OSF_SEO_GOOGLE_CLIENT_SECRET`, `OSF_SEO_ENCRYPTION_KEY`).
+  (np. `OSF_SEO_GOOGLE_CLIENT_ID`, `OSF_SEO_GOOGLE_CLIENT_SECRET`, `OSF_SEO_ENCRYPTION_KEY`,
+  `OSF_SEO_DATAFORSEO_LOGIN`, `OSF_SEO_DATAFORSEO_PASSWORD`).
+- Danych logowania DataForSEO nie proś w rozmowie, nie wypisuj, nie zapisuj w bazie ani repo, nie wysyłaj do JS/HTML;
+  w testach i CI wyłącznie syntetyczne wartości (`tests/Support/DataForSeoFakes`) i atrapa HTTP — nigdy prawdziwe API.
 - Przykłady tylko z placeholderami: `OSF_SEO_GOOGLE_CLIENT_ID=your-client-id`.
 - Fixture'y odpowiedzi Google są syntetyczne — bez prawdziwych tokenów, e-maili i danych klientów.
 - Ciągi przypominające sekrety w testach (prefiksy typu `ya29.`, `GOCSPX-`, nagłówki kluczy PEM)
@@ -69,7 +82,7 @@ Nowy katalog w roocie wymaga dopisania wyjątku `!/<ścieżka>` w `.gitignore`.
 Motyw powstał z marketingowego motywu `h2otwock` i wciąż zawiera jego kod: bloki ACF
 (`app/Blocks`, `resources/views/blocks`), WooCommerce, CPT `offer`, marketingowy design system
 (`resources/css/variables.scss`), GTM, Leaflet, GSAP, Swiper, jQuery, React.
-**To kod przeznaczony do usunięcia** etapami C1–C5 (`docs/ARCHITECTURE.md`, sekcja 15).
+**To kod przeznaczony do usunięcia** etapami C1–C5 (`docs/ARCHITECTURE.md`, sekcja 16).
 
 - Nie rozwijaj go i nie kopiuj z niego wzorców (anatomia bloków ACF, `x-button`, `c-main`,
   `-smt`, `section-*`, atrybuty GSAP).
@@ -107,6 +120,13 @@ Motyw powstał z marketingowego motywu `h2otwock` i wciąż zawiera jego kod: bl
   access token tylko w pamięci (`AccessTokenProvider`); żądania API przez `GoogleApi` (Bearer tylko do
   `https://*.googleapis.com`, po 401 jedno ponowienie). Kodów, weryfikatorów PKCE, `state` i tokenów
   nie loguj ani nie zapisuj; w testach używaj losowych fałszywych wartości (`tests/Support/GoogleFakes`).
+- DataForSEO (STEP 12, `src/Market`, `src/DataForSeo`, `docs/ARCHITECTURE.md` sekcja 11): **płatne żądania wyłącznie
+  z `MarketSyncService`** (plan → limity kosztów → zadanie) — nigdy z kontrolera, widoku, raportu, analizy szans ani
+  importera GSC. Ruch tylko przez `HttpTransport` do `https://api.dataforseo.com/v3/`, Basic Auth budowany w chwili żądania.
+  Każda zmiana musi zachować bezpieczniki: plan bez API (dry-run), TTL, limit zadań na przebieg, limity dzienny i miesięczny,
+  brak automatycznego startu po wdrożeniu (automatyka tylko po pierwszej jawnej synchronizacji), brak ponawiania płatnego POST
+  po timeoucie. Zadania DataForSEO nie trafiają do `sync_runs` (kolejka GSC). Dane rynkowe są wspólne dla rynku
+  (`market_keywords`: dostawca × lokalizacja × język × klucz frazy) i nie należą do danych GSC projektu (reset property ich nie usuwa).
 
 ⸻
 
@@ -126,6 +146,11 @@ Motyw powstał z marketingowego motywu `h2otwock` i wciąż zawiera jego kod: bl
   fraz (GSC pomija frazy zanonimizowane).
 - Daty GSC są w czasie pacyficznym (PT) — nie przeliczaj ich na Europe/Warsaw.
 - Import jest idempotentny: zamiana zakresu dat w transakcji (DELETE zakresu + INSERT).
+- Dane rynkowe (DataForSEO) nie zmieniają metryk GSC. Rozdzielaj pojęcia i etykiety: „Średnia pozycja (GSC)” ≠ dokładna
+  pozycja SERP; „Trudność SEO” (Keyword Difficulty) ≠ „Konkurencja Ads” (płatne wyniki) — nigdy samo „Konkurencja”;
+  „Wolumen” = średnia miesięczna liczba wyszukiwań; „CPC” w USD. Brak danych rynkowych = NULL, w UI „—”, nigdy 0.
+- Tożsamość frazy GSC (`keywords.keyword_hash`, dokładne bajty) jest niezmienna; dane rynkowe mają osobny klucz
+  (`MarketKeyword`: NFC, małe litery, spacje). Nie wiąż danych rynkowych z `keywords.id` (ID słownika są jednorazowe).
 
 ⸻
 
@@ -232,6 +257,12 @@ wp osf-seo gsc:status --project=<id>                            # stan synchroni
 wp osf-seo sync:run             # kolejka synchronizacji (cron systemowy), potem przeliczenie szans SEO
 wp osf-seo opportunities:analyze --project=<id> [--days=7|28|90] [--force]   # szanse SEO z zapisanych danych GSC
 wp osf-seo opportunities:list --project=<id> [--days=28] [--type=…] [--status=open|all|…] [--format=json]
+wp osf-seo dataforseo:status [--project=<id>] [--format=json]   # DataForSEO bez sekretów: rynek, metryki, zadania, koszty, limity
+wp osf-seo dataforseo:sync --project=<id> --dry-run [--limit=10]   # plan bez żadnego żądania (zawsze najpierw)
+wp osf-seo dataforseo:sync --project=<id> [--limit=<n>] [--force] [--wait=<s>]   # PŁATNE — tylko na polecenie użytkownika
+wp osf-seo dataforseo:keyword --project=<id> --keyword="<fraza>"   # zapisane metryki (bez API)
+wp osf-seo dataforseo:run [--collect-only]   # krok w tle raz (odbiór wyników zadań)
+wp osf-seo dataforseo:locations [--country=PL]   # bezpłatna lista lokalizacji (weryfikacja kodów)
 composer test:performance       # benchmark raportów + EXPLAIN na syntetycznych danych (OSOBNA baza testowa)
 ```
 
@@ -285,5 +316,8 @@ php -d "mysqli.default_socket=$HOME/Library/Application Support/Local/run/<LOCAL
 ## 13. Deployment
 
 Staging: `https://seo.ohsofresh.top` (Hostinger). Deployment nowej struktury repo jest
-**jeszcze nieustalony** (`docs/ARCHITECTURE.md`, sekcja 13). Nie zmieniaj jego konfiguracji,
+**jeszcze nieustalony** (`docs/ARCHITECTURE.md`, sekcja 14). Nie zmieniaj jego konfiguracji,
 nie łącz się z serwerem i nie używaj żadnych credentials znalezionych w repo.
+Nigdy nie wdrażaj całego repozytorium do `wp-content` (wcześniejszy incydent nadpisał pliki WordPressa) — wdrożenie
+wyłącznie zawężone: `plugins/osf-seo/` → `wp-content/plugins/osf-seo/`, `themes/seo/` → `wp-content/themes/seo/`.
+Agent nie wykonuje płatnego smoke testu DataForSEO ani wdrożenia bez wyraźnego polecenia użytkownika.

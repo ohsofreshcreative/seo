@@ -100,6 +100,13 @@ final class StatusReport
 				'status' => self::INFO,
 			],
 			self::syncQueue($facts['sync_heartbeat'] ?? null, $facts['sync_pending'] ?? null),
+			[
+				'check' => 'dataforseo',
+				'value' => ($facts['dataforseo_missing'] ?? []) === []
+					? 'configured (details: wp osf-seo dataforseo:status)'
+					: 'not configured (missing: ' . implode(', ', $facts['dataforseo_missing']) . ')',
+				'status' => self::INFO,
+			],
 			['check' => 'environment', 'value' => $facts['environment'], 'status' => self::INFO],
 			['check' => 'log_level', 'value' => $facts['log_level'], 'status' => self::INFO],
 		];

@@ -1,0 +1,143 @@
+<?php
+
+declare(strict_types=1);
+
+namespace OsfSeo\Tests\Support;
+
+use OsfSeo\DataForSeo\DataForSeoConfig;
+
+/**
+ * Syntetyczne (losowe) dane logowania DataForSEO i odpowiedzi API do testów — nigdy prawdziwe.
+ * Konfiguracja przez zmienne środowiskowe (jak w produkcji: stała lub env), sprzątana po teście.
+ */
+final class DataForSeoFakes
+{
+	public static function login(): string
+	{
+		return 'wibble-test-' . bin2hex(random_bytes(4)) . '@example.test';
+	}
+
+	public static function password(): string
+	{
+		return bin2hex(random_bytes(12));
+	}
+
+	/**
+	 * @return array{0: string, 1: string} login, hasło
+	 */
+	public static function configure(): array
+	{
+		$credentials = [self::login(), self::password()];
+		putenv(DataForSeoConfig::LOGIN . '=' . $credentials[0]);
+		putenv(DataForSeoConfig::PASSWORD . '=' . $credentials[1]);
+
+		return $credentials;
+	}
+
+	public static function clear(): void
+	{
+		foreach ([DataForSeoConfig::LOGIN, DataForSeoConfig::PASSWORD] as $name) {
+			putenv($name);
+		}
+	}
+
+	public static function taskId(): string
+	{
+		$hex = bin2hex(random_bytes(16));
+
+		return sprintf('%s-%s-%s-%s-%s', substr($hex, 0, 8), substr($hex, 8, 4), substr($hex, 12, 4), substr($hex, 16, 4), substr($hex, 20, 12));
+	}
+
+	/**
+	 * Koperta odpowiedzi z jednym zadaniem.
+	 *
+	 * @param array<string, mixed> $task
+	 * @return array<string, mixed>
+	 */
+	public static function envelope(array $task, int $code = 20000, float $cost = 0.0): array
+	{
+		$task += ['id' => self::taskId(), 'status_code' => 20000, 'status_message' => 'Ok.', 'time' => '0.1 sec.', 'cost' => $cost, 'result_count' => 1, 'path' => [], 'data' => [], 'result' => null];
+
+		return [
+			'version' => '0.1.20260901',
+			'status_code' => $code,
+			'status_message' => $code === 20000 ? 'Ok.' : 'Error.',
+			'time' => '0.2 sec.',
+			'cost' => $cost,
+			'tasks_count' => 1,
+			'tasks_error' => $task['status_code'] >= 40000 ? 1 : 0,
+			'tasks' => [$task],
+		];
+	}
+
+	/**
+	 * @return array<string, mixed>
+	 */
+	public static function taskCreated(string $taskId, float $cost = 0.06): array
+	{
+		return self::envelope(['id' => $taskId, 'status_code' => 20100, 'status_message' => 'Task Created.', 'cost' => $cost, 'result_count' => 0], 20000, $cost);
+	}
+
+	/**
+	 * @return array<string, mixed>
+	 */
+	public static function taskInQueue(string $taskId): array
+	{
+		return self::envelope(['id' => $taskId, 'status_code' => 40602, 'status_message' => 'Task In Queue.', 'result_count' => 0]);
+	}
+
+	/**
+	 * Wynik Google Ads Search Volume.
+	 *
+	 * @param list<array<string, mixed>> $items
+	 * @return array<string, mixed>
+	 */
+	public static function volumeResult(string $taskId, array $items): array
+	{
+		return self::envelope(['id' => $taskId, 'result_count' => count($items), 'result' => $items]);
+	}
+
+	/**
+	 * @return array<string, mixed>
+	 */
+	public static function volumeItem(string $keyword, ?int $volume, ?float $cpc = 1.25, ?string $competition = 'MEDIUM', ?int $index = 40, ?array $monthly = null): array
+	{
+		return [
+			'keyword' => $keyword,
+			'spell' => null,
+			'location_code' => 2616,
+			'language_code' => 'pl',
+			'search_partners' => false,
+			'competition' => $competition,
+			'competition_index' => $index,
+			'search_volume' => $volume,
+			'low_top_of_page_bid' => $cpc === null ? null : round($cpc * 0.5, 2),
+			'high_top_of_page_bid' => $cpc === null ? null : round($cpc * 2, 2),
+			'cpc' => $cpc,
+			'monthly_searches' => $monthly ?? ($volume === null ? null : [
+				['year' => 2026, 'month' => 8, 'search_volume' => $volume],
+				['year' => 2026, 'month' => 7, 'search_volume' => (int) round($volume * 0.8)],
+			]),
+		];
+	}
+
+	/**
+	 * Wynik DataForSEO Labs Bulk Keyword Difficulty.
+	 *
+	 * @param array<string, ?int> $difficulties fraza → trudność
+	 * @return array<string, mixed>
+	 */
+	public static function difficultyResult(array $difficulties, float $cost = 0.0): array
+	{
+		$items = [];
+
+		foreach ($difficulties as $keyword => $difficulty) {
+			$items[] = ['se_type' => 'google', 'keyword' => (string) $keyword, 'keyword_difficulty' => $difficulty];
+		}
+
+		return self::envelope([
+			'result_count' => 1,
+			'result' => [['se_type' => 'google', 'location_code' => 2616, 'language_code' => 'pl', 'total_count' => count($items), 'items_count' => count($items), 'items' => $items]],
+		], 20000, $cost);
+	}
+}

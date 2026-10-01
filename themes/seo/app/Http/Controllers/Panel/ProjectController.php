@@ -149,7 +149,10 @@ final class ProjectController
 	 */
 	private function form(?\OsfSeo\Projects\Project $project, array $values, array $errors = [], int $status = 200): Response
 	{
-		return response()->view('panel.projects.form', compact('project', 'values', 'errors'), $status);
+		// Obsługiwane rynki danych rynkowych (DataForSEO) — podpowiedź przy kraju i języku projektu.
+		$markets = osf_seo()->get(\OsfSeo\Market\KeywordMetricsProvider::class)->markets();
+
+		return response()->view('panel.projects.form', compact('project', 'values', 'errors', 'markets'), $status);
 	}
 
 	private function context(Request $request): ProjectContext

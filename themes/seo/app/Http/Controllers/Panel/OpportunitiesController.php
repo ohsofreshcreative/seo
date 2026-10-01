@@ -107,6 +107,8 @@ final class OpportunitiesController
 			'days' => $days,
 			'detectedPeriods' => $service->detectedPeriods($context, $opportunity),
 			'after' => $service->afterImplementation($context, $opportunity),
+			// Dane rynkowe fraz z dowodów (DataForSEO) — wyłącznie kontekst; szansa nie zależy od nich.
+			'marketMetrics' => $service->marketMetrics($context, $opportunity),
 			'canManage' => $context->can('osf_seo_manage_opportunities'),
 			'errors' => $errors,
 			'old' => $old,

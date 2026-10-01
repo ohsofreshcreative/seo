@@ -10,7 +10,10 @@ namespace OsfSeo\Analytics;
  */
 final class KeywordFilters
 {
-	public const SORTS = ['clicks', 'clicks_change', 'impressions', 'impressions_change', 'ctr', 'position', 'position_change', 'keyword'];
+	public const SORTS = ['clicks', 'clicks_change', 'impressions', 'impressions_change', 'ctr', 'position', 'position_change', 'keyword', 'volume', 'difficulty'];
+
+	/** Sortowania rosnące domyślnie (mniejsza wartość = lepiej / alfabetycznie). */
+	public const ASCENDING = ['position', 'keyword', 'difficulty'];
 
 	public const PER_PAGE = [25, 50, 100];
 
@@ -28,6 +31,10 @@ final class KeywordFilters
 		public readonly string $direction = 'desc',
 		public readonly int $page = 1,
 		public readonly int $perPage = 50,
+		/** Minimalny wolumen (dane rynkowe); fraza bez znanego wolumenu nie spełnia filtra. */
+		public readonly ?int $minVolume = null,
+		/** Maksymalna trudność SEO 0–100; fraza bez znanej trudności nie spełnia filtra. */
+		public readonly ?int $maxDifficulty = null,
 	) {
 	}
 
@@ -37,7 +44,7 @@ final class KeywordFilters
 	public static function fromInput(array $input): self
 	{
 		$sort = in_array($input['sort'] ?? null, self::SORTS, true) ? (string) $input['sort'] : 'clicks';
-		$defaultDirection = in_array($sort, ['position', 'keyword'], true) ? 'asc' : 'desc';
+		$defaultDirection = in_array($sort, self::ASCENDING, true) ? 'asc' : 'desc';
 		$direction = in_array($input['dir'] ?? null, ['asc', 'desc'], true) ? (string) $input['dir'] : $defaultDirection;
 		$search = is_string($input['q'] ?? null) ? mb_substr(trim((string) $input['q']), 0, 100) : '';
 		$perPage = (int) ($input['per_page'] ?? 50);
@@ -53,6 +60,8 @@ final class KeywordFilters
 			direction: $direction,
 			page: max(1, min((int) ($input['page'] ?? 1), 100000)),
 			perPage: in_array($perPage, self::PER_PAGE, true) ? $perPage : 50,
+			minVolume: self::bounded($input['min_volume'] ?? null, 0, 1000000000),
+			maxDifficulty: self::bounded($input['max_kd'] ?? null, 0, 100),
 		);
 	}
 
@@ -80,8 +89,27 @@ final class KeywordFilters
 			'sort' => $this->sort !== 'clicks' ? $this->sort : null,
 			'dir' => $this->direction,
 			'per_page' => $this->perPage !== 50 ? $this->perPage : null,
+			'min_volume' => $this->minVolume,
+			'max_kd' => $this->maxDifficulty,
 			'page' => $this->page > 1 ? $this->page : null,
 		], static fn (mixed $value): bool => $value !== null);
+	}
+
+	/** Filtry danych rynkowych są ustawione (wymagają znanej wartości). */
+	public function hasMarketFilters(): bool
+	{
+		return $this->minVolume !== null || $this->maxDifficulty !== null;
+	}
+
+	private static function bounded(mixed $value, int $min, int $max): ?int
+	{
+		if (! is_numeric($value) || (string) $value === '') {
+			return null;
+		}
+
+		$number = (int) $value;
+
+		return $number >= $min && $number <= $max ? $number : null;
 	}
 
 	private static function position(mixed $value): ?float

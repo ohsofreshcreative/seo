@@ -12,7 +12,7 @@ final class WpHttpTransport implements HttpTransport
 	{
 	}
 
-	public function request(string $method, string $url, array $headers = [], ?string $body = null): HttpResponse
+	public function request(string $method, string $url, #[\SensitiveParameter] array $headers = [], ?string $body = null): HttpResponse
 	{
 		$response = wp_remote_request($url, [
 			'method' => $method,

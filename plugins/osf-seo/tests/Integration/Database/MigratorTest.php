@@ -187,10 +187,18 @@ final class MigratorTest extends IntegrationTestCase
 		self::assertSame(4, $this->migrator()->currentVersion());
 		self::assertFalse($inspector->inspect()['opportunities']['exists']);
 
-		self::assertSame(['0005 create_opportunities'], $this->migrator()->migrate());
+		$schema5 = array_slice(Migrator::defaultMigrations(), 0, 5);
+		self::assertSame(['0005 create_opportunities'], $this->migrator($schema5)->migrate());
 		self::assertSame(5, $this->migrator()->currentVersion());
 		self::assertSame($before, $this->dataSnapshot(), 'Migracja 5 nie zmienia istniejących danych.');
-		self::assertSame([], $inspector->problems());
+		self::assertSame([
+			'column keywords.market_key is missing',
+			'index keywords.project_market_key is missing',
+			'table market_keywords is missing',
+			'table market_keyword_monthly is missing',
+			'table market_tasks is missing',
+			'table market_sync_state is missing',
+		], $inspector->problems(), 'Po migracji 5 brakuje wyłącznie obiektów schematu 6.');
 
 		$indexes = $inspector->inspect()['opportunities']['indexes'];
 		self::assertSame(['unique' => true, 'columns' => ['project_id', 'fingerprint']], $indexes['project_fingerprint']);
@@ -199,8 +207,54 @@ final class MigratorTest extends IntegrationTestCase
 
 		// Ponowne uruchomienie migracji 5 (np. utracona wersja schematu) jest bezpieczne.
 		update_option(Migrator::OPTION_VERSION, '4');
-		self::assertSame(['0005 create_opportunities'], $this->migrator()->migrate());
+		self::assertSame(['0005 create_opportunities', '0006 create_market_data'], $this->migrator()->migrate());
 		self::assertSame([], $inspector->problems());
+	}
+
+	public function test_upgrade_from_schema_5_adds_market_data_and_keeps_gsc_and_opportunity_data(): void
+	{
+		// Stan stagingu po STEP 11: schemat 5 z danymi GSC, szansą SEO i połączeniem Google.
+		$schema5 = array_slice(Migrator::defaultMigrations(), 0, 5);
+		$this->migrator($schema5)->migrate();
+		$this->seedData();
+		$db = self::db();
+		$now = gmdate('Y-m-d H:i:s');
+		$db->insert($db->table('opportunities'), [
+			'public_id' => '01J0000000000000000000OPP1',
+			'project_id' => 1,
+			'fingerprint' => md5('opp', true),
+			'type' => 'near_top',
+			'property' => 'sc-domain:example.test',
+			'status' => 'planned',
+			'note' => 'Notatka zespołu',
+			'first_detected_at' => $now,
+			'last_detected_at' => $now,
+			'created_at' => $now,
+			'updated_at' => $now,
+		]);
+		$before = $this->dataSnapshot();
+		$opportunityBefore = $db->fetchRow("SELECT * FROM `{$db->table('opportunities')}`");
+		$inspector = new SchemaInspector(self::db());
+		self::assertFalse($inspector->inspect()['market_keywords']['exists']);
+
+		self::assertSame(['0006 create_market_data'], $this->migrator()->migrate());
+		self::assertSame(6, $this->migrator()->currentVersion());
+		self::assertSame([], $inspector->problems(), 'Schemat 6 zgodny ze specyfikacją.');
+		self::assertSame($before, $this->dataSnapshot(), 'Projekty, słownik i fakty GSC bez zmian.');
+		self::assertSame($opportunityBefore, $db->fetchRow("SELECT * FROM `{$db->table('opportunities')}`"), 'Szansa i stan pracy bez zmian.');
+		self::assertNull($db->fetchValue("SELECT market_key FROM `{$db->table('keywords')}` LIMIT 1"), 'Klucz rynkowy wyliczany później w tle; hash GSC bez zmian.');
+		self::assertSame(md5('strony internetowe', true), $db->fetchValue("SELECT keyword_hash FROM `{$db->table('keywords')}` LIMIT 1"));
+
+		$indexes = $inspector->inspect();
+		self::assertSame(['unique' => true, 'columns' => ['provider', 'location_code', 'language_code', 'keyword_key']], $indexes['market_keywords']['indexes']['market_keyword']);
+		self::assertSame(['unique' => false, 'columns' => ['project_id', 'market_key']], $indexes['keywords']['indexes']['project_market_key']);
+		self::assertSame(['unique' => true, 'columns' => ['market_keyword_id', 'month']], $indexes['market_keyword_monthly']['indexes']['PRIMARY']);
+
+		// Ponowne uruchomienie migracji 6 (utracona wersja schematu) jest bezpieczne.
+		update_option(Migrator::OPTION_VERSION, '5');
+		self::assertSame(['0006 create_market_data'], $this->migrator()->migrate());
+		self::assertSame([], $inspector->problems());
+		self::assertSame($before, $this->dataSnapshot());
 	}
 
 	public function test_failed_migration_does_not_bump_version_and_keeps_earlier_ones(): void
@@ -343,7 +397,8 @@ final class MigratorTest extends IntegrationTestCase
 
 		foreach (['projects', 'keywords', 'gsc_query_daily'] as $table) {
 			$snapshot[$table] = array_map(
-				static fn (array $row): array => array_diff_key($row, ['test_note' => true]),
+				// Kolumny dodane przez późniejsze migracje (np. keywords.market_key) nie zmieniają istniejących danych.
+				static fn (array $row): array => array_diff_key($row, ['test_note' => true, 'market_key' => true]),
 				$db->fetchAll("SELECT * FROM `{$db->table($table)}` ORDER BY 1"),
 			);
 		}

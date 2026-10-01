@@ -16,6 +16,7 @@ use OsfSeo\Auth\WpRoleStore;
 use OsfSeo\Cli\DbCommand;
 use OsfSeo\Cli\GoogleCommand;
 use OsfSeo\Cli\GscCommand;
+use OsfSeo\Cli\MarketCommand;
 use OsfSeo\Cli\OpportunityCommand;
 use OsfSeo\Cli\ProjectCommand;
 use OsfSeo\Cli\StatusCommand;
@@ -23,6 +24,9 @@ use OsfSeo\Cli\SyncCommand;
 use OsfSeo\Database\Connection;
 use OsfSeo\Database\Migrator;
 use OsfSeo\Database\SchemaInspector;
+use OsfSeo\DataForSeo\DataForSeoClient;
+use OsfSeo\DataForSeo\DataForSeoConfig;
+use OsfSeo\DataForSeo\DataForSeoProvider;
 use OsfSeo\Google\AccessTokenProvider;
 use OsfSeo\Google\ConnectionRepository;
 use OsfSeo\Google\GoogleApi;
@@ -40,6 +44,14 @@ use OsfSeo\Gsc\GscProbe;
 use OsfSeo\Gsc\PropertyService;
 use OsfSeo\Http\HttpTransport;
 use OsfSeo\Http\WpHttpTransport;
+use OsfSeo\Market\KeywordMetricsProvider;
+use OsfSeo\Market\MarketCandidateSelector;
+use OsfSeo\Market\MarketDataConfig;
+use OsfSeo\Market\MarketKeyBackfill;
+use OsfSeo\Market\MarketMetricsRepository;
+use OsfSeo\Market\MarketSyncService;
+use OsfSeo\Market\MarketSyncStateRepository;
+use OsfSeo\Market\MarketTaskRepository;
 use OsfSeo\Opportunities\OpportunityAnalyzer;
 use OsfSeo\Opportunities\OpportunityConfig;
 use OsfSeo\Opportunities\OpportunityDataSource;
@@ -67,7 +79,7 @@ use OsfSeo\Support\SystemSleeper;
 final class Plugin
 {
 	/** Musi być zgodna z nagłówkiem `Version` w osf-seo.php (pilnuje tego test). */
-	public const VERSION = '0.11.0';
+	public const VERSION = '0.12.0';
 
 	public const MIN_PHP = '8.2';
 
@@ -206,7 +218,44 @@ final class Plugin
 			return $service;
 		});
 
-		$container->singleton(KeywordReport::class, static fn (Container $c): KeywordReport => new KeywordReport($c->get(Connection::class), $c->get(Config::class)));
+		// Dane rynkowe fraz (STEP 12): DataForSEO za interfejsem KeywordMetricsProvider; płatne żądania wyłącznie z MarketSyncService.
+		$container->singleton(MarketDataConfig::class, static fn (Container $c): MarketDataConfig => new MarketDataConfig($c->get(Config::class)));
+		$container->singleton(DataForSeoConfig::class, static fn (Container $c): DataForSeoConfig => new DataForSeoConfig($c->get(Config::class)));
+		$container->singleton(DataForSeoClient::class, static fn (Container $c): DataForSeoClient => new DataForSeoClient(
+			$c->get(DataForSeoConfig::class),
+			new WpHttpTransport(DataForSeoClient::HTTP_TIMEOUT),
+			$c->get(Sleeper::class),
+			$c->get(Logger::class),
+		));
+		$container->singleton(KeywordMetricsProvider::class, static fn (Container $c): KeywordMetricsProvider => new DataForSeoProvider(
+			$c->get(DataForSeoClient::class),
+			$c->get(DataForSeoConfig::class),
+		));
+		$container->singleton(MarketMetricsRepository::class, static fn (Container $c): MarketMetricsRepository => new MarketMetricsRepository($c->get(Connection::class), $c->get(Clock::class)));
+		$container->singleton(MarketTaskRepository::class, static fn (Container $c): MarketTaskRepository => new MarketTaskRepository($c->get(Connection::class), $c->get(Clock::class)));
+		$container->singleton(MarketSyncStateRepository::class, static fn (Container $c): MarketSyncStateRepository => new MarketSyncStateRepository($c->get(Connection::class), $c->get(Clock::class)));
+		$container->singleton(MarketKeyBackfill::class, static fn (Container $c): MarketKeyBackfill => new MarketKeyBackfill($c->get(Connection::class)));
+		$container->singleton(MarketCandidateSelector::class, static fn (Container $c): MarketCandidateSelector => new MarketCandidateSelector($c->get(Connection::class), $c->get(KeywordReport::class)));
+		$container->singleton(MarketSyncService::class, static fn (Container $c): MarketSyncService => new MarketSyncService(
+			$c->get(KeywordMetricsProvider::class),
+			$c->get(MarketMetricsRepository::class),
+			$c->get(MarketTaskRepository::class),
+			$c->get(MarketSyncStateRepository::class),
+			$c->get(MarketCandidateSelector::class),
+			$c->get(MarketKeyBackfill::class),
+			$c->get(MarketDataConfig::class),
+			$c->get(ProjectGuard::class),
+			$c->get(Connection::class),
+			$c->get(Clock::class),
+			$c->get(Logger::class),
+		));
+
+		$container->singleton(KeywordReport::class, static fn (Container $c): KeywordReport => new KeywordReport(
+			$c->get(Connection::class),
+			$c->get(Config::class),
+			$c->get(KeywordMetricsProvider::class),
+			$c->get(MarketMetricsRepository::class),
+		));
 		$container->singleton(OverviewReport::class, static fn (Container $c): OverviewReport => new OverviewReport($c->get(Connection::class), $c->get(KeywordReport::class), new ReportCache()));
 
 		$container->singleton(SyncConfig::class, static fn (Container $c): SyncConfig => new SyncConfig($c->get(Config::class)));
@@ -255,6 +304,8 @@ final class Plugin
 			);
 			// Szanse SEO przeliczane po imporcie — osobny krok po kolejce, nie część importera.
 			$scheduler->onAfterRun(static fn (): array => $c->get(OpportunityScheduler::class)->run((float) $c->get(SyncConfig::class)->timeBudget()));
+			// Dane rynkowe (DataForSEO): odbiór wyników i odświeżanie w tle — osobny krok, błąd dostawcy nie dotyka GSC.
+			$scheduler->onAfterRun(static fn (): array => $c->get(MarketSyncService::class)->runBackground((float) $c->get(SyncConfig::class)->timeBudget()));
 
 			return $scheduler;
 		});
@@ -284,6 +335,8 @@ final class Plugin
 			$c->get(OpportunityDataSource::class),
 			$c->get(Logger::class),
 			new ReportCache(),
+			$c->get(KeywordMetricsProvider::class),
+			$c->get(MarketMetricsRepository::class),
 		));
 		$container->singleton(OpportunityScheduler::class, static fn (Container $c): OpportunityScheduler => new OpportunityScheduler(
 			$c->get(OpportunityAnalyzer::class),
@@ -320,6 +373,7 @@ final class Plugin
 			GoogleCommand::register($this);
 			GscCommand::register($this);
 			OpportunityCommand::register($this);
+			MarketCommand::register($this);
 			SyncCommand::register($this);
 		}
 	}

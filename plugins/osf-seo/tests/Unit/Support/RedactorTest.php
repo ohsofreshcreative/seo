@@ -117,4 +117,13 @@ final class RedactorTest extends TestCase
 
 		self::assertSame('[array]', $result['l1']['l2']['l3']['l4']['l5']['l6']);
 	}
+
+	public function test_basic_authorization_values_are_masked(): void
+	{
+		$redactor = new \OsfSeo\Support\Redactor();
+		$basic = 'Basic ' . base64_encode('login@example.test:' . bin2hex(random_bytes(8)));
+
+		self::assertSame('header: [REDACTED]', $redactor->string('header: ' . $basic));
+		self::assertSame(['authorization' => '[REDACTED]', 'credentials' => '[REDACTED]', 'password' => '[REDACTED]'], $redactor->context(['authorization' => $basic, 'credentials' => 'x', 'password' => 'y']));
+	}
 }

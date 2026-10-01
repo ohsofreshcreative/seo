@@ -111,6 +111,7 @@ final class StatusCommand
 			'google_connections' => $this->googleConnections(),
 			'sync_heartbeat' => is_string($heartbeat = get_option(SyncRunner::HEARTBEAT_OPTION)) && $heartbeat !== '' ? $heartbeat : null,
 			'sync_pending' => $this->pendingJobs(),
+			'dataforseo_missing' => $this->plugin->get(\OsfSeo\DataForSeo\DataForSeoConfig::class)->missing(),
 		];
 	}
 

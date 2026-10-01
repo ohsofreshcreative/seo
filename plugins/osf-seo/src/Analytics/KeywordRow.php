@@ -4,8 +4,11 @@ declare(strict_types=1);
 
 namespace OsfSeo\Analytics;
 
+use OsfSeo\Market\MarketMetrics;
+
 /**
  * Fraza w okresie i jej porównanie z poprzednim okresem. Metryki z sum (Metrics).
+ * Opcjonalnie dane rynkowe (wolumen, trudność SEO…) — dodatkowe źródło, nie zastępują metryk GSC.
  */
 final class KeywordRow
 {
@@ -19,6 +22,8 @@ final class KeywordRow
 		public readonly int $previousImpressions,
 		public readonly float $previousPositionSum,
 		public ?string $primaryPage = null,
+		/** Metryki rynkowe frazy na rynku projektu; null — brak danych (nie 0). */
+		public ?MarketMetrics $market = null,
 	) {
 	}
 
@@ -36,6 +41,7 @@ final class KeywordRow
 			(int) $row['prev_clicks'],
 			(int) $row['prev_impr'],
 			(float) $row['prev_pos_sum'],
+			market: MarketMetrics::fromRow($row, 'm_'),
 		);
 	}
 
