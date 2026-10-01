@@ -76,6 +76,38 @@ final class SerpTrackingService
 		return $this->provider->resolveMarket($project->country, $project->language);
 	}
 
+	/**
+	 * Szacowany maksymalny koszt jednego zadania dla każdej dostępnej głębokości (cennik konfigurowalny; koszt zgłoszony
+	 * przez dostawcę po wykonaniu jest rozstrzygający).
+	 *
+	 * @return array<int, float>
+	 */
+	public function pricing(): array
+	{
+		$prices = [];
+
+		foreach (SerpConfig::DEPTHS as $depth) {
+			$prices[$depth] = $this->provider->estimateCost(new SerpContext(0, '', SerpDevice::Desktop, $depth));
+		}
+
+		return $prices;
+	}
+
+	/**
+	 * Wstrzymanie płatnych wywołań DataForSEO po błędzie konta (wspólne dla wszystkich modułów).
+	 *
+	 * @return array{until: string, reason: string}|null
+	 */
+	public function paused(): ?array
+	{
+		return $this->market->paused();
+	}
+
+	public function activeRun(ProjectContext $context): ?SerpRun
+	{
+		return $this->runs->active($context->projectId());
+	}
+
 	public function settings(ProjectContext $context): SerpSettings
 	{
 		return $this->settings->get($context->projectId());
@@ -127,10 +159,10 @@ final class SerpTrackingService
 		}
 
 		$settings = $this->settings->save($context->projectId(), $enabled, $frequency, $device, $depth, $context->userId());
-		$this->logger->info('SERP tracking settings of project {project} saved by user {user}: {state}, {frequency}, {device}, TOP{depth}.', [
+		$this->logger->info('SERP tracking settings of project {project} saved by user {user}: {tracking}, {frequency}, {device}, TOP{depth}.', [
 			'project' => $context->publicId(),
 			'user' => $context->userId(),
-			'state' => $enabled ? 'enabled' : 'disabled',
+			'tracking' => $enabled ? 'enabled' : 'disabled',
 			'frequency' => $frequency->value,
 			'device' => $device->value,
 			'depth' => $depth,
@@ -621,14 +653,36 @@ final class SerpTrackingService
 	}
 
 	/**
-	 * Bieżące Pozycje SERP dla fraz rynkowych (kolumna w liście Frazy) — tylko frazy monitorowane.
+	 * Bieżące Pozycje SERP fraz z listy Frazy (kolumna „Pozycja SERP”) — tylko frazy monitorowane. Klucz = tekst frazy;
+	 * warianty GSC tej samej frazy rynkowej („Buty Damskie”, „buty damskie”) dostają ten sam pomiar.
 	 *
-	 * @param list<int> $marketKeywordIds
-	 * @return array<int, array{public_id: string, rank: ?int, found: ?bool, depth: ?int, checked_at: ?string}>
+	 * @param list<string> $keywords
+	 * @return array<string, array{public_id: string, rank: ?int, found: ?bool, depth: ?int, checked_at: ?string}>
 	 */
-	public function ranksForMarketKeywords(ProjectContext $context, array $marketKeywordIds): array
+	public function ranksForKeywords(ProjectContext $context, array $keywords): array
 	{
-		return $this->reports->ranksForMarketKeywords($context->projectId(), array_values(array_unique($marketKeywordIds)));
+		$market = $this->market($context);
+
+		if ($market === null || $keywords === []) {
+			return [];
+		}
+
+		$keys = [];
+
+		foreach ($keywords as $keyword) {
+			$keys[(string) $keyword] = bin2hex(MarketKeyword::key(MarketKeyword::normalize((string) $keyword)));
+		}
+
+		$ranks = $this->reports->ranksForKeys($context->projectId(), $market, array_values(array_unique($keys)));
+		$result = [];
+
+		foreach ($keys as $keyword => $key) {
+			if (isset($ranks[$key])) {
+				$result[(string) $keyword] = $ranks[$key];
+			}
+		}
+
+		return $result;
 	}
 
 	/**

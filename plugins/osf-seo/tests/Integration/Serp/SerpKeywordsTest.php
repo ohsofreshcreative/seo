@@ -132,11 +132,10 @@ final class SerpKeywordsTest extends SerpTestCase
 		self::assertSame(8.0, $row->gscPosition, 'Średnia pozycja (GSC) obu wariantów frazy: Σ position_sum / Σ wyświetleń.');
 		self::assertSame(560, $row->gscImpressions);
 
-		$market = $this->serp->market($context);
-		$marketId = $this->marketMetrics->ensure($market, ['buty damskie'])['buty damskie'];
-		$ranks = $this->serp->ranksForMarketKeywords($context, [$marketId, 999999]);
-		self::assertSame([$marketId], array_keys($ranks), 'Kolumna „Pozycja SERP” w Frazach tylko dla monitorowanych.');
-		self::assertSame(3, $ranks[$marketId]['rank']);
+		$ranks = $this->serp->ranksForKeywords($context, ['Buty Damskie', 'buty damskie', 'żółte buty']);
+		self::assertSame(['Buty Damskie', 'buty damskie'], array_keys($ranks), 'Kolumna „Pozycja SERP” w Frazach tylko dla monitorowanych; oba warianty GSC.');
+		self::assertSame(3, $ranks['buty damskie']['rank']);
+		self::assertSame($row->publicId, $ranks['Buty Damskie']['public_id']);
 	}
 
 	public function test_gsc_property_reset_keeps_serp_tracking_and_history(): void

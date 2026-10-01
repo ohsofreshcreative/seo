@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace OsfSeo\Serp;
 
 use OsfSeo\Database\Connection;
+use OsfSeo\Market\Market;
 
 /**
  * Zapytania odczytu modułu pozycji (bez N+1 i bez skanowania historii przy wejściu na stronę):
@@ -378,31 +379,32 @@ final class SerpReports
 	}
 
 	/**
-	 * Bieżąca Pozycja SERP dla fraz rynkowych projektu (kolumna w liście Frazy).
+	 * Bieżąca Pozycja SERP monitorowanych fraz projektu po kluczu rynkowym (kolumna w liście Frazy): od fraz rynku
+	 * (UNIQUE provider × lokalizacja × język × klucz), potem fraza projektu (UNIQUE projekt × fraza rynkowa).
 	 *
-	 * @param list<int> $marketKeywordIds
-	 * @return array<int, array{public_id: string, rank: ?int, found: ?bool, depth: ?int, checked_at: ?string}>
+	 * @param list<string> $keys klucze rynkowe (hex)
+	 * @return array<string, array{public_id: string, rank: ?int, found: ?bool, depth: ?int, checked_at: ?string}>
 	 */
-	public function ranksForMarketKeywords(int $projectId, array $marketKeywordIds): array
+	public function ranksForKeys(int $projectId, Market $market, array $keys): array
 	{
-		if ($marketKeywordIds === []) {
-			return [];
-		}
-
 		$result = [];
 
-		foreach ($this->db->fetchAll(
-			"SELECT market_keyword_id, public_id, last_rank, last_found, last_depth, last_checked_at FROM `{$this->db->table('serp_tracked_keywords')}`
-			WHERE project_id = %d AND status = 'active' AND market_keyword_id IN (" . Connection::placeholders($marketKeywordIds, '%d') . ')',
-			[$projectId, ...$marketKeywordIds],
-		) as $row) {
-			$result[(int) $row['market_keyword_id']] = [
-				'public_id' => (string) $row['public_id'],
-				'rank' => $row['last_rank'] === null ? null : (int) $row['last_rank'],
-				'found' => $row['last_found'] === null ? null : (int) $row['last_found'] === 1,
-				'depth' => $row['last_depth'] === null ? null : (int) $row['last_depth'],
-				'checked_at' => $row['last_checked_at'],
-			];
+		foreach (array_chunk($keys, 500) as $chunk) {
+			foreach ($this->db->fetchAll(
+				"SELECT STRAIGHT_JOIN LOWER(HEX(m.keyword_key)) AS h, t.public_id, t.last_rank, t.last_found, t.last_depth, t.last_checked_at
+				FROM `{$this->db->table('market_keywords')}` m
+				JOIN `{$this->db->table('serp_tracked_keywords')}` t ON t.project_id = %d AND t.market_keyword_id = m.id AND t.status = 'active'
+				WHERE m.provider = %s AND m.location_code = %d AND m.language_code = %s AND m.keyword_key IN (" . Connection::placeholders($chunk, 'UNHEX(%s)') . ')',
+				[$projectId, $market->provider, $market->locationCode, $market->languageCode, ...$chunk],
+			) as $row) {
+				$result[(string) $row['h']] = [
+					'public_id' => (string) $row['public_id'],
+					'rank' => $row['last_rank'] === null ? null : (int) $row['last_rank'],
+					'found' => $row['last_found'] === null ? null : (int) $row['last_found'] === 1,
+					'depth' => $row['last_depth'] === null ? null : (int) $row['last_depth'],
+					'checked_at' => $row['last_checked_at'],
+				];
+			}
 		}
 
 		return $result;
