@@ -26,8 +26,21 @@
     [null, 'Δ CTR', 'text-right'],
     ['position', 'Średnia pozycja (GSC)', 'text-right'],
     ['position_change', 'Zmiana pozycji', 'text-right'],
-    [null, 'Strona docelowa', 'text-left'],
   ];
+  // Dane rynkowe (DataForSEO) — dodatkowe kolumny, gdy rynek projektu jest obsługiwany. Brak danych = „—”, nie 0.
+  $market = $page->market;
+  if ($market !== null) {
+    $columns[] = ['volume', 'Wolumen', 'text-right'];
+    $columns[] = ['difficulty', 'Trudność SEO', 'text-right'];
+  }
+  $columns[] = [null, 'Strona docelowa', 'text-left'];
+  $unknown = fn ($metrics, bool $fetched) => $metrics === null ? 'Brak danych rynkowych' : ($fetched ? 'Brak danych u dostawcy' : 'Jeszcze nie pobrano');
+  $difficultyClass = fn (?int $kd) => match (true) {
+    $kd === null => 'text-slate-400',
+    $kd < 30 => 'text-emerald-700',
+    $kd < 70 => 'text-amber-700',
+    default => 'text-red-700',
+  };
 @endphp
 
 @section('content')
@@ -76,6 +89,16 @@
         <span class="text-slate-600">Min. wyświetleń</span>
         <input type="number" name="min_impr" value="{{ $filters->minImpressions }}" min="1" class="mt-1 block w-full rounded-md border-slate-300 text-sm focus:border-brand-500 focus:ring-brand-500">
       </label>
+      @if ($market !== null)
+        <label class="block text-sm">
+          <span class="text-slate-600">Min. wolumen</span>
+          <input type="number" name="min_volume" value="{{ $filters->minVolume }}" min="0" class="mt-1 block w-full rounded-md border-slate-300 text-sm focus:border-brand-500 focus:ring-brand-500">
+        </label>
+        <label class="block text-sm">
+          <span class="text-slate-600">Maks. trudność SEO</span>
+          <input type="number" name="max_kd" value="{{ $filters->maxDifficulty }}" min="0" max="100" class="mt-1 block w-full rounded-md border-slate-300 text-sm focus:border-brand-500 focus:ring-brand-500">
+        </label>
+      @endif
       <label class="block text-sm">
         <span class="text-slate-600">Zmiana pozycji</span>
         <select name="movement" class="mt-1 block w-full rounded-md border-slate-300 text-sm focus:border-brand-500 focus:ring-brand-500">
@@ -123,6 +146,33 @@
                   @if ($row->isNew())
                     <span class="ml-1 inline-flex rounded bg-sky-50 px-1.5 py-0.5 text-xs font-medium text-sky-700">nowa</span>
                   @endif
+                  @if ($market !== null && $row->market !== null)
+                    @php($metrics = $row->market)
+                    <details class="mt-1 text-xs text-slate-600">
+                      <summary class="cursor-pointer select-none text-brand-600 hover:underline">Dane rynkowe</summary>
+                      <dl class="mt-2 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1">
+                        <dt class="text-slate-500">CPC</dt>
+                        <dd class="tabular-nums">{{ Format::usd($metrics->cpc) }}</dd>
+                        <dt class="text-slate-500">Konkurencja Ads</dt>
+                        <dd>{{ Format::adsCompetition($metrics->competitionLevel) }}@if ($metrics->competitionIndex !== null) ({{ $metrics->competitionIndex }}/100)@endif</dd>
+                        <dt class="text-slate-500">Rynek</dt>
+                        <dd>{{ $market->label() }}</dd>
+                        <dt class="text-slate-500">Aktualizacja</dt>
+                        <dd>{{ Format::datetime($metrics->updatedAt()) }}</dd>
+                      </dl>
+                      @if ($metrics->monthly !== [])
+                        @php($peak = max(1, ...array_map(fn ($m) => (int) ($m['search_volume'] ?? 0), $metrics->monthly)))
+                        <div class="mt-2 flex h-10 items-end gap-0.5" role="img" aria-label="Wolumen w kolejnych miesiącach">
+                          @foreach ($metrics->monthly as $month)
+                            <span @class(['w-2 rounded-sm', 'bg-brand-500' => $month['search_volume'] !== null, 'bg-slate-200' => $month['search_volume'] === null])
+                              style="height: {{ $month['search_volume'] === null ? 8 : max(4, (int) round($month['search_volume'] / $peak * 100)) }}%"
+                              title="{{ Format::month($month['month']) }}: {{ Format::number($month['search_volume']) }}"></span>
+                          @endforeach
+                        </div>
+                        <p class="mt-0.5 text-slate-400">{{ Format::month($metrics->monthly[0]['month']) }} – {{ Format::month($metrics->monthly[count($metrics->monthly) - 1]['month']) }}, szczyt {{ Format::number($peak) }}</p>
+                      @endif
+                    </details>
+                  @endif
                 </td>
                 <td class="px-3 py-2 text-right tabular-nums">{{ Format::number($row->clicks) }}</td>
                 <td class="px-3 py-2 text-right"><x-panel.delta :value="$row->clicksChange()" /></td>
@@ -139,6 +189,22 @@
                     <span class="block text-xs text-slate-400">{{ Format::position($row->previousPosition()) }} → {{ Format::position($row->position()) }}</span>
                   @endif
                 </td>
+                @if ($market !== null)
+                  <td class="px-3 py-2 text-right tabular-nums">
+                    @if ($row->market?->searchVolume !== null)
+                      {{ Format::number($row->market->searchVolume) }}
+                    @else
+                      <span class="text-slate-400" title="{{ $unknown($row->market, (bool) $row->market?->volumeFetched()) }}">—</span>
+                    @endif
+                  </td>
+                  <td class="px-3 py-2 text-right tabular-nums">
+                    @if ($row->market?->keywordDifficulty !== null)
+                      <span class="{{ $difficultyClass($row->market->keywordDifficulty) }}">{{ $row->market->keywordDifficulty }}</span>
+                    @else
+                      <span class="text-slate-400" title="{{ $unknown($row->market, (bool) $row->market?->difficultyFetched()) }}">—</span>
+                    @endif
+                  </td>
+                @endif
                 <td class="max-w-xs px-3 py-2">
                   @if ($row->primaryPage && preg_match('#^https?://#i', $row->primaryPage))
                     <a href="{{ $row->primaryPage }}" target="_blank" rel="noopener noreferrer" class="break-all text-brand-600 hover:underline">{{ \OsfSeo\Gsc\Dictionary::path($row->primaryPage) }}</a>
@@ -172,6 +238,9 @@
       <p><strong class="font-medium text-slate-600">Średnia pozycja (GSC)</strong> to średnia pozycja z wyświetleń w okresie (ważona wyświetleniami) — nie jest to dokładna pozycja w wynikach Google.</p>
       <p><strong class="font-medium text-slate-600">Zmiana pozycji</strong> = pozycja poprzednia − obecna: wartość dodatnia (↑) oznacza poprawę, np. 15 → 7 = +8. CTR = kliknięcia / wyświetlenia w okresie.</p>
       <p>Google nie pokazuje zapytań zanonimizowanych, dlatego suma kliknięć fraz bywa mniejsza niż suma kliknięć projektu — to oczekiwane. Daty GSC są w czasie pacyficznym.</p>
+      @if ($market !== null)
+        <p><strong class="font-medium text-slate-600">Wolumen</strong> — średnia miesięczna liczba wyszukiwań na rynku {{ $market->label() }} (Google Ads przez DataForSEO). <strong class="font-medium text-slate-600">Trudność SEO</strong> — szacunek DataForSEO 0–100 trudności wejścia do organicznego TOP 10 (to nie konkurencja Ads). „—” = brak danych, nie 0. Dane rynkowe: <a href="{{ PanelUrl::project($project->publicId, 'market-data') }}" class="text-brand-600 hover:underline">Dane rynkowe</a>.</p>
+      @endif
     </div>
   @endif
 @endsection

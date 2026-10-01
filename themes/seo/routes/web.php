@@ -12,6 +12,7 @@
 use App\Http\Controllers\Panel\AuthController;
 use App\Http\Controllers\Panel\DashboardController;
 use App\Http\Controllers\Panel\KeywordsController;
+use App\Http\Controllers\Panel\MarketDataController;
 use App\Http\Controllers\Panel\OpportunitiesController;
 use App\Http\Controllers\Panel\ProjectController;
 use App\Http\Controllers\Panel\ProjectSectionController;
@@ -58,8 +59,14 @@ Route::middleware([Authenticate::class, VerifyNonce::class])->group(function () 
 			->where('opportunity', '[0-9A-Za-z]{26}');
 	});
 
+	// Dane rynkowe (DataForSEO, płatne API): ręczna synchronizacja tylko z uprawnieniem, nonce, Origin i potwierdzonym podglądem.
+	Route::middleware(ResolveProject::class . ':osf_seo_manage_market_data')->group(function () {
+		Route::post('/projects/{project}/market-data/sync', [MarketDataController::class, 'sync']);
+	});
+
 	Route::middleware(ResolveProject::class)->group(function () {
 		Route::get('/projects/{project}', [ProjectController::class, 'show']);
+		Route::get('/projects/{project}/market-data', [MarketDataController::class, 'show']);
 		Route::get('/projects/{project}/opportunities', [OpportunitiesController::class, 'index']);
 		Route::get('/projects/{project}/opportunities/{opportunity}', [OpportunitiesController::class, 'show'])
 			->where('opportunity', '[0-9A-Za-z]{26}');

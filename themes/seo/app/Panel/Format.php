@@ -58,6 +58,29 @@ final class Format
 		return $m[3] . '.' . $m[2] . '.' . $m[1];
 	}
 
+	/** Kwota w USD (CPC, koszt API DataForSEO). */
+	public static function usd(?float $value, int $decimals = 2): string
+	{
+		return $value === null ? '—' : self::number($value, $decimals) . self::NBSP . 'USD';
+	}
+
+	/** Konkurencja Ads (płatne wyniki Google Ads) — nie mylić z trudnością SEO. */
+	public static function adsCompetition(?string $level): string
+	{
+		return match ($level) {
+			'low' => 'niska',
+			'medium' => 'średnia',
+			'high' => 'wysoka',
+			default => '—',
+		};
+	}
+
+	/** Miesiąc historii wolumenu (Y-m-01) jako mm.rrrr. */
+	public static function month(?string $date): string
+	{
+		return $date !== null && preg_match('/^(\d{4})-(\d{2})/', $date, $m) === 1 ? $m[2] . '.' . $m[1] : '—';
+	}
+
 	/** Czas UTC z bazy w strefie WordPressa. */
 	public static function datetime(?string $utc): string
 	{

@@ -19,10 +19,37 @@
         <x-panel.field name="domain" label="Domena" :value="$values['domain'] ?? ''" :error="$errors['domain'] ?? null"
           help="Np. example.pl — adres zostanie znormalizowany (bez https://, www. i ścieżki)." required />
 
+        @php
+          $selectedMarket = null;
+          foreach ($markets as $candidate) {
+            if ($candidate->country === strtolower((string) ($values['country'] ?? '')) && $candidate->language === substr(strtolower((string) ($values['language'] ?? '')), 0, 2)) {
+              $selectedMarket = $candidate;
+            }
+          }
+        @endphp
         <div class="grid gap-5 sm:grid-cols-2">
-          <x-panel.field name="country" label="Kraj (kod ISO)" :value="$values['country'] ?? 'pl'" :error="$errors['country'] ?? null" maxlength="2" />
-          <x-panel.field name="language" label="Język" :value="$values['language'] ?? 'pl'" :error="$errors['language'] ?? null" maxlength="10" />
+          <x-panel.field name="country" label="Kraj (kod ISO)" :value="$values['country'] ?? 'pl'" :error="$errors['country'] ?? null" maxlength="2" list="market-countries" />
+          <x-panel.field name="language" label="Język" :value="$values['language'] ?? 'pl'" :error="$errors['language'] ?? null" maxlength="10" list="market-languages" />
         </div>
+        <datalist id="market-countries">
+          @foreach (collect($markets)->unique('country') as $option)
+            <option value="{{ $option->country }}">{{ $option->countryLabel }}</option>
+          @endforeach
+        </datalist>
+        <datalist id="market-languages">
+          @foreach (collect($markets)->unique('language') as $option)
+            <option value="{{ $option->language }}">{{ $option->languageLabel }}</option>
+          @endforeach
+        </datalist>
+        <p class="-mt-2 text-xs text-slate-500">
+          Rynek SEO (dane rynkowe DataForSEO):
+          @if ($selectedMarket)
+            <span class="font-medium text-slate-700">{{ $selectedMarket->label() }}</span> (lokalizacja {{ $selectedMarket->locationCode }}, język {{ $selectedMarket->languageCode }}).
+          @else
+            <span class="font-medium text-amber-700">nieobsługiwany</span> — wolumen i trudność SEO nie będą pobierane.
+          @endif
+          Obsługiwane: {{ implode(', ', array_map(fn ($m) => $m->label() . ' (' . $m->country . ', ' . $m->language . ')', $markets)) }}.
+        </p>
 
         <div class="flex gap-3">
           <x-panel.button type="submit">{{ $project ? 'Zapisz zmiany' : 'Utwórz projekt' }}</x-panel.button>

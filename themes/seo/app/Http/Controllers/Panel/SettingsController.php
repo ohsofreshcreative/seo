@@ -31,6 +31,8 @@ final class SettingsController
 			'googleRedirectUri' => $google->redirectUri(),
 			'googleScopes' => GoogleConfig::SCOPES,
 			'googleConnections' => osf_seo()->get(ConnectionRepository::class)->statusCounts(),
+			// Dane rynkowe (DataForSEO): tylko nazwy brakujących stałych, limity i zużycie — nigdy wartości sekretów.
+			'market' => osf_seo()->get(\OsfSeo\Market\MarketSyncService::class)->status(),
 		]);
 	}
 }
