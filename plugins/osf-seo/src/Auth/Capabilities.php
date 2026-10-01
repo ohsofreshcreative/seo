@@ -27,6 +27,9 @@ final class Capabilities
 	/** Zmienia ustawienia aplikacji. */
 	public const MANAGE_SETTINGS = 'osf_seo_manage_settings';
 
+	/** Prowadzi szanse SEO: status, notatki, data wdrożenia, ręczne przeliczanie. */
+	public const MANAGE_OPPORTUNITIES = 'osf_seo_manage_opportunities';
+
 	/**
 	 * @return list<string>
 	 */
@@ -39,6 +42,7 @@ final class Capabilities
 			self::MANAGE_CONNECTIONS,
 			self::MANAGE_USERS,
 			self::MANAGE_SETTINGS,
+			self::MANAGE_OPPORTUNITIES,
 		];
 	}
 }
