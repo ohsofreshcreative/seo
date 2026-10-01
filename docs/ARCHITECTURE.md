@@ -15,7 +15,7 @@ nigdy wartości sekretów.
 7. [Google OAuth](#7-google-oauth)
 8. [Przepływ danych GSC i reguły obliczeń](#8-przepływ-danych-gsc-i-reguły-obliczeń)
 9. [Synchronizacja](#9-synchronizacja)
-10. [Opportunity Score (MVP 2)](#10-opportunity-score-mvp-2)
+10. [Szanse SEO (STEP 11)](#10-szanse-seo-step-11)
 11. [Bezpieczeństwo](#11-bezpieczeństwo)
 12. [Konfiguracja i sekrety](#12-konfiguracja-i-sekrety)
 13. [Deployment (do ustalenia)](#13-deployment-do-ustalenia)
@@ -58,6 +58,9 @@ Przyszłe integracje płatne wyłącznie za interfejsem (`SerpProvider`), bez im
 | D17 | Repozytorium publiczne: sekrety wyłącznie w `wp-config.php` / zmiennych środowiskowych | Sekcja 12 |
 | D18 | Zmiana property GSC przy istniejących danych = jawny reset (usunięcie danych projektu i ponowny import); bez izolacji danych per property | Prostszy model (klucze faktów bez property), zero ryzyka mieszania danych. Sekcja 7.1 |
 | D19 | Kolejka synchronizacji: własna, na `osf_sync_runs` + WP-Cron / cron systemowy (zamiast Action Scheduler) | Bez zewnętrznej biblioteki w publicznym repo i dodatkowych tabel; jeden runner (GET_LOCK), budżet czasu. Sekcja 9.1 |
+| D20 | Szanse SEO w modelu hybrydowym: dowody wyliczane z danych GSC (wykrycia okresu zastępowane przy analizie), stan pracy trwały; szansa = projekt × stabilny odcisk (property, typ, podstrona/fraza/para adresów) | Lista zadań przetrwa przeliczenia i ponowny import; bez kopiowania faktów GSC. Sekcja 10 |
+| D21 | Analiza szans jako osobny krok po kolejce synchronizacji (WP-Cron i `sync:run`), nie część importera; klucz danych pomija analizę bez zmian | Import nie zależy od analizy; idempotentnie, bez generalizowania `SyncRunner`. Sekcja 10.8 |
+| D22 | Reset property archiwizuje szanse (stan `archived`, historia i stan pracy zostają) i usuwa ich dane pochodne; szanse nie należą do `GscDataStore::DATA_TABLES` | Stare rekomendacje nie udają aktualnych, a historia pracy nie znika bez decyzji. Sekcja 10.8 |
 
 ## 3. Repozytorium i środowiska
 
@@ -120,7 +123,7 @@ GET  /projects[?status=archived]             GET  /projects/create     POST /pro
 GET  /projects/{project}                     (przegląd; pusty stan → Search Console)
 GET  /projects/{project}/edit                POST /projects/{project}  (osf_seo_manage_projects)
 POST /projects/{project}/archive | /restore | /pause                   (osf_seo_manage_projects)
-GET  /projects/{project}/{section}           opportunities | pages | audit (placeholdery; keywords i search-console — niżej)
+GET  /projects/{project}/{section}           pages | audit (placeholdery; keywords, search-console i opportunities — niżej)
 ANY  /projects/{cokolwiek innego}            → 404 panelu (nie strona motywu)
 ```
 
@@ -153,6 +156,15 @@ GET  /projects/{project}                         (dashboard: KPI, TOP N, wzrosty
 GET  /projects/{project}/keywords                (lista fraz: ?days, q, pos_min, pos_max, min_impr, movement, sort, dir, page, per_page)
 ```
 
+Zaimplementowane w STEP 11:
+
+```
+GET  /projects/{project}/opportunities                 (lista: ?days=7|28|90, type, status, priority, confidence, q, state, view=list|pages, page)
+GET  /projects/{project}/opportunities/{opportunity}   (szczegóły; {opportunity} = public_id szansy, ULID; ?days)
+POST /projects/{project}/opportunities/{opportunity}   (osf_seo_manage_opportunities; status, note, completed_on)
+POST /projects/{project}/opportunities/analyze         (osf_seo_manage_opportunities; „Przelicz szanse”, limit 1 / 60 s)
+```
+
 Kolejne etapy:
 
 ```
@@ -171,14 +183,15 @@ plugins/osf-seo/
 │   ├── Auth/            # Capabilities, Roles, RoleManager, ProjectGuard, ProjectContext, ProjectNotFound, AccessDenied
 │   ├── Setup/           # Lifecycle (aktywacja/dezaktywacja), Installer (instalacja i aktualizacje, bez usuwania danych)
 │   ├── Support/         # Config (stałe/env), Logger, Redactor (maskowanie sekretów)
-│   ├── Cli/             # wp osf-seo status, db:*, project:*, google:*, gsc:*, sync:run
+│   ├── Cli/             # wp osf-seo status, db:*, project:*, google:*, gsc:*, sync:run, opportunities:*
 │   ├── Database/        # Connection ($wpdb + wyjątki, transakcje, GET_LOCK), BulkInsert, Migrator, Migrations/, Schema (spec), SchemaInspector
 │   ├── Projects/        # Project, ProjectRepository, ProjectService, DomainNormalizer, statusy i role
 │   ├── Http/            # HttpTransport (WP HTTP API), HttpResponse — cały ruch do Google
 │   ├── Google/          # OAuthFlow, OAuthClient, OAuthStateStore, Pkce, TokenVault, ConnectionRepository, AccessTokenProvider, GoogleApi (ApiRequester)
 │   ├── Gsc/             # GscClient (sites.list, searchAnalytics.query), PropertyService, GscProbe, GscImporter, Dictionary, GscDataStore
 │   ├── Sync/            # WindowPlanner, SyncPlanner, SyncRunner (kolejka sync_runs), SyncScheduler (WP-Cron), SyncService
-│   ├── Analytics/       # Metrics, Period, KeywordReport, OverviewReport, Visibility, ReportCache; Opportunity (MVP 2)
+│   ├── Analytics/       # Metrics, Period, KeywordReport, OverviewReport, Visibility, ReportCache
+│   ├── Opportunities/   # Szanse SEO (STEP 11): OpportunityDetector, CtrModel, OpportunityScorer, ConfidenceModel, Fingerprint, OpportunityExplainer, OpportunityConfig, OpportunityDataSource, OpportunityAnalyzer, OpportunityRepository, OpportunityService, OpportunityScheduler
 │   ├── Rest/            # (później) endpointy dla panelu — w MVP 1 dane renderowane serwerowo + JSON stanu synchronizacji
 │   ├── Serp/            # (przyszłość) wyłącznie interfejs SerpProvider
 │   └── Crawler/         # (MVP 3)
@@ -191,14 +204,14 @@ plugins/osf-seo/
 themes/seo/
 ├── functions.php                   # ->withRouting(using: …) + PanelMiddleware::GLOBAL
 ├── routes/web.php                  # trasy panelu (capabilities jako literały)
-├── app/Http/Controllers/Panel/     # Auth, Dashboard, Project (przegląd = dashboard GSC), Keywords, ProjectSection, SearchConsole (OAuth, property, synchronizacja), Settings
+├── app/Http/Controllers/Panel/     # Auth, Dashboard, Project (przegląd = dashboard GSC), Keywords, Opportunities (szanse SEO), ProjectSection, SearchConsole (OAuth, property, synchronizacja), Settings
 ├── app/Http/Middleware/Panel/      # PanelHeaders, UnslashInput, RequirePlugin, Authenticate, VerifyNonce, ResolveProject
 ├── app/Panel/                      # PanelUrl (adresy, bezpieczny redirect), PanelResponse (404/403/503), Flash, Format (liczby i daty PL)
 ├── app/View/Composers/Panel/       # Layout: użytkownik, projekty do przełącznika, bieżący projekt, flash
 ├── resources/css/panel.css         # osobne wejście Vite: Tailwind 4 (source(none)) + forms + tokeny brand-*
 ├── resources/js/panel.js           # Alpine (bez jQuery, GSAP, Reacta, CDN); panel/chart.js — Chart.js ładowany dynamicznie tylko na dashboardzie
-├── resources/views/panel/          # layouts/{base,guest,app}, auth/login, dashboard, projects/*, settings, error
-└── resources/views/components/panel/  # button, card, page-header, field, badge, flash, empty-state, nav-link, nonce, delta, stat
+├── resources/views/panel/          # layouts/{base,guest,app}, auth/login, dashboard, projects/*, opportunities/*, settings, error
+└── resources/views/components/panel/  # button, card, page-header, field, badge, flash, empty-state, nav-link, nonce, delta, stat, score, confidence, opportunity-status
 ```
 
 ### 4.4 Panel a wp-admin i motyw legacy
@@ -226,6 +239,7 @@ Zaimplementowane w STEP 1 (`plugins/osf-seo/src/Auth`). Kod sprawdza **capabilit
 | `osf_seo_manage_connections` | łączy konta Google / properties GSC, uruchamia synchronizację |
 | `osf_seo_manage_users` | zarządza klientami i ich przypisaniem do projektów |
 | `osf_seo_manage_settings` | ustawienia aplikacji |
+| `osf_seo_manage_opportunities` | szanse SEO: status, notatka, data wdrożenia, ręczne przeliczenie (od STEP 11, wersja 0.11.0) |
 
 | Rola | Capabilities |
 |---|---|
@@ -333,6 +347,20 @@ ENUM(queued, running, success, failed, skipped, retrying, cancelled); `priority`
 `property`. Indeksy: (`project_id`, `id`), (`status`, `queued_at`), `queue` (`status`, `priority`, `available_at`),
 `project_dataset_status` (`project_id`, `dataset`, `status`). Retencja 90 dni (`priority`, `available_at`, `locked_until`,
 `property`, nowe statusy i indeksy — schemat 4).
+
+**Szanse SEO** (od schematu 5, migracja `M0005CreateOpportunities` — tylko nowe tabele, sekcja 10):
+
+- **`osf_opportunities`** — `id`; `public_id` CHAR(26) ascii_bin (ULID, UNIQUE); `project_id`; `fingerprint` BINARY(16);
+  `type` VARCHAR(32) ascii; `property` (property GSC danych); `page_url` VARCHAR(2048) NULL + `page_hash` BINARY(16) NULL;
+  `keyword` VARCHAR(500) NULL; `state` ENUM(active, inactive, archived); `status` ENUM(new, review, planned, in_progress,
+  completed, dismissed); `note` TEXT; `completed_on` DATE; `baseline` LONGTEXT (JSON); `last_priority`, `last_confidence`,
+  `last_period_days`, `last_latest_date`, `last_evidence` (snapshot ostatniego wykrycia); `first_detected_at`, `last_detected_at`,
+  `inactive_since`, `status_changed_at`, `status_changed_by`, `created_at`, `updated_at`.
+  UNIQUE(`project_id`, `fingerprint`), indeksy (`project_id`, `state`, `status`), (`project_id`, `page_hash`).
+- **`osf_opportunity_detections`** — PK(`opportunity_id`, `period_days`); `project_id`; `priority`; `confidence`; `impressions`;
+  `clicks`; `latest_date`; `search_text` TEXT; `evidence` LONGTEXT (JSON); `analyzed_at`. Indeks (`project_id`, `period_days`, `priority`).
+- **`osf_opportunity_analyses`** — PK(`project_id`, `period_days`); `status` ENUM(success, skipped, failed); `trigger_type`;
+  `property`; `data_key` CHAR(32); `latest_date`; `opportunities`; `duration_ms`; `message`; `analyzed_at`.
 
 **Wersja schematu**: opcja `osf_seo_db_version` (autoload), podbijana po każdej udanej migracji.
 
@@ -738,24 +766,227 @@ wp osf-seo gsc:backfill --project=<id> --run --time-limit=600       # historia (
   daje te same kliknięcia/wyświetlenia co KPI dashboardu dla tego zakresu; raport „Skuteczność” w Search Console
   (te same daty) — sumy kliknięć i wyświetleń jak w KPI; CTR i średnia pozycja liczone z sum.
 
-## 10. Opportunity Score (MVP 2)
+## 10. Szanse SEO (STEP 11)
 
-Tylko specyfikacja — implementacja w MVP 2.
+Zaimplementowane w STEP 11 (`plugins/osf-seo/src/Opportunities`; UI: `OpportunitiesController`, `/projects/{project}/opportunities`).
+Moduł analizuje **wyłącznie dane Google Search Console już zapisane w bazie** i odpowiada na pytania: gdzie są realne
+szanse, dlaczego dana podstrona/fraza się pojawiła, co sprawdzić i od czego zacząć.
 
-**Warunki wejścia**: średnia pozycja w okresie 4–20 **i** minimum wyświetleń (domyślnie 100);
-opcjonalnie wykluczanie fraz brandowych.
+> **Szanse to sygnały do sprawdzenia, nie gwarancja wzrostu.** Pozycja to średnia pozycja (GSC), a nie dokładny ranking.
+> System nie analizuje HTML, title, meta description, treści, linków ani wyników konkurencji — rekomendacje są hipotezami
+> i kolejnymi krokami do ręcznego sprawdzenia. Bez DataForSEO, SERP API i AI (decyzja D3 bez zmian).
 
-**Score 0–100 = suma czterech składników:**
+### 10.1 Architektura i zapis (D20)
 
-| Składnik | Max | Obliczenie |
-|---|---|---|
-| Bliskość TOP | 35 | `35 × (20 − pozycja) / 16` (pozycja 4 → 35, 20 → 0) |
-| Popyt | 30 | `30 ×` percentyl wyświetleń frazy w projekcie |
-| Luka CTR | 20 | `20 × (1 − min(1, CTR / CTR_oczekiwany))`, CTR oczekiwany = mediana CTR fraz projektu w tym samym przedziale pozycji (tabela domyślna przy małej próbie) |
-| Impet | 15 | do 8 pkt za wzrost wyświetleń + do 7 pkt za poprawę pozycji vs poprzedni okres |
+```
+gsc_query_daily ─┐                    OpportunityDataSource (agregaty SQL obu okresów, bez historii dziennej w PHP)
+gsc_query_page_daily ─┤  ──►  KeywordReport::aggregate, pary fraza × podstrona, sumy podstron, segmenty kandydatów
+gsc_site_daily ─┘                     ▼
+                              OpportunityDetector (czysta logika: CtrModel, OpportunityScorer, ConfidenceModel)
+                                      ▼  Candidate (typ, odcisk, priorytet, pewność, dowody JSON)
+                              OpportunityRepository::replaceDetections (transakcja, blokada wiersza projektu, kontrola property)
+                                      ▼
+osf_opportunities (stan pracy, trwały) + osf_opportunity_detections (wykrycia okresu, pochodne) + osf_opportunity_analyses
+                                      ▼
+                              OpportunityService (ProjectContext) → OpportunitiesController → Blade
+```
 
-UI pokazuje rozbicie punktów słowami oraz **potencjał kliknięć**:
-`wyświetlenia × (CTR_oczekiwany_dla_celu − CTR_obecny)`. Wagi i progi w jednym pliku konfiguracyjnym.
+**Model hybrydowy (D20)**: dowody są wyliczane z danych GSC (źródłem prawdy pozostają tabele faktów — nie kopiujemy ich),
+a stan pracy jest trwały:
+
+- `osf_opportunities` — jedna szansa = projekt × **stabilny odcisk** (`UNIQUE(project_id, fingerprint)`), `public_id` (ULID)
+  w URL-ach; typ, property, podstrona/fraza; `state` (stan wykrycia) i `status` (stan pracy), notatka, data wdrożenia,
+  baseline, pierwsze/ostatnie wykrycie, ostatni snapshot dowodów (historia po zniknięciu sygnału),
+- `osf_opportunity_detections` — wynik ostatniej analizy okresu (7/28/90 dni): priorytet, pewność, dowody, tekst do wyszukiwania;
+  `PK(opportunity_id, period_days)`, indeks `(project_id, period_days, priority)` pod listę; **zastępowane** przy każdej analizie okresu,
+- `osf_opportunity_analyses` — stan analizy per projekt × okres (klucz danych, data końca, czas, wynik, powód pominięcia).
+
+Analiza nigdy nie zmienia pól pracy (status, notatka, data wdrożenia, baseline). Lista i filtry działają w SQL na wykryciach
+(paginacja 25), więc strona nie wykonuje agregacji historii GSC — utrwalone wykrycia pełnią rolę cache wyników analizy
+(unieważnianej kluczem danych). `ReportCache` jest używany dla obserwacji po wdrożeniu.
+
+### 10.2 Kategorie i reguły wykrywania
+
+Progi podane dla okresu 28 dni; progi ilościowe są skalowane liniowo do 7/90 dni z dolną granicą (sekcja 10.9).
+Metryki zawsze z sum: CTR = `SUM(clicks) / SUM(impressions)`, pozycja = `SUM(position_sum) / SUM(impressions)`,
+zmiana pozycji = poprzednia − obecna. Frazy: `gsc_query_daily` (pozycja frazy); podstrony i kanibalizacja: `gsc_query_page_daily`.
+
+| Typ (UI) | Reguła (fraza) |
+|---|---|
+| **Niski CTR przy dużej widoczności** (`low_ctr`) | średnia pozycja ≤ 20, ≥ 100 wyświetleń, CTR ≤ 0,6 × **referencyjny CTR** przedziału pozycji (10.3) i luka kliknięć (wyświetlenia × ref − kliknięcia) ≥ 5 |
+| **Blisko TOP 3 / TOP 10** (`near_top`) | pozycja (3; 10] → cel TOP 3, (10; 20] → cel TOP 10; ≥ 50 wyświetleń |
+| **Duża widoczność, słaba pozycja** (`weak_position`) | pozycja (20; 100], ≥ 200 wyświetleń (rozłączne z „blisko TOP”) |
+| **Istotny spadek** (`decline`) | poprzedni okres w pełni zaimportowany i fraza miała w nim ≥ 100 wyświetleń, oraz co najmniej jeden sygnał: **kliknięcia** (baza ≥ 10, strata ≥ 5 i ≥ 30%), **wyświetlenia** (strata ≥ 100 i ≥ 30%), **pozycja** (≥ 50 wyświetleń teraz, pogorszenie ≥ max(2, 20% poprzedniej pozycji)). Dodatkowo **spadek całej podstrony** (suma jej widocznych fraz): kliknięcia (baza ≥ 20, strata ≥ 10 i ≥ 30%) albo wyświetlenia (strata ≥ 300 i ≥ 30%) — także gdy żadna fraza z osobna nie przekracza progów |
+| **Możliwa kanibalizacja** (`cannibalization`) | fraza z ≥ 100 wyświetleniami (suma adresów), ≥ 2 adresy z udziałem ≥ 15% i ≥ 20 wyświetleniami, **nie wszystkie** z pozycją ≤ 3 (dwa wyniki w czołówce / sitelinki to nie problem); adresy różniące się tylko `#fragmentem` = jedna podstrona |
+
+- **Szum**: 1 → 0 kliknięć, 2 → 0 wyświetleń, 7,1 → 7,3 przy małej liczbie wyświetleń nie dają spadku (próg bazy + próg
+  bezwzględny + próg względny). Bez pełnego poprzedniego okresu nie ma spadków (brak porównania).
+- **Pierwszeństwo**: fraza ze spadkiem trafia tylko do „Spadków” (nie do niskiego CTR, blisko TOP ani słabej pozycji) —
+  jedna fraza, jedno pilne działanie. Niski CTR i „blisko TOP” mogą dotyczyć tej samej frazy (różne działania: opis wyniku vs treść).
+- **Kanibalizacja — sygnały**: udział wyświetleń każdego adresu, kliknięcia, średnia pozycja, zmiana dominującego adresu
+  (najwięcej kliknięć, potem wyświetleń) między okresami i w kolejnych segmentach okresu (7 dni dla okresów ≥ 28 dni,
+  1 dzień dla 7 dni). Etykieta zawsze „Możliwa kanibalizacja”.
+
+### 10.3 Referencyjny CTR (zależny od pozycji)
+
+CTR silnie zależy od średniej pozycji, więc niski CTR jest oceniany względem przedziału pozycji (`CtrModel`, granice w połowie,
+bo pozycje GSC są średnimi):
+
+| Przedział | 1 | 2–3 | 4–5 | 6–10 | 11–20 | 21–50 | 51–100 |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| Pozycja | < 1,5 | 1,5–3,5 | 3,5–5,5 | 5,5–10,5 | 10,5–20,5 | 20,5–50,5 | ≥ 50,5 |
+| Domyślny CTR | 28% | 14% | 7% | 3% | 1% | 0,4% | 0,1% |
+
+Referencja przedziału = **mediana CTR fraz projektu** w okresie (CTR frazy = jej kliknięcia / jej wyświetlenia; frazy z ≥ 30
+wyświetleniami), gdy próbka ma ≥ 8 fraz; inaczej wartość domyślna (ostrożne przybliżenie). To rozkład referencyjny, nie CTR
+okresu — CTR fraz, grup i projektu zawsze liczymy z sum. Mediana zamiast sumy ważonej: kilka fraz brandowych z bardzo wysokim
+CTR nie zawyża punktu odniesienia. Referencja trafia do dowodów (źródło: projekt / domyślna, liczba fraz).
+
+### 10.4 Priorytet (Opportunity Score 0–100)
+
+„Jak bardzo warto to sprawdzić” — nie prognoza wzrostu. `L(x, cap) = min(1, log10(1 + x) / log10(1 + cap))` — skala
+logarytmiczna z limitem, więc jedna ogromna fraza nie dominuje liniowo. Limity dla 28 dni: `demand_cap` = 11 200 wyświetleń,
+`clicks_cap` = 280 kliknięć (skalowane do okresu).
+
+**Priorytet = Popyt (0–30) + Skala (0–50) + Trend (0–20)**, zaokrąglony i ograniczony do 0–100:
+
+| Typ | Popyt (0–30) | Skala (0–50) | Trend (0–20) |
+|---|---|---|---|
+| Niski CTR | 30 × L(wyświetlenia fraz) | 30 × L(luka kliknięć) + 20 × (1 − min(1, kliknięcia / kliknięcia przy referencji)) | 20 × min(1, spadek CTR vs poprzedni okres / 50%) |
+| Blisko TOP | jw. | 30 × L(potencjał kliknięć) + 20 × bliskość celu | 10 × min(1, wzrost wyświetleń) + 10 × min(1, poprawa pozycji / 5) |
+| Słaba pozycja | jw. | 30 × L(potencjał kliknięć do TOP 20) + 20 × (100 − pozycja) / 80 | jw. |
+| Spadek | 30 × L(wyświetlenia w poprzednim okresie) | 30 × L(utracone kliknięcia) + 20 × min(1, strata względna) | 20 × min(1, pogorszenie pozycji / 5) |
+| Możliwa kanibalizacja | 30 × L(wyświetlenia fraz) | 30 × wyrównanie podziału + 20 × min(1, (liczba fraz − 1) / 4) | 20 × udział wyświetleń fraz ze zmianą dominującego adresu |
+
+- Potencjał kliknięć = Σ max(0, wyświetlenia × CTR referencyjny celu − kliknięcia) (cel TOP 3 → przedział 2–3, TOP 10 → 6–10,
+  TOP 20 → 11–20) — szacunek, nie obietnica. Bliskość: TOP 3 `(10 − poz.) / 7`, TOP 10 `(20 − poz.) / 10` (ważona wyświetleniami).
+- Utracone kliknięcia = max(strata kliknięć, strata wyświetleń × CTR poprzedniego okresu); strata względna liczona od kliknięć tylko
+  przy bazie ≥ 10 kliknięć (inaczej od wyświetleń) — 2 → 0 kliknięć nie daje „−100%”.
+- Wyrównanie podziału = min(1, (1 − udział największego adresu) / 0,5), ważone wyświetleniami fraz.
+- Składniki trendu liczone tylko przy wystarczającej próbie w poprzednim okresie (wzrost z 20 wyświetleń to szum).
+- UI pokazuje rozbicie punktów i wartości wejściowe (dowody `score`).
+
+**Zmiana względem pierwotnej specyfikacji (MVP 2)**: poprzednia wersja opisywała jedną kategorię (frazy na pozycjach 4–20)
+z „Bliskością TOP 35 + Popytem 30 (percentyl wyświetleń) + Luką CTR 20 + Impetem 15”. Zachowane: luka CTR, potencjał kliknięć,
+impet (trend), popyt. Zmienione: (1) moduł ma 5 kategorii i grupy podstron, więc „skala” zależy od typu; (2) percentyl
+wyświetleń zastąpiony skalą logarytmiczną z limitem — percentyl zmienia się z każdą inną frazą (niestabilny między przeliczeniami)
+i nasyca się dla grup kilku fraz; (3) pewność wydzielona z priorytetu.
+
+### 10.5 Pewność (Niska / Średnia / Wysoka)
+
+Osobno od priorytetu (np. priorytet 60, pewność niska = duży potencjał na małej próbie). Punkty 0–4:
+próba — wyświetlenia grupy ≥ 1000 → 2 pkt, ≥ 300 → 1 pkt (28 dni, skalowane); porównanie — poprzedni okres w pełni
+zaimportowany i grupa miała w nim wyświetlenia → 1 pkt; spójność → 1 pkt: niski CTR także w poprzednim okresie / pozycja
+stabilna (≥ 50% wyświetleń z fraz w tym samym zakresie pozycji wcześniej) / spadek w ≥ 2 metrykach lub ≥ 2 frazach /
+podział wyświetleń także w poprzednim okresie albo zmiana lidera w segmentach. 0–1 = Niska, 2–3 = Średnia, 4 = Wysoka.
+Bez pozorowania pewności statystycznej. **Nakład pracy (effort) celowo pominięty** — z samych danych GSC byłaby to fałszywa precyzja.
+
+### 10.6 Grupowanie, deduplikacja i odcisk
+
+- Fraza jest przypisana do **strony docelowej**: adres (bez `#fragmentu`) z największą liczbą kliknięć, potem wyświetleń
+  w bieżącym okresie; dla utraconych fraz — w poprzednim. Bez danych `query_page` grupą jest sama fraza.
+- Szansa = **typ × podstrona** (15 fraz blisko TOP 10 jednej podstrony = jedna szansa z 15 frazami w dowodach); kanibalizacja =
+  **typ × para dwóch głównych adresów** (wiele fraz tej samej pary = jedna szansa). Jedna podstrona może mieć kilka szans różnych
+  typów (różne działania). Dowody: do 25 najważniejszych fraz/zapytań (`evidence_keywords`), wyszukiwanie obejmuje wszystkie.
+- Limit 300 szans na typ i okres (najwyższy priorytet) — lista zadań, nie zrzut fraz.
+- **Odcisk** = MD5(property, typ, klucz encji: adres bez fragmentu / dokładna fraza z GSC / posortowana para adresów) —
+  z tekstów GSC, nie z ID słowników, więc przetrwa ponowny import; property w odcisku: szanse różnych properties się nie łączą.
+- Widok „wg podstron”: podstrona → typy szans → dowody (grupowanie w SQL po `page_hash`, paginacja po podstronach).
+
+### 10.7 Praca nad szansą
+
+| Status | UI |
+|---|---|
+| `new` | Nowa (ustawiany przy pierwszym wykryciu) |
+| `review` | Do analizy |
+| `planned` | Zaplanowana |
+| `in_progress` | W trakcie |
+| `completed` | Zrealizowana (z datą wdrożenia, domyślnie dziś, nie w przyszłości) |
+| `dismissed` | Odrzucona |
+
+- Zmiany wymagają `osf_seo_manage_opportunities` (administrator, `osf_seo_admin`); klient widzi szanse tylko do odczytu.
+  Notatka do 2000 znaków. Zapis: kto i kiedy zmienił status. Domyślny filtr listy: statusy otwarte (Nowa … W trakcie).
+- **Stan wykrycia** (ustawia analiza): `active` (wykryta w co najmniej jednym okresie), `inactive` (sygnał nie spełnia już
+  kryteriów — szansa nie jest usuwana; zostaje status, notatka i ostatni snapshot dowodów; wraca do `active`, gdy sygnał wróci),
+  `archived` (dane poprzedniej property, 10.8). Status pracy przetrwa każdą analizę (także `completed`/`dismissed` przy ponownym wykryciu).
+- **Baseline i obserwacja po wdrożeniu**: przy przejściu na „Zrealizowana” (i zmianie daty wdrożenia) zapisujemy frazy z dowodów
+  i ich sumy (`gsc_query_daily`) w okresie tej samej długości **przed** datą wdrożenia. Gdy dane obejmują cały okres **po**
+  wdrożeniu, szczegóły pokazują „Po wdrożeniu kliknięcia tych fraz zmieniły się o X względem okresu bazowego” z zastrzeżeniem,
+  że to obserwacja, nie dowód przyczynowości. Ponowne otwarcie szansy czyści datę wdrożenia i baseline.
+
+### 10.8 Przeliczanie, okresy i reset property
+
+- **Okresy** 7/28/90 dni (domyślnie 28) do **ostatniej kompletnej daty** = min(ostatnia data sum witryny, fraz, fraz × podstron) —
+  nie „dziś”; porównanie z poprzednim okresem tej samej długości. Okres jest analizowany tylko, gdy bieżący okres jest w pełni
+  zaimportowany (frazy i frazy × podstrony) — inaczej „pominięto” (np. w trakcie backfillu). Poprzedni okres niepełny → bez spadków,
+  niższa pewność.
+- **Automatycznie** (D21): osobny krok po przebiegu kolejki synchronizacji (`SyncScheduler::onAfterRun` — WP-Cron
+  `osf_seo_sync_tick` i `wp osf-seo sync:run`), **nie** część importera — błąd lub czas analizy nie wpływa na import.
+  Co 5 min sprawdza projekty z property i danymi, maks. 3 analizy na uruchomienie (budżet czasu kolejki); pomija projekt,
+  gdy czeka odświeżanie najnowszych danych; analizuje tylko przy zmianie **klucza danych** (wersja analizy, progi, property,
+  ostatnia data, pokrycie zakresu obu okresów — backfill poza zakresem nie wywołuje analizy).
+- **Ręcznie**: „Przelicz szanse” (POST, nonce + Origin, `osf_seo_manage_opportunities`, limit 1 / 60 s na projekt) oraz
+  `wp osf-seo opportunities:analyze --project=<id> [--days=7|28|90] [--force]`.
+- Idempotentnie i bezpiecznie przy ponowieniu: blokada `GET_LOCK` per projekt, zapis wykryć okresu w jednej transakcji
+  pod blokadą wiersza projektu z kontrolą property (jak import GSC); upsert po odcisku — bez duplikatów.
+- **Reset property** (D18 → D22): w transakcji resetu (blokada wiersza projektu) wykrycia i stan analiz projektu są usuwane,
+  a szanse oznaczane jako `archived` — z historią i stanem pracy, poza listą aktywnych rekomendacji (filtr „Archiwalne”).
+  Nowa property ma inne odciski, więc nowe dane tworzą nowe szanse; analiza starej property przerwana w trakcie nie zapisze
+  wyników (kontrola property). Tabele szans nie należą do `GscDataStore::DATA_TABLES` — reset danych GSC ich nie kasuje.
+  Odłączenie konta Google bez zmiany property: szanse zostają, ale nie są aktualizowane (komunikat w UI).
+
+### 10.9 Progi i konfiguracja
+
+Wszystkie progi w `OpportunityConfig` (bez progów w SQL). Każdy można nadpisać stałą w `wp-config.php` lub zmienną środowiskową
+`OSF_SEO_OPP_<NAZWA>` (np. `OSF_SEO_OPP_LOW_CTR_MIN_IMPRESSIONS=150`); wartości spoza zakresu są przycinane, a zmiana progów
+zmienia klucz danych (ponowna analiza). Progi ilościowe dla 28 dni → `max(dolna granica, round(wartość × dni / 28))`.
+
+| Próg (28 dni) | Wartość | Dolna granica |
+|---|---:|---:|
+| `keyword_min_impressions` / `pair_min_impressions` (wczytanie fraz / par) | 10 / 5 | 3 / 1 |
+| `reference_min_impressions`, `reference_min_keywords` (referencyjny CTR) | 30, 8 fraz | 10 |
+| `low_ctr_min_impressions`, `low_ctr_min_click_gap`, `low_ctr_max_ratio`, `low_ctr_max_position` | 100, 5, 0,6, 20 | 30, 2 |
+| `near_top_min_impressions` | 50 | 15 |
+| `weak_position_min_impressions` | 200 | 50 |
+| `decline_min_previous_impressions`, `decline_min_previous_clicks`, `decline_min_click_loss`, `decline_min_impression_loss` | 100, 10, 5, 100 | 30, 4, 3, 30 |
+| `decline_min_relative`, `decline_min_position_drop`, `decline_relative_position_drop` | 30%, 2, 20% | — |
+| `decline_min_current_impressions_for_position` | 50 | 15 |
+| `decline_page_min_previous_clicks`, `decline_page_min_click_loss`, `decline_page_min_impression_loss` | 20, 10, 300 | 6, 4, 60 |
+| `cannibalization_min_impressions`, `cannibalization_min_url_impressions`, `cannibalization_min_share`, `cannibalization_top_position` | 100, 20, 15%, 3 | 30, 6 |
+| `confidence_medium_impressions`, `confidence_high_impressions` | 300, 1000 | 80, 250 |
+| `demand_cap`, `clicks_cap` (priorytet) | 11 200, 280 | 2800, 70 |
+| `max_groups_per_type`, `evidence_keywords` | 300, 25 | — |
+
+### 10.10 Ograniczenia
+
+- Dane GSC: zapytania zanonimizowane i limit wierszy — sumy fraz i podstron są mniejsze niż sumy projektu; podstrony wyłącznie
+  z `query_page` (agregacja Google per strona). Szanse nie obejmują podstron bez widocznych fraz.
+- Średnia pozycja (GSC) to średnia z wyświetleń — wyniki rozszerzone, personalizacja i lokalizacja wpływają na nią i na CTR.
+  Referencyjny CTR jest przybliżeniem; przyczyny niskiego CTR, spadku czy podziału adresów trzeba sprawdzić ręcznie.
+- Kanibalizacja nie rozróżnia intencji — wiele adresów bywa poprawne. Sitelinki rozpoznajemy tylko heurystycznie (wszystkie adresy ≤ 3).
+- Obserwacja po wdrożeniu porównuje frazy z dowodów (do 25) w równych okresach przed i po dacie wdrożenia — bez kontroli
+  sezonowości i bez atrybucji przyczynowej; frazy dłuższe niż 500 znaków (skracane w słowniku) mogą nie zostać odnalezione.
+- Brak nakładu pracy (effort), brak powiadomień, brak przypisywania szans do osób — możliwe kolejne etapy.
+
+### 10.11 Wydajność (pomiar)
+
+`composer test:performance` (MariaDB 10.11 w kontenerze deweloperskim, bez strojenia, mediana 3 uruchomień): 2,4 mln wierszy
+`query_daily` (20 tys. fraz, ~5 tys. dziennie, 480 dni) i 270 tys. `query_page_daily` (90 dni) projektu + dane innego projektu
+w tych samych tabelach (1 mln wierszy faktów, 200 tys. fraz i 20 tys. adresów w słownikach, 30 tys. szans / 90 tys. wykryć).
+
+| Operacja | Czas | Uwagi |
+|---|---:|---|
+| Analiza 28 dni (agregaty + wykrywanie + zapis 603 szans) | ~0,9–1,2 s | pamięć PHP analizy ~50 MB |
+| Analiza 7 dni | ~0,5–0,6 s | |
+| Analiza 90 dni | ~1,7–1,9 s | |
+| Lista szans (strona 1 / z wyszukiwaniem i typem / wg podstron) | 3–6 ms | dane z tabel szans, bez agregacji GSC |
+
+`EXPLAIN`: agregat fraz — `range` na `PRIMARY (project_id, date)` + słownik `eq_ref` po PRIMARY (`STRAIGHT_JOIN`; bez niego planista
+skanował cały słownik wszystkich projektów); pary fraza × podstrona i sumy podstron — `range` na `PRIMARY` `query_page_daily`;
+segmenty kandydatów — `range` na `project_keyword_date_page`; adresy i teksty fraz — `range` na `PRIMARY` (listy IN po 500, bo MariaDB
+zamienia listy ≥ 1000 na podzapytanie ze skanem całej tabeli); lista szans — `ref` na `project_period_priority` + `eq_ref`; członkowie
+grup podstron — `range` na `project_page` + `eq_ref`. Analiza działa w tle (raz na zmianę danych), więc strony panelu nie wykonują
+agregacji historii. Nowych indeksów na tabelach GSC nie było potrzeba.
 
 ## 11. Bezpieczeństwo
 
@@ -770,7 +1001,10 @@ UI pokazuje rozbicie punktów słowami oraz **potencjał kliknięć**:
   `wp-config.php` (osobny od soli WordPressa, identyfikator klucza w kopercie); access token tylko
   w pamięci procesu; tokeny nigdy nie trafiają do Blade, JS, REST ani logów.
 - **SQL**: `$wpdb->prepare`, generator placeholderów `IN`, biała lista sortowania, walidacja dat i limitów.
-- **XSS**: frazy i URL-e z GSC to dane zewnętrzne — zawsze escapowane.
+- **XSS**: frazy i URL-e z GSC to dane zewnętrzne — zawsze escapowane (także w dowodach i wyjaśnieniach szans SEO).
+- **Szanse SEO** (STEP 11): szansa z URL-a szukana wyłącznie po (`project_id` z `ProjectContext`, `public_id`) — identyfikator
+  innego projektu, wewnętrzne ID i nieprawidłowy ULID dają 404; zmiany i ręczne przeliczenie wymagają
+  `osf_seo_manage_opportunities` (trasa `ResolveProject` + kontrola w `OpportunityService`), nonce i zgodnego Origin.
 - **CSRF**: nonce WordPressa w każdym formularzu panelu + kontrola Origin/Referer (STEP 4), nonce WP
   w REST, `state` w OAuth.
 - **Logowanie**: `wp_signon` (działają wtyczki bezpieczeństwa podpięte pod `authenticate`), limit
@@ -797,6 +1031,8 @@ samej nazwie. W repozytorium wyłącznie placeholdery.
 | `OSF_SEO_GSC_HISTORY_MONTHS` | (opcjonalnie) ile miesięcy historii pobierać, 1–16, domyślnie 16 | STEP 9 |
 | `OSF_SEO_SYNC_REFRESH_DAYS` | (opcjonalnie) okno kroczące codziennego odświeżania, 3–30 dni, domyślnie 7 | STEP 9 |
 | `OSF_SEO_SYNC_TIME_BUDGET` | (opcjonalnie) budżet czasu jednego uruchomienia kolejki z WP-Cron, 5–300 s, domyślnie 20 | STEP 9 |
+| `OSF_SEO_MOVERS_MIN_IMPRESSIONS` | (opcjonalnie) próg wyświetleń wzrostów/spadków dashboardu, domyślnie 10 | STEP 10 |
+| `OSF_SEO_OPP_<PRÓG>` | (opcjonalnie) progi szans SEO, np. `OSF_SEO_OPP_LOW_CTR_MIN_IMPRESSIONS` — lista w sekcji 10.9 | STEP 11 |
 
 ```php
 // wp-config.php — przykład z placeholderami
@@ -854,8 +1090,9 @@ Warianty docelowe:
 | 13 | Widok Keywords + szczegół frazy | ✅ STEP 10 lista fraz (filtry, sortowanie, paginacja, strona docelowa); szczegół frazy — do zrobienia |
 | 14 | Dashboard projektu + wykresy (Chart.js, REST) | ✅ STEP 10 (KPI, TOP N, wzrosty/spadki, wykres dzienny; bez REST — dane renderowane serwerowo) |
 | 15 | Hardening i operacje (rate limit, nagłówki, status crona, testy dostępu) | — |
+| 16 | Szanse SEO: wykrywanie (niski CTR, blisko TOP, słaba pozycja, spadki, możliwa kanibalizacja), priorytet i pewność, grupowanie po podstronach, praca nad szansą, automatyczne przeliczanie | ✅ STEP 11 (sekcja 10; obserwacja po wdrożeniu — wersja podstawowa) |
 
-**MVP 2**: Opportunity Score, Pages/landing pages, zaawansowane filtry, automatyczna synchronizacja, raporty.
+**MVP 2**: ~~Opportunity Score~~ (STEP 11), Pages/landing pages, zaawansowane filtry, automatyczna synchronizacja, raporty.
 **MVP 3**: własny crawler, audyt techniczny, połączenie crawler + GSC.
 **MVP 4**: panel klienta, raporty, rekomendacje AI.
 **Przyszłość**: opcjonalny dokładny rank tracking przez SERP API (poza darmowym MVP).
@@ -885,3 +1122,6 @@ Każdy etap to osobny commit z testem (build, `php -l`, smoke test WordPress). K
 - **Hosting**: dostępność SSH/WP-CLI/crona i wersja PHP na Hostingerze do weryfikacji.
 - **Limity GSC API** i opóźnienie danych — obsłużone ponowieniami i odczytem ostatniej daty z danych; do potwierdzenia na stagingu.
 - **Sesje Laravela** wymagają zapisywalnego `storage/` motywu na serwerze.
+- **Szanse SEO (STEP 11)**: progi i referencyjny CTR są przybliżeniem — do kalibracji na prawdziwych projektach (stałe `OSF_SEO_OPP_*`);
+  analiza dużych property zajmuje ~1–2 s i ~50 MB pamięci na okres (w tle, po imporcie); bez crona systemowego przeliczanie
+  następuje przy ruchu na stronie (jak kolejka). Obserwacja po wdrożeniu nie jest atrybucją przyczynową.

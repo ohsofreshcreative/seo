@@ -175,6 +175,34 @@ final class MigratorTest extends IntegrationTestCase
 		));
 	}
 
+	public function test_upgrade_from_schema_4_adds_opportunity_tables_and_keeps_data(): void
+	{
+		// Stan stagingu przed STEP 11: schemat 4 z prawdziwymi danymi.
+		$schema4 = array_slice(Migrator::defaultMigrations(), 0, 4);
+		$this->migrator($schema4)->migrate();
+		$this->seedData();
+		$before = $this->dataSnapshot();
+		$inspector = new SchemaInspector(self::db());
+
+		self::assertSame(4, $this->migrator()->currentVersion());
+		self::assertFalse($inspector->inspect()['opportunities']['exists']);
+
+		self::assertSame(['0005 create_opportunities'], $this->migrator()->migrate());
+		self::assertSame(5, $this->migrator()->currentVersion());
+		self::assertSame($before, $this->dataSnapshot(), 'Migracja 5 nie zmienia istniejących danych.');
+		self::assertSame([], $inspector->problems());
+
+		$indexes = $inspector->inspect()['opportunities']['indexes'];
+		self::assertSame(['unique' => true, 'columns' => ['project_id', 'fingerprint']], $indexes['project_fingerprint']);
+		self::assertSame(['unique' => true, 'columns' => ['public_id']], $indexes['public_id']);
+		self::assertSame(['unique' => true, 'columns' => ['opportunity_id', 'period_days']], $inspector->inspect()['opportunity_detections']['indexes']['PRIMARY']);
+
+		// Ponowne uruchomienie migracji 5 (np. utracona wersja schematu) jest bezpieczne.
+		update_option(Migrator::OPTION_VERSION, '4');
+		self::assertSame(['0005 create_opportunities'], $this->migrator()->migrate());
+		self::assertSame([], $inspector->problems());
+	}
+
 	public function test_failed_migration_does_not_bump_version_and_keeps_earlier_ones(): void
 	{
 		$broken = new class implements Migration {

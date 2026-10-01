@@ -2,7 +2,7 @@
 
 /**
  * Test wydajności raportów na syntetycznych danych: generuje projekt z dużą liczbą fraz i dni,
- * mierzy czasy KeywordReport/OverviewReport i wykonuje EXPLAIN dla ich zapytań.
+ * mierzy czasy KeywordReport/OverviewReport i analizy szans SEO (STEP 11) i wykonuje EXPLAIN dla ich zapytań.
  *
  * Działa na OSOBNEJ bazie testowej (zmienne OSF_SEO_TEST_DB_* jak testy integracyjne) — czyści tabele faktów.
  * Nigdy nie wskazuj bazy strony.
@@ -68,7 +68,9 @@ $timer = static function (callable $callback, int $runs = 3): array {
 	return [$times[intdiv(count($times), 2)], $result];
 };
 
-foreach (['projects', 'keywords', 'pages', 'gsc_site_daily', 'gsc_query_daily', 'gsc_query_page_daily'] as $table) {
+const OSF_SEO_BENCHMARK_TABLES = ['projects', 'keywords', 'pages', 'gsc_site_daily', 'gsc_query_daily', 'gsc_query_page_daily', 'opportunities', 'opportunity_detections', 'opportunity_analyses'];
+
+foreach (OSF_SEO_BENCHMARK_TABLES as $table) {
 	$db->execute("TRUNCATE TABLE `{$db->table($table)}`");
 }
 
@@ -162,9 +164,41 @@ for ($i = 0; $i < $noiseRows; $i++) {
 $site->flush();
 $query->flush();
 $queryPage->flush();
+
+// Słowniki innego projektu (plany złączeń ze słownikami przy wielu projektach).
+$noiseKeywords = new BulkInsert($db, $db->table('keywords'), ['project_id', 'keyword', 'keyword_hash', 'created_at'], ['%d', '%s', 'UNHEX(%s)', '%s']);
+
+for ($i = 1; $i <= 200000; $i++) {
+	$noiseKeywords->add([$noiseProject, 'szum ' . $i, md5('szum ' . $i), $now]);
+}
+
+$noiseKeywords->flush();
+$noisePages = new BulkInsert($db, $db->table('pages'), ['project_id', 'url', 'url_hash', 'path', 'created_at'], ['%d', '%s', 'UNHEX(%s)', '%s', '%s']);
+
+for ($i = 1; $i <= 20000; $i++) {
+	$url = 'https://szum.example/strona-' . $i . '/';
+	$noisePages->add([$noiseProject, $url, md5($url), '/strona-' . $i . '/', $now]);
+}
+
+$noisePages->flush();
+
+// Szanse innego projektu w tych samych tabelach (plany zapytań listy szans przy wielu projektach).
+$noiseOpportunities = new BulkInsert($db, $db->table('opportunities'), ['public_id', 'project_id', 'fingerprint', 'type', 'property', 'page_url', 'page_hash', 'state', 'status', 'last_priority', 'first_detected_at', 'last_detected_at', 'created_at', 'updated_at'], ['%s', '%d', 'UNHEX(%s)', '%s', '%s', '%s', 'UNHEX(%s)', '%s', '%s', '%d', '%s', '%s', '%s', '%s']);
+
+for ($i = 0; $i < 30000; $i++) {
+	$url = 'https://szum.example/strona-' . ($i % 3000) . '/';
+	$noiseOpportunities->add([OsfSeo\Support\Ulid::generate(), $noiseProject, md5('noise' . $i), ['low_ctr', 'near_top', 'decline'][$i % 3], 'sc-domain:szum.example', $url, md5($url), 'active', 'new', $i % 100, $now, $now, $now, $now]);
+}
+
+$noiseOpportunities->flush();
+$db->execute(
+	'INSERT INTO `' . $db->table('opportunity_detections') . '` (opportunity_id, period_days, project_id, priority, confidence, impressions, clicks, latest_date, search_text, evidence, analyzed_at)
+	SELECT id, p.days, project_id, last_priority, 2, 100, 5, %s, page_url, %s, %s FROM `' . $db->table('opportunities') . '` JOIN (SELECT 7 AS days UNION ALL SELECT 28 UNION ALL SELECT 90) p WHERE project_id = %d',
+	[$latest, '{}', $now, $noiseProject],
+);
 $generation = microtime(true) - $generationStart;
-$db->execute('ANALYZE TABLE `' . $db->table('gsc_query_daily') . '`, `' . $db->table('gsc_query_page_daily') . '`, `' . $db->table('keywords') . '`');
-$out(sprintf('Wygenerowano %s wierszy query_daily (+%s szumu), %s query_page_daily w %.1f s.', number_format($rows), number_format($noiseRows), number_format($pageRows), $generation));
+$db->execute('ANALYZE TABLE `' . $db->table('gsc_query_daily') . '`, `' . $db->table('gsc_query_page_daily') . '`, `' . $db->table('keywords') . '`, `' . $db->table('pages') . '`, `' . $db->table('opportunities') . '`, `' . $db->table('opportunity_detections') . '`');
+$out(sprintf('Wygenerowano %s wierszy query_daily (+%s szumu), %s query_page_daily, słowniki i 30 000 szans innego projektu (200 000 fraz, 20 000 adresów, 90 000 wykryć) w %.1f s.', number_format($rows), number_format($noiseRows), number_format($pageRows), $generation));
 $out();
 
 $context = osf_seo()->get(ProjectGuard::class)->authorizeSystem((string) $db->fetchValue('SELECT public_id FROM `' . $db->table('projects') . '` WHERE id = %d', [$projectId]));
@@ -180,7 +214,27 @@ add_filter('query', static function (string $sql) use (&$captured): string {
 	return $sql;
 });
 
+$analyzer = osf_seo()->get(OsfSeo\Opportunities\OpportunityAnalyzer::class);
+$opportunities = osf_seo()->get(OsfSeo\Opportunities\OpportunityService::class);
+$memory = [];
+$analysis = static function (int $periodDays) use ($analyzer, $context, &$memory): Closure {
+	return static function () use ($analyzer, $context, $periodDays, &$memory) {
+		$before = memory_get_usage();
+		memory_reset_peak_usage();
+		$result = $analyzer->analyze($context, $periodDays, 'cli', true);
+		$memory[$periodDays] = max($memory[$periodDays] ?? 0, memory_get_peak_usage() - $before);
+
+		return $result;
+	};
+};
+
 $cases = [
+	'Szanse: analiza 28 dni (agregaty + wykrywanie + zapis)' => $analysis(28),
+	'Szanse: analiza 7 dni' => $analysis(7),
+	'Szanse: analiza 90 dni' => $analysis(90),
+	'Szanse: lista 28 dni, strona 1' => static fn () => $opportunities->list($context, OsfSeo\Opportunities\OpportunityFilters::fromInput(['status' => 'all'])),
+	'Szanse: lista z wyszukiwaniem i filtrem typu' => static fn () => $opportunities->list($context, OsfSeo\Opportunities\OpportunityFilters::fromInput(['status' => 'all', 'type' => 'near_top', 'q' => 'testowa 1'])),
+	'Szanse: widok wg podstron' => static fn () => $opportunities->list($context, OsfSeo\Opportunities\OpportunityFilters::fromInput(['status' => 'all', 'view' => 'pages'])),
 	'Frazy: 28 dni, sortowanie po kliknięciach, strona 1' => static fn () => $keywordsReport->keywords($context, KeywordFilters::fromInput([])),
 	'Frazy: 28 dni, strona 50' => static fn () => $keywordsReport->keywords($context, KeywordFilters::fromInput(['page' => 50])),
 	'Frazy: 90 dni, sortowanie po zmianie pozycji' => static fn () => $keywordsReport->keywords($context, KeywordFilters::fromInput(['days' => 90, 'sort' => 'position_change'])),
@@ -201,12 +255,18 @@ foreach ($cases as $label => $case) {
 	$captured = [];
 	[$ms, $result] = $timer($case);
 	$queriesByCase[$label] = array_values(array_unique($captured));
-	$summary = $result instanceof OsfSeo\Analytics\KeywordPage
-		? sprintf('%d wierszy, łącznie %s fraz', count($result->rows), number_format($result->total))
-		: sprintf('TOP10 %d, wzrosty %d, spadki %d', $result->visibility->current[10], count($result->gains), count($result->losses));
+	$summary = match (true) {
+		$result instanceof OsfSeo\Analytics\KeywordPage => sprintf('%d wierszy, łącznie %s fraz', count($result->rows), number_format($result->total)),
+		$result instanceof OsfSeo\Opportunities\AnalysisResult => sprintf('%s: %d szans%s', $result->status, $result->opportunities, $result->reason !== null ? ' (' . $result->reason . ')' : ''),
+		$result instanceof OsfSeo\Opportunities\OpportunityPage => sprintf('%d na stronie, łącznie %d', count($result->rows) + count($result->groups), $result->total),
+		default => sprintf('TOP10 %d, wzrosty %d, spadki %d', $result->visibility->current[10], count($result->gains), count($result->losses)),
+	};
 	$out(sprintf('| %s | %.0f ms | %s |', $label, $ms, $summary));
 }
 
+$out();
+$out(sprintf('Pamięć PHP analizy szans (przyrost szczytu ponad stan przed analizą): %s.', implode(', ', array_map(static fn (int $days, int $bytes): string => sprintf('%d dni %.0f MB', $days, $bytes / 1048576), array_keys($memory), $memory))));
+$out(sprintf('Szanse w bazie: %d, wykrycia: %d.', (int) $db->fetchValue('SELECT COUNT(*) FROM `' . $db->table('opportunities') . '`'), (int) $db->fetchValue('SELECT COUNT(*) FROM `' . $db->table('opportunity_detections') . '`')));
 $out();
 $out('## EXPLAIN');
 
@@ -236,7 +296,7 @@ foreach ($queriesByCase as $label => $queries) {
 }
 
 if (! isset($options['keep'])) {
-	foreach (['projects', 'keywords', 'pages', 'gsc_site_daily', 'gsc_query_daily', 'gsc_query_page_daily'] as $table) {
+	foreach (OSF_SEO_BENCHMARK_TABLES as $table) {
 		$db->execute("TRUNCATE TABLE `{$db->table($table)}`");
 	}
 }

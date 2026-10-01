@@ -17,7 +17,7 @@ final class SchemaTest extends TestCase
 	public function test_specification_covers_all_mvp_tables(): void
 	{
 		self::assertEqualsCanonicalizing(
-			['projects', 'project_users', 'connections', 'keywords', 'pages', 'gsc_site_daily', 'gsc_query_daily', 'gsc_query_page_daily', 'gsc_import_staging', 'visibility_daily', 'sync_state', 'sync_runs'],
+			['projects', 'project_users', 'connections', 'keywords', 'pages', 'gsc_site_daily', 'gsc_query_daily', 'gsc_query_page_daily', 'gsc_import_staging', 'visibility_daily', 'sync_state', 'sync_runs', 'opportunities', 'opportunity_detections', 'opportunity_analyses'],
 			array_keys(Schema::tables()),
 		);
 	}

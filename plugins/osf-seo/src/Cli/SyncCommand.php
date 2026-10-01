@@ -161,6 +161,7 @@ final class SyncCommand
 			(float) max(5, (int) ($assocArgs['time-limit'] ?? 50)),
 			max(1, (int) ($assocArgs['max-jobs'] ?? 50)),
 		);
+		$scheduler->runFollowUps();
 
 		$this->printReport($report, $planned, $assocArgs['format'] ?? 'table');
 	}

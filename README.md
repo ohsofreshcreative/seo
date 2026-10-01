@@ -7,7 +7,8 @@ Jedynym źródłem danych w MVP jest Google Search Console API — koszt zewnęt
 > **Status:** MVP 1 w toku — plugin i panel: projekty i uprawnienia, Google OAuth, wybór property GSC,
 > import danych Search Console (sumy witryny, frazy, frazy × strony), kolejka synchronizacji z backfillem
 > ok. 16 miesięcy i codziennym odświeżaniem, lista fraz z porównaniem okresów oraz dashboard projektu
-> (KPI, TOP 3/10/20/50/100 wg średniej pozycji GSC, wzrosty i spadki). Plan i postęp:
+> (KPI, TOP 3/10/20/50/100 wg średniej pozycji GSC, wzrosty i spadki) oraz Szanse SEO (niski CTR, frazy blisko TOP,
+> słaba pozycja, spadki, możliwa kanibalizacja — z priorytetem, pewnością i pracą nad szansą). Plan i postęp:
 > [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 >
 > **Repozytorium jest publiczne.** Nie commituj żadnych sekretów (sekcja „Konfiguracja”).
@@ -125,7 +126,11 @@ wp osf-seo gsc:probe --project=<public_id> [--dimensions=query] [--limit=10]
 wp osf-seo gsc:sync --project=<public_id> [--run] [--force]
 wp osf-seo gsc:backfill --project=<public_id> [--run]
 wp osf-seo gsc:status --project=<public_id> [--format=json]
-wp osf-seo sync:run          # kolejka synchronizacji — dla crona systemowego (co minutę)
+wp osf-seo sync:run          # kolejka synchronizacji — dla crona systemowego (co minutę); potem przeliczenie szans SEO
+
+# Szanse SEO (analiza zapisanych danych GSC, bez wywołań Google)
+wp osf-seo opportunities:analyze --project=<public_id> [--days=7|28|90] [--force]
+wp osf-seo opportunities:list --project=<public_id> [--days=28] [--type=low_ctr] [--status=open] [--format=json]
 ```
 
 Synchronizacja działa w tle przez WP-Cron (lokalnie wystarczy ruch na stronie); na serwerze zalecany cron

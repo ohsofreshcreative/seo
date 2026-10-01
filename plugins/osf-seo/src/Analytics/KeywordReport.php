@@ -23,6 +23,14 @@ final class KeywordReport
 	/** Domyślny próg wyświetleń (w każdym z okresów) dla wzrostów i spadków. */
 	public const MOVERS_MIN_IMPRESSIONS = 10;
 
+	/** Sumy obu okresów w jednym skanie (6 parametrów: początek bieżącego okresu). */
+	private const PERIOD_COLUMNS = 'SUM(CASE WHEN q.date >= %s THEN q.clicks ELSE 0 END) AS cur_clicks,
+		SUM(CASE WHEN q.date >= %s THEN q.impressions ELSE 0 END) AS cur_impr,
+		SUM(CASE WHEN q.date >= %s THEN q.position_sum ELSE 0 END) AS cur_pos_sum,
+		SUM(CASE WHEN q.date < %s THEN q.clicks ELSE 0 END) AS prev_clicks,
+		SUM(CASE WHEN q.date < %s THEN q.impressions ELSE 0 END) AS prev_impr,
+		SUM(CASE WHEN q.date < %s THEN q.position_sum ELSE 0 END) AS prev_pos_sum';
+
 	public function __construct(
 		private readonly Connection $db,
 		private readonly Config $config = new Config(),
@@ -100,13 +108,7 @@ final class KeywordReport
 
 		$sql = "SELECT a.*, k.keyword, COUNT(*) OVER () AS total_rows
 			FROM (
-				SELECT q.keyword_id,
-					SUM(CASE WHEN q.date >= %s THEN q.clicks ELSE 0 END) AS cur_clicks,
-					SUM(CASE WHEN q.date >= %s THEN q.impressions ELSE 0 END) AS cur_impr,
-					SUM(CASE WHEN q.date >= %s THEN q.position_sum ELSE 0 END) AS cur_pos_sum,
-					SUM(CASE WHEN q.date < %s THEN q.clicks ELSE 0 END) AS prev_clicks,
-					SUM(CASE WHEN q.date < %s THEN q.impressions ELSE 0 END) AS prev_impr,
-					SUM(CASE WHEN q.date < %s THEN q.position_sum ELSE 0 END) AS prev_pos_sum
+				SELECT q.keyword_id, " . self::PERIOD_COLUMNS . "
 				FROM `{$this->db->table('gsc_query_daily')}` q
 				WHERE q.project_id = %d AND q.date BETWEEN %s AND %s{$where}
 				GROUP BY q.keyword_id
@@ -128,6 +130,38 @@ final class KeywordReport
 		$this->attachPrimaryPages($projectId, $rows, $period);
 
 		return new KeywordPage($period, $filters, $rows, $total);
+	}
+
+	/**
+	 * Wszystkie frazy okresu z porównaniem — bez paginacji, z progiem szumu: fraza musi mieć co najmniej
+	 * $minImpressions wyświetleń w bieżącym albo poprzednim okresie. Ten sam skan co lista fraz
+	 * (zakres PK project_id, date); do PHP trafiają wyłącznie sumy per fraza (analiza szans). Bez ORDER BY
+	 * (kolejność nie ma znaczenia dla analizy).
+	 *
+	 * @return list<KeywordRow>
+	 */
+	public function aggregate(ProjectContext $context, Period $period, int $minImpressions): array
+	{
+		$curStart = $period->current->start;
+		$projectId = $context->projectId();
+		$min = max(1, $minImpressions);
+
+		// STRAIGHT_JOIN: najpierw agregat projektu, potem słownik po PRIMARY (eq_ref) — bez tego planista potrafi
+		// skanować cały słownik fraz wszystkich projektów i dopiero dopasowywać agregat.
+		$records = $this->db->fetchAll(
+			"SELECT STRAIGHT_JOIN a.*, k.keyword
+			FROM (
+				SELECT q.keyword_id, " . self::PERIOD_COLUMNS . "
+				FROM `{$this->db->table('gsc_query_daily')}` q
+				WHERE q.project_id = %d AND q.date BETWEEN %s AND %s
+				GROUP BY q.keyword_id
+				HAVING cur_impr >= %d OR prev_impr >= %d
+			) a
+			JOIN `{$this->db->table('keywords')}` k ON k.id = a.keyword_id AND k.project_id = %d",
+			[$curStart, $curStart, $curStart, $curStart, $curStart, $curStart, $projectId, $period->previous->start, $period->current->end, $min, $min, $projectId],
+		);
+
+		return array_map(static fn (array $record): KeywordRow => KeywordRow::fromRow($record), $records);
 	}
 
 	/**
