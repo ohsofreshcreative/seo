@@ -108,9 +108,11 @@ final class M0007CreateKeywordDiscovery implements Migration
 			PRIMARY KEY (`run_id`, `seed_key`)
 		) {$options}");
 
+		// `public_id` w utf8mb4_bin (nie ascii_bin): $wpdb uznaje tabelę mieszającą kolumny ascii i utf8mb4 (bez kolumny
+		// binarnej) za ASCII i odrzuca surowe zapytania z polskimi znakami (wyszukiwanie fraz, adresy, metadane dostawcy).
 		$db->execute("CREATE TABLE IF NOT EXISTS `{$db->table('discovery_candidates')}` (
 			`id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
-			`public_id` CHAR(26) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+			`public_id` CHAR(26) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL,
 			`project_id` INT UNSIGNED NOT NULL,
 			`market_keyword_id` INT UNSIGNED NOT NULL,
 			`status` ENUM('new','review','accepted','dismissed') NOT NULL DEFAULT 'new',
@@ -159,7 +161,7 @@ final class M0007CreateKeywordDiscovery implements Migration
 		$db->execute("CREATE TABLE IF NOT EXISTS `{$db->table('discovery_settings')}` (
 			`project_id` INT UNSIGNED NOT NULL,
 			`excluded_terms` TEXT NULL,
-			`refresh_key` CHAR(32) CHARACTER SET ascii COLLATE ascii_bin NULL DEFAULT NULL,
+			`refresh_key` CHAR(32) NULL DEFAULT NULL,
 			`refreshed_at` DATETIME NULL DEFAULT NULL,
 			`updated_by` BIGINT UNSIGNED NULL DEFAULT NULL,
 			`updated_at` DATETIME NOT NULL,

@@ -14,6 +14,7 @@ use OsfSeo\Auth\RoleManager;
 use OsfSeo\Auth\WpAdminAccess;
 use OsfSeo\Auth\WpRoleStore;
 use OsfSeo\Cli\DbCommand;
+use OsfSeo\Cli\DiscoveryCommand;
 use OsfSeo\Cli\GoogleCommand;
 use OsfSeo\Cli\GscCommand;
 use OsfSeo\Cli\MarketCommand;
@@ -26,7 +27,18 @@ use OsfSeo\Database\Migrator;
 use OsfSeo\Database\SchemaInspector;
 use OsfSeo\DataForSeo\DataForSeoClient;
 use OsfSeo\DataForSeo\DataForSeoConfig;
+use OsfSeo\DataForSeo\DataForSeoDiscoveryProvider;
 use OsfSeo\DataForSeo\DataForSeoProvider;
+use OsfSeo\Discovery\DiscoveryCandidateRepository;
+use OsfSeo\Discovery\DiscoveryConfig;
+use OsfSeo\Discovery\DiscoveryPlanner;
+use OsfSeo\Discovery\DiscoveryRefresher;
+use OsfSeo\Discovery\DiscoveryRunner;
+use OsfSeo\Discovery\DiscoveryRunRepository;
+use OsfSeo\Discovery\DiscoveryService;
+use OsfSeo\Discovery\DiscoverySettingsRepository;
+use OsfSeo\Discovery\KeywordDiscoveryProvider;
+use OsfSeo\Discovery\SeedSuggester;
 use OsfSeo\Google\AccessTokenProvider;
 use OsfSeo\Google\ConnectionRepository;
 use OsfSeo\Google\GoogleApi;
@@ -79,7 +91,7 @@ use OsfSeo\Support\SystemSleeper;
 final class Plugin
 {
 	/** Musi być zgodna z nagłówkiem `Version` w osf-seo.php (pilnuje tego test). */
-	public const VERSION = '0.12.0';
+	public const VERSION = '0.13.0';
 
 	public const MIN_PHP = '8.2';
 
@@ -213,6 +225,8 @@ final class Plugin
 			// wybór property planuje pierwszy import.
 			$service->onDetach(static fn (ProjectContext $context) => $c->get(SyncRunRepository::class)->cancelPending($context->projectId(), 'property_reset'));
 			$service->onDetach(static fn (ProjectContext $context) => $c->get(OpportunityRepository::class)->archiveProject($context->projectId()));
+			// Nowe frazy (STEP 13) zostają ze stanem pracy; widoczność GSC — do ponownej oceny po nowym imporcie.
+			$service->onDetach(static fn (ProjectContext $context) => $c->get(DiscoveryService::class)->onPropertyReset($context->projectId()));
 			$service->onSelected(static fn (ProjectContext $context) => $c->get(SyncPlanner::class)->plan($context, TriggerType::Connect));
 
 			return $service;
@@ -247,6 +261,52 @@ final class Plugin
 			$c->get(ProjectGuard::class),
 			$c->get(Connection::class),
 			$c->get(Clock::class),
+			$c->get(Logger::class),
+		));
+
+		// Wyszukiwanie nowych fraz (STEP 13): DataForSEO Labs za interfejsem KeywordDiscoveryProvider; płatne żądania
+		// wyłącznie z DiscoveryRunner (pod wspólną blokadą i limitami kosztów danych rynkowych).
+		$container->singleton(DiscoveryConfig::class, static fn (Container $c): DiscoveryConfig => new DiscoveryConfig($c->get(Config::class)));
+		$container->singleton(KeywordDiscoveryProvider::class, static fn (Container $c): KeywordDiscoveryProvider => new DataForSeoDiscoveryProvider(
+			$c->get(DataForSeoClient::class),
+			$c->get(DataForSeoConfig::class),
+		));
+		$container->singleton(DiscoveryRunRepository::class, static fn (Container $c): DiscoveryRunRepository => new DiscoveryRunRepository($c->get(Connection::class), $c->get(Clock::class)));
+		$container->singleton(DiscoveryCandidateRepository::class, static fn (Container $c): DiscoveryCandidateRepository => new DiscoveryCandidateRepository($c->get(Connection::class), $c->get(Clock::class)));
+		$container->singleton(DiscoverySettingsRepository::class, static fn (Container $c): DiscoverySettingsRepository => new DiscoverySettingsRepository($c->get(Connection::class), $c->get(Clock::class)));
+		$container->singleton(DiscoveryService::class, static fn (Container $c): DiscoveryService => new DiscoveryService(
+			$c->get(KeywordDiscoveryProvider::class),
+			new DiscoveryPlanner($c->get(KeywordDiscoveryProvider::class), $c->get(DiscoveryRunRepository::class), $c->get(DiscoveryConfig::class), $c->get(MarketSyncService::class), $c->get(Clock::class)),
+			new DiscoveryRunner(
+				$c->get(KeywordDiscoveryProvider::class),
+				$c->get(DiscoveryRunRepository::class),
+				$c->get(DiscoveryCandidateRepository::class),
+				$c->get(DiscoverySettingsRepository::class),
+				$c->get(MarketMetricsRepository::class),
+				$c->get(MarketTaskRepository::class),
+				$c->get(MarketSyncService::class),
+				$c->get(MarketDataConfig::class),
+				$c->get(Clock::class),
+				$c->get(Logger::class),
+			),
+			new DiscoveryRefresher(
+				$c->get(Connection::class),
+				$c->get(DiscoveryCandidateRepository::class),
+				$c->get(DiscoverySettingsRepository::class),
+				$c->get(KeywordDiscoveryProvider::class),
+				$c->get(DiscoveryConfig::class),
+				$c->get(MarketKeyBackfill::class),
+			),
+			new SeedSuggester($c->get(Connection::class), $c->get(KeywordDiscoveryProvider::class)),
+			$c->get(DiscoveryRunRepository::class),
+			$c->get(DiscoveryCandidateRepository::class),
+			$c->get(DiscoverySettingsRepository::class),
+			$c->get(DiscoveryConfig::class),
+			$c->get(MarketSyncService::class),
+			$c->get(MarketDataConfig::class),
+			$c->get(MarketMetricsRepository::class),
+			$c->get(ProjectGuard::class),
+			$c->get(Connection::class),
 			$c->get(Logger::class),
 		));
 
@@ -306,6 +366,8 @@ final class Plugin
 			$scheduler->onAfterRun(static fn (): array => $c->get(OpportunityScheduler::class)->run((float) $c->get(SyncConfig::class)->timeBudget()));
 			// Dane rynkowe (DataForSEO): odbiór wyników i odświeżanie w tle — osobny krok, błąd dostawcy nie dotyka GSC.
 			$scheduler->onAfterRun(static fn (): array => $c->get(MarketSyncService::class)->runBackground((float) $c->get(SyncConfig::class)->timeBudget()));
+			// Wyszukiwanie nowych fraz: żądania aktywnych przebiegów i przeliczenie kandydatów — osobny krok, błąd nie dotyka GSC.
+			$scheduler->onAfterRun(static fn (): array => $c->get(DiscoveryService::class)->runBackground((float) $c->get(SyncConfig::class)->timeBudget()));
 
 			return $scheduler;
 		});
@@ -374,6 +436,7 @@ final class Plugin
 			GscCommand::register($this);
 			OpportunityCommand::register($this);
 			MarketCommand::register($this);
+			DiscoveryCommand::register($this);
 			SyncCommand::register($this);
 		}
 	}

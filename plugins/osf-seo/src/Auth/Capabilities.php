@@ -33,6 +33,9 @@ final class Capabilities
 	/** Uruchamia płatną synchronizację danych rynkowych fraz (DataForSEO) i widzi jej koszty. */
 	public const MANAGE_MARKET_DATA = 'osf_seo_manage_market_data';
 
+	/** Wyszukiwanie nowych fraz: płatne przebiegi (także wymuszone odświeżenie), koszty, status i notatki fraz, wykluczenia. */
+	public const MANAGE_KEYWORD_DISCOVERY = 'osf_seo_manage_keyword_discovery';
+
 	/**
 	 * @return list<string>
 	 */
@@ -47,6 +50,7 @@ final class Capabilities
 			self::MANAGE_SETTINGS,
 			self::MANAGE_OPPORTUNITIES,
 			self::MANAGE_MARKET_DATA,
+			self::MANAGE_KEYWORD_DISCOVERY,
 		];
 	}
 }
