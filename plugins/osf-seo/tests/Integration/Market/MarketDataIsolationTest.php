@@ -147,6 +147,7 @@ final class MarketDataIsolationTest extends MarketTestCase
 		self::assertSame(['Buty Damskie', 'buty damskie'], array_map(static fn (KeywordRow $r): string => $r->keyword, $filtered->rows));
 		self::assertSame(2, $filtered->total);
 		self::assertSame(['min_volume' => 500, 'max_kd' => 40], array_intersect_key($filtered->filters->toQuery(), ['min_volume' => 1, 'max_kd' => 1]));
+		self::assertSame(['enriched' => 5, 'with_volume' => 4, 'with_difficulty' => 4], $this->market->status($context)['project_metrics'], 'Liczone po frazach projektu (warianty wielkości liter osobno).');
 	}
 
 	/**

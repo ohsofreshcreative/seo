@@ -313,6 +313,28 @@ final class MarketMetricsRepository
 	}
 
 	/**
+	 * Frazy projektu (słownik GSC) z danymi rynkowymi na rynku projektu — liczone po kluczu rynkowym.
+	 *
+	 * @return array{enriched: int, with_volume: int, with_difficulty: int}
+	 */
+	public function projectCounts(int $projectId, Market $market): array
+	{
+		$row = $this->db->fetchRow(
+			"SELECT COUNT(*) AS enriched, SUM(m.search_volume IS NOT NULL) AS with_volume, SUM(m.keyword_difficulty IS NOT NULL) AS with_difficulty
+			FROM `{$this->db->table('keywords')}` k
+			JOIN `{$this->table()}` m ON m.provider = %s AND m.location_code = %d AND m.language_code = %s AND m.keyword_key = k.market_key
+			WHERE k.project_id = %d AND (m.volume_fetched_at IS NOT NULL OR m.difficulty_fetched_at IS NOT NULL)",
+			[$market->provider, $market->locationCode, $market->languageCode, $projectId],
+		) ?? [];
+
+		return [
+			'enriched' => (int) ($row['enriched'] ?? 0),
+			'with_volume' => (int) ($row['with_volume'] ?? 0),
+			'with_difficulty' => (int) ($row['with_difficulty'] ?? 0),
+		];
+	}
+
+	/**
 	 * @param list<string> $hexKeys
 	 * @return array<string, int> hex → id
 	 */
