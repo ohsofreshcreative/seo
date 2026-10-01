@@ -11,6 +11,7 @@
 
 use App\Http\Controllers\Panel\AuthController;
 use App\Http\Controllers\Panel\DashboardController;
+use App\Http\Controllers\Panel\KeywordsController;
 use App\Http\Controllers\Panel\ProjectController;
 use App\Http\Controllers\Panel\ProjectSectionController;
 use App\Http\Controllers\Panel\SearchConsoleController;
@@ -45,11 +46,15 @@ Route::middleware([Authenticate::class, VerifyNonce::class])->group(function () 
 	Route::middleware(ResolveProject::class . ':osf_seo_manage_connections')->group(function () {
 		Route::post('/projects/{project}/search-console/connect', [SearchConsoleController::class, 'connect']);
 		Route::post('/projects/{project}/search-console/disconnect', [SearchConsoleController::class, 'disconnect']);
+		Route::post('/projects/{project}/search-console/property', [SearchConsoleController::class, 'selectProperty']);
+		Route::post('/projects/{project}/search-console/sync', [SearchConsoleController::class, 'sync']);
 	});
 
 	Route::middleware(ResolveProject::class)->group(function () {
 		Route::get('/projects/{project}', [ProjectController::class, 'show']);
 		Route::get('/projects/{project}/search-console', [SearchConsoleController::class, 'show']);
+		Route::get('/projects/{project}/search-console/status', [SearchConsoleController::class, 'status']);
+		Route::get('/projects/{project}/keywords', [KeywordsController::class, 'index']);
 		Route::get('/projects/{project}/{section}', [ProjectSectionController::class, 'show'])
 			->whereIn('section', array_keys(ProjectSectionController::SECTIONS));
 	});

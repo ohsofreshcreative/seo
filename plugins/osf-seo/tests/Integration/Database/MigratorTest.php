@@ -39,9 +39,9 @@ final class MigratorTest extends IntegrationTestCase
 		$migrator = $this->migrator();
 
 		self::assertSame(0, $migrator->currentVersion());
-		self::assertSame(['0001 create_core_tables'], $migrator->migrate());
-		self::assertSame(1, $migrator->currentVersion());
-		self::assertSame(1, $migrator->latestVersion());
+		self::assertSame(self::allMigrationLabels(), $migrator->migrate());
+		self::assertSame($migrator->latestVersion(), $migrator->currentVersion());
+		self::assertSame(count(Migrator::defaultMigrations()), $migrator->latestVersion());
 		self::assertSame([], $migrator->pending());
 
 		$state = (new SchemaInspector(self::db()))->inspect();
@@ -109,7 +109,7 @@ final class MigratorTest extends IntegrationTestCase
 		$before = $this->dataSnapshot();
 
 		self::assertSame([], $migrator->migrate());
-		self::assertSame(1, $migrator->currentVersion());
+		self::assertSame($migrator->latestVersion(), $migrator->currentVersion());
 		self::assertSame($before, $this->dataSnapshot());
 	}
 
@@ -122,7 +122,7 @@ final class MigratorTest extends IntegrationTestCase
 
 		delete_option(Migrator::OPTION_VERSION);
 
-		self::assertSame(['0001 create_core_tables'], $migrator->migrate());
+		self::assertSame(self::allMigrationLabels(), $migrator->migrate());
 		self::assertSame($before, $this->dataSnapshot());
 		self::assertSame([], (new SchemaInspector(self::db()))->problems());
 	}
@@ -136,7 +136,7 @@ final class MigratorTest extends IntegrationTestCase
 		$upgrade = new class implements Migration {
 			public function version(): int
 			{
-				return 2;
+				return 99;
 			}
 
 			public function name(): string
@@ -159,16 +159,17 @@ final class MigratorTest extends IntegrationTestCase
 
 		$migrator = $this->migrator([...Migrator::defaultMigrations(), $upgrade]);
 
-		self::assertSame(1, $migrator->currentVersion());
-		self::assertSame(2, $migrator->latestVersion());
-		self::assertSame(['0002 test_add_project_note'], $migrator->migrate());
-		self::assertSame(2, $migrator->currentVersion());
+		$latest = count(Migrator::defaultMigrations());
+		self::assertSame($latest, $migrator->currentVersion());
+		self::assertSame(99, $migrator->latestVersion());
+		self::assertSame(['0099 test_add_project_note'], $migrator->migrate());
+		self::assertSame(99, $migrator->currentVersion());
 		self::assertSame([], $migrator->migrate());
 
 		$db = self::db();
 		self::assertSame('none', $db->fetchValue("SELECT test_note FROM `{$db->table('projects')}` LIMIT 1"));
 		self::assertSame($before, $this->dataSnapshot());
-		self::assertContains('[osf-seo] INFO: Applied database migration 0002 test_add_project_note.', array_map(
+		self::assertContains('[osf-seo] INFO: Applied database migration 0099 test_add_project_note.', array_map(
 			static fn (string $line): string => explode(' {', $line)[0],
 			$this->logLines,
 		));
@@ -179,7 +180,7 @@ final class MigratorTest extends IntegrationTestCase
 		$broken = new class implements Migration {
 			public function version(): int
 			{
-				return 2;
+				return 99;
 			}
 
 			public function name(): string
@@ -201,8 +202,8 @@ final class MigratorTest extends IntegrationTestCase
 		} catch (\OsfSeo\Database\DatabaseException) {
 		}
 
-		self::assertSame(1, $migrator->currentVersion(), 'Migracja 0001 zapisana, 0002 nie.');
-		self::assertSame([2], array_map(static fn (Migration $m): int => $m->version(), $migrator->pending()));
+		self::assertSame(count(Migrator::defaultMigrations()), $migrator->currentVersion(), 'Migracje produkcyjne zapisane, zepsuta nie.');
+		self::assertSame([99], array_map(static fn (Migration $m): int => $m->version(), $migrator->pending()));
 		self::assertSame('1', self::db()->fetchValue('SELECT IS_FREE_LOCK(%s)', [$migrator->lockName()]), 'Blokada zwolniona po błędzie.');
 	}
 
@@ -221,6 +222,51 @@ final class MigratorTest extends IntegrationTestCase
 			$other->close();
 			self::assertSame(0, $migrator->currentVersion(), 'Zablokowana migracja niczego nie zmieniła.');
 		}
+	}
+
+	public function test_upgrade_from_step5_schema_keeps_projects_and_google_connection(): void
+	{
+		// Stan stagingu po STEP 5: tylko migracja 0001, projekt z połączeniem Google i zaszyfrowanym tokenem.
+		$v1 = $this->migrator([new \OsfSeo\Database\Migrations\M0001CreateCoreTables()]);
+		$v1->migrate();
+		self::assertSame(1, $v1->currentVersion());
+		$this->seedData();
+		$db = self::db();
+		$now = gmdate('Y-m-d H:i:s');
+		$envelope = 'v1.k1.' . str_repeat('A', 120);
+		$connectionId = $db->insert($db->table('connections'), [
+			'owner_user_id' => 1,
+			'google_sub' => '1000777',
+			'email' => 'owner@example.test',
+			'refresh_token_enc' => $envelope,
+			'scopes' => 'https://www.googleapis.com/auth/webmasters.readonly openid email',
+			'status' => 'active',
+			'created_at' => $now,
+			'updated_at' => $now,
+		]);
+		$db->execute("UPDATE `{$db->table('projects')}` SET connection_id = %d", [$connectionId]);
+		$before = $this->dataSnapshot();
+		$connectionBefore = $db->fetchRow("SELECT * FROM `{$db->table('connections')}` WHERE id = %d", [$connectionId]);
+
+		$migrator = $this->migrator();
+		self::assertSame(array_slice(self::allMigrationLabels(), 1), $migrator->migrate());
+
+		self::assertSame($migrator->latestVersion(), $migrator->currentVersion());
+		self::assertSame([], (new SchemaInspector(self::db()))->problems(), 'Po aktualizacji schemat zgodny ze specyfikacją.');
+		self::assertSame($connectionBefore, $db->fetchRow("SELECT * FROM `{$db->table('connections')}` WHERE id = %d", [$connectionId]), 'Połączenie i szyfrogram bez zmian.');
+
+		$after = $this->dataSnapshot();
+		$after['projects'] = array_map(static fn (array $row): array => array_diff_key($row, ['gsc_data_property' => true]), $after['projects']);
+		self::assertSame($before, $after, 'Dane projektów i faktów bez zmian (poza nowymi kolumnami).');
+		self::assertNull($db->fetchValue("SELECT gsc_data_property FROM `{$db->table('projects')}` LIMIT 1"));
+	}
+
+	/**
+	 * @return list<string>
+	 */
+	private static function allMigrationLabels(): array
+	{
+		return array_map(static fn (Migration $m): string => sprintf('%04d %s', $m->version(), $m->name()), Migrator::defaultMigrations());
 	}
 
 	private function secondConnection(): mysqli

@@ -44,7 +44,7 @@ Przyszłe integracje płatne wyłącznie za interfejsem (`SerpProvider`), bez im
 | D3 | Jedyne źródło danych MVP: Google Search Console API | Koszt zewnętrznych usług 0 zł |
 | D4 | OAuth scope: `https://www.googleapis.com/auth/webmasters.readonly` (+ `openid email` do identyfikacji konta) | Tylko odczyt, bez modyfikacji Search Console |
 | D5 | Hosting: Hostinger. Staging: `https://seo.ohsofresh.top`. Bez Redis/persistent object cache w MVP | Cache przez transients/bazę; nic nie zależy od Redis |
-| D6 | Lokalnie system działa bez systemowego crona; na produkcji podpinamy cron systemowy | Sekcja 9 |
+| D6 | Lokalnie system działa bez systemowego crona (WP-Cron); na produkcji podpinamy cron systemowy | Sekcja 9.1 |
 | D7 | Aplikacja OAuth w trybie External/Testing akceptowana do czasu publikacji | Refresh tokeny w trybie Testing wygasają po 7 dniach — publikacja przed produkcją |
 | D8 | Motyw czyszczony etapami do czystego Sage 11 tylko dla OSF SEO (C1–C5), build/test po każdym etapie | Sekcja 15 |
 | D9 | Panel: standardowe utilities Tailwind, proste konwencje (AGENTS.md, sekcja 8) | Dawne ograniczenia projektu marketingowego nie obowiązują |
@@ -56,6 +56,8 @@ Przyszłe integracje płatne wyłącznie za interfejsem (`SerpProvider`), bez im
 | D15 | Opportunity Score dopiero w MVP 2 | Sekcja 10 (tylko specyfikacja) |
 | D16 | `public_id` (ULID) w URL + `ProjectGuard` | ULID tylko utrudnia enumerację; zabezpieczeniem jest autoryzacja |
 | D17 | Repozytorium publiczne: sekrety wyłącznie w `wp-config.php` / zmiennych środowiskowych | Sekcja 12 |
+| D18 | Zmiana property GSC przy istniejących danych = jawny reset (usunięcie danych projektu i ponowny import); bez izolacji danych per property | Prostszy model (klucze faktów bez property), zero ryzyka mieszania danych. Sekcja 7.1 |
+| D19 | Kolejka synchronizacji: własna, na `osf_sync_runs` + WP-Cron / cron systemowy (zamiast Action Scheduler) | Bez zewnętrznej biblioteki w publicznym repo i dodatkowych tabel; jeden runner (GET_LOCK), budżet czasu. Sekcja 9.1 |
 
 ## 3. Repozytorium i środowiska
 
@@ -118,7 +120,7 @@ GET  /projects[?status=archived]             GET  /projects/create     POST /pro
 GET  /projects/{project}                     (przegląd; pusty stan → Search Console)
 GET  /projects/{project}/edit                POST /projects/{project}  (osf_seo_manage_projects)
 POST /projects/{project}/archive | /restore | /pause                   (osf_seo_manage_projects)
-GET  /projects/{project}/{section}           keywords | opportunities | pages | search-console | audit (placeholdery)
+GET  /projects/{project}/{section}           opportunities | pages | audit (placeholdery; keywords i search-console — niżej)
 ANY  /projects/{cokolwiek innego}            → 404 panelu (nie strona motywu)
 ```
 
@@ -130,10 +132,30 @@ POST /projects/{project}/search-console/connect | /disconnect           (osf_seo
 GET  /oauth/google/callback                  (stały redirect URI; zalogowany użytkownik + state)
 ```
 
+Zaimplementowane w STEP 6:
+
+```
+POST /projects/{project}/search-console/property  (osf_seo_manage_connections; wybór z listy sites.list, opcjonalnie reset_data=1)
+GET  /projects/{project}/search-console?change=1  (lista properties dla zarządzających)
+```
+
+Zaimplementowane w STEP 9:
+
+```
+POST /projects/{project}/search-console/sync      (osf_seo_manage_connections; limit 1 / 5 min, bez duplikatów)
+GET  /projects/{project}/search-console/status    (JSON stanu synchronizacji; dostęp do projektu)
+```
+
+Zaimplementowane w STEP 10:
+
+```
+GET  /projects/{project}                         (dashboard: KPI, TOP N, wzrosty/spadki, wykres; ?days=7|28|90)
+GET  /projects/{project}/keywords                (lista fraz: ?days, q, pos_min, pos_max, min_impr, movement, sort, dir, page, per_page)
+```
+
 Kolejne etapy:
 
 ```
-POST /projects/{project}/search-console/property | …/sync
 GET  /projects/{project}/keywords/{keyword}
 GET  /projects/{project}/pages[/{page}]      (MVP 2)
 ```
@@ -149,15 +171,15 @@ plugins/osf-seo/
 │   ├── Auth/            # Capabilities, Roles, RoleManager, ProjectGuard, ProjectContext, ProjectNotFound, AccessDenied
 │   ├── Setup/           # Lifecycle (aktywacja/dezaktywacja), Installer (instalacja i aktualizacje, bez usuwania danych)
 │   ├── Support/         # Config (stałe/env), Logger, Redactor (maskowanie sekretów)
-│   ├── Cli/             # wp osf-seo status, db:*, project:*, google:status, google:generate-key
-│   ├── Database/        # Connection ($wpdb + wyjątki), Migrator, Migrations/, Schema (spec), SchemaInspector
+│   ├── Cli/             # wp osf-seo status, db:*, project:*, google:*, gsc:*, sync:run
+│   ├── Database/        # Connection ($wpdb + wyjątki, transakcje, GET_LOCK), BulkInsert, Migrator, Migrations/, Schema (spec), SchemaInspector
 │   ├── Projects/        # Project, ProjectRepository, ProjectService, DomainNormalizer, statusy i role
 │   ├── Http/            # HttpTransport (WP HTTP API), HttpResponse — cały ruch do Google
-│   ├── Google/          # OAuthFlow, OAuthClient, OAuthStateStore, Pkce, TokenVault, ConnectionRepository, AccessTokenProvider, GoogleApi
-│   ├── Gsc/             # (MVP 1) klient API, importery
-│   ├── Sync/            # (MVP 1) planowanie i wykonywanie synchronizacji
-│   ├── Analytics/       # (MVP 1) porównania, TOP N, serie czasowe; Opportunity (MVP 2)
-│   ├── Rest/            # (MVP 1) endpointy dla panelu
+│   ├── Google/          # OAuthFlow, OAuthClient, OAuthStateStore, Pkce, TokenVault, ConnectionRepository, AccessTokenProvider, GoogleApi (ApiRequester)
+│   ├── Gsc/             # GscClient (sites.list, searchAnalytics.query), PropertyService, GscProbe, GscImporter, Dictionary, GscDataStore
+│   ├── Sync/            # WindowPlanner, SyncPlanner, SyncRunner (kolejka sync_runs), SyncScheduler (WP-Cron), SyncService
+│   ├── Analytics/       # Metrics, Period, KeywordReport, OverviewReport, Visibility, ReportCache; Opportunity (MVP 2)
+│   ├── Rest/            # (później) endpointy dla panelu — w MVP 1 dane renderowane serwerowo + JSON stanu synchronizacji
 │   ├── Serp/            # (przyszłość) wyłącznie interfejs SerpProvider
 │   └── Crawler/         # (MVP 3)
 └── tests/               # PHPUnit: Unit (bez WordPressa), Integration (prawdziwy WP + MySQL/MariaDB)
@@ -169,14 +191,14 @@ plugins/osf-seo/
 themes/seo/
 ├── functions.php                   # ->withRouting(using: …) + PanelMiddleware::GLOBAL
 ├── routes/web.php                  # trasy panelu (capabilities jako literały)
-├── app/Http/Controllers/Panel/     # Auth, Dashboard, Project, ProjectSection, SearchConsole (OAuth), Settings
+├── app/Http/Controllers/Panel/     # Auth, Dashboard, Project (przegląd = dashboard GSC), Keywords, ProjectSection, SearchConsole (OAuth, property, synchronizacja), Settings
 ├── app/Http/Middleware/Panel/      # PanelHeaders, UnslashInput, RequirePlugin, Authenticate, VerifyNonce, ResolveProject
-├── app/Panel/                      # PanelUrl (adresy, bezpieczny redirect), PanelResponse (404/403/503), Flash
+├── app/Panel/                      # PanelUrl (adresy, bezpieczny redirect), PanelResponse (404/403/503), Flash, Format (liczby i daty PL)
 ├── app/View/Composers/Panel/       # Layout: użytkownik, projekty do przełącznika, bieżący projekt, flash
 ├── resources/css/panel.css         # osobne wejście Vite: Tailwind 4 (source(none)) + forms + tokeny brand-*
-├── resources/js/panel.js           # Alpine (bez jQuery, GSAP, Reacta, CDN)
+├── resources/js/panel.js           # Alpine (bez jQuery, GSAP, Reacta, CDN); panel/chart.js — Chart.js ładowany dynamicznie tylko na dashboardzie
 ├── resources/views/panel/          # layouts/{base,guest,app}, auth/login, dashboard, projects/*, settings, error
-└── resources/views/components/panel/  # button, card, page-header, field, badge, flash, empty-state, nav-link, nonce
+└── resources/views/components/panel/  # button, card, page-header, field, badge, flash, empty-state, nav-link, nonce, delta, stat
 ```
 
 ### 4.4 Panel a wp-admin i motyw legacy
@@ -262,7 +284,8 @@ Czasy (`*_at`) w UTC; kolumny `date` faktów GSC to daty GSC (czas pacyficzny).
 **`osf_projects`** — `id` INT UNSIGNED AI; `public_id` CHAR(26) ascii_bin (ULID); `name` VARCHAR(190);
 `domain` VARCHAR(190); `country` CHAR(2) (domyślnie `pl`); `language` VARCHAR(10); `status`
 ENUM(active, paused, archived); `connection_id` INT UNSIGNED NULL; `gsc_property` VARCHAR(255) NULL;
-`gsc_permission` VARCHAR(32) NULL; `settings` LONGTEXT NULL (JSON); `last_synced_at` DATETIME NULL;
+`gsc_permission` VARCHAR(32) NULL; `gsc_data_property` VARCHAR(255) NULL (od schematu 2 — property, z której
+pochodzą zapisane dane; sekcja 7.1); `settings` LONGTEXT NULL (JSON); `last_synced_at` DATETIME NULL;
 `created_by` BIGINT UNSIGNED; `created_at`; `updated_at`.
 PK(`id`), UNIQUE(`public_id`), indeksy (`status`), (`domain`), (`connection_id`).
 Wymiar `country` w API GSC ma kody 3-literowe (`pol`) — mapowanie w kliencie GSC.
@@ -294,15 +317,22 @@ Wymiar `country` w API GSC ma kody 3-literowe (`pol`) — mapowanie w kliencie G
 
 `osf_gsc_page_daily` (`[date, page]`, landing pages) powstanie w MVP 2 nową migracją.
 
-**`osf_sync_state`** — PK(`project_id`, `dataset` VARCHAR(32) ascii); `status` ENUM(idle, queued, running, failed);
-`newest_date`; `oldest_date` (kursor backfillu); `consecutive_failures`; `last_success_at`;
-`last_attempt_at`; `last_error`; `updated_at`.
+**`osf_gsc_import_staging`** (od schematu 3) — tabela pośrednia importu: `run_id` BIGINT (= `sync_runs.id`), `date`,
+`keyword_id`, `page_id` (0 = brak wymiaru), metryki; PK (`run_id`, `date`, `keyword_id`, `page_id`). Pusta poza
+trwającymi importami (sekcja 8.2).
 
-**`osf_sync_runs`** (historia widoczna w UI) — `id` BIGINT UNSIGNED AI; `project_id`; `dataset`;
+**`osf_sync_state`** — PK(`project_id`, `dataset` VARCHAR(32) ascii); `status` ENUM(idle, queued, running, failed, retrying);
+`newest_date`; `oldest_date` (kursor backfillu); `refresh_cursor` (cykl odświeżania); `consecutive_failures`; `last_success_at`;
+`last_attempt_at`; `last_refresh_at`; `retry_after` (przerwa planowania po błędzie); `last_error`; `updated_at`
+(kolumny `refresh_cursor`, `last_refresh_at`, `retry_after` i wartość `retrying` — schemat 4).
+
+**`osf_sync_runs`** (kolejka i historia widoczna w UI) — `id` BIGINT UNSIGNED AI; `project_id`; `dataset`;
 `trigger_type` ENUM(schedule, manual, backfill, connect); `window_start`; `window_end`; `status`
-ENUM(queued, running, success, failed, skipped); `attempt`; `rows_fetched`; `rows_written`;
-`api_requests`; `error_code`; `error_message`; `queued_at`; `started_at`; `finished_at`.
-Indeksy: (`project_id`, `id`), (`status`, `queued_at`). Retencja 90 dni.
+ENUM(queued, running, success, failed, skipped, retrying, cancelled); `priority`; `attempt`; `rows_fetched`; `rows_written`;
+`api_requests`; `error_code`; `error_message`; `queued_at`; `available_at`; `started_at`; `finished_at`; `locked_until`;
+`property`. Indeksy: (`project_id`, `id`), (`status`, `queued_at`), `queue` (`status`, `priority`, `available_at`),
+`project_dataset_status` (`project_id`, `dataset`, `status`). Retencja 90 dni (`priority`, `available_at`, `locked_until`,
+`property`, nowe statusy i indeksy — schemat 4).
 
 **Wersja schematu**: opcja `osf_seo_db_version` (autoload), podbijana po każdej udanej migracji.
 
@@ -331,10 +361,9 @@ Indeksy: (`project_id`, `id`), (`status`, `queued_at`). Retencja 90 dni.
 
 1. Jedno zapytanie na `query_daily` agreguje **oba okresy w jednym skanie**
    (`WHERE project_id = ? AND date BETWEEN prev_start AND cur_end GROUP BY keyword_id`)
-   z warunkowymi sumami, sortowaniem po kolumnach z białej listy i `LIMIT`.
-2. Dla 50–100 ID z bieżącej strony: jedno dociągnięcie URL-a rankingowego (`query_page_daily`),
-   tekstów fraz i danych do sparkline.
-3. Cache wyników z kluczem (projekt, zakresy, `sync_version`) — `sync_version` rośnie po każdym imporcie.
+   z warunkowymi sumami, filtrami w `HAVING`, sortowaniem po kolumnach z białej listy, `LIMIT` i `COUNT(*) OVER()`.
+2. Dla fraz z bieżącej strony: jedno dociągnięcie strony docelowej (`query_page_daily`) i jej URL-i.
+3. Cache dashboardu z kluczem (projekt, okres, ostatnia data, `last_synced_at`, źródło danych) — sekcja 8.3.
 
 ### 6.4 Skala i `query_page_daily`
 
@@ -408,66 +437,306 @@ OAuthFlow::complete:
 - Tryb Testing (External): refresh token wygasa po 7 dniach, maks. 100 test users — przed produkcją
   publikacja aplikacji OAuth (weryfikacja wymagań Google w konsoli).
 
+### 7.1 Property Search Console (STEP 6)
+
+Zaimplementowane w `plugins/osf-seo/src/Gsc` (`GscClient::listSites`, `PropertyService`, `GscDataStore`);
+UI: `SearchConsoleController` (`show`, `selectProperty`); CLI: `gsc:properties`, `gsc:select-property`.
+
+- Lista properties pochodzi zawsze z `sites.list` połączonego konta (`GET https://www.googleapis.com/webmasters/v3/sites`),
+  także przy zapisie — wartość z formularza nie jest zaufana (musi wystąpić na liście konta).
+- Identyfikator Google (`sc-domain:example.pl`, `https://www.example.pl/`) jest zapisywany i wysyłany **bez zmian**
+  (bez zmiany wielkości liter, ukośników itp.); w URL-u API jako jeden zakodowany segment (`rawurlencode`).
+- Uprawnienia (`permissionLevel`): `siteOwner`, `siteFullUser`, `siteRestrictedUser` — dane Search Analytics dostępne;
+  `siteUnverifiedUser` (i nieznane wartości) — odrzucane przy wyborze, widoczne na liście jako niedostępne.
+  Poziom zapisujemy w `projects.gsc_permission`.
+- Sugestia z domeny projektu (`DomainNormalizer`): property domenowa (100) > prefiks `https://` katalogu głównego (90)
+  > `http://` (80) > prefiks z podścieżką (50/40); subdomeny i obce domeny nie są sugerowane. Sugestia jest tylko
+  zaznaczona w formularzu — **zapis wymaga kliknięcia „Zapisz property”** (żadnego automatycznego wyboru).
+- Listę widzą i property zmieniają wyłącznie użytkownicy z `osf_seo_manage_connections` (klient widzi tylko wybraną property).
+- **Zmiana property (D18)**: `projects.gsc_data_property` = property, z której pochodzą zapisane dane
+  (`gsc_property` jest czyszczona przy odłączeniu/zmianie połączenia, dane zostają).
+  - brak danych → zapis property, nowe dane będą z niej pochodzić,
+  - dane z tej samej property (np. po ponownym połączeniu konta) → zapis bez resetu, dane zostają,
+  - dane z innej albo nieustalonej property → `reset_required`; po jawnym potwierdzeniu (`reset_data=1`,
+    CLI `--reset-data`): (1) w transakcji z blokadą wiersza projektu odpięcie property i znacznika danych,
+    (2) usunięcie partiami (`DELETE … LIMIT 5000`) faktów, słowników fraz/URL-i i stanu synchronizacji projektu,
+    (3) zapis nowej property. Przerwany reset zostawia dane o nieustalonym pochodzeniu → kolejny wybór znów wymaga resetu.
+  - Kontrola danych i zapis property odbywają się pod blokadą wiersza projektu (`SELECT … FOR UPDATE`) — tą samą,
+    którą importer bierze przy zatwierdzaniu danych (sekcja 8), więc dane dwóch properties nie mogą się wymieszać.
+- Błędy: brak połączenia, połączenie `needs_reauth` (także `invalid_grant` przy odświeżeniu tokenu), błąd API
+  (z ponowieniami jak w sekcji 8), błąd klucza szyfrowania — komunikat w panelu, projekt bez zmian.
+
 ## 8. Przepływ danych GSC i reguły obliczeń
 
 ```
-Google Search Console API  (searchAnalytics.query, sites.list)
-        │  WP HTTP API, timeout 30 s, paginacja startRow/rowLimit (maks. 25 000 wierszy na żądanie)
+Google Search Console API  (sites.list, searchAnalytics.query)
+        │  WP HTTP API (timeout 60 s), rowLimit 25 000 + startRow, ponowienia w żądaniu (8.1)
         ▼
-Gsc\GscClient ──(AccessTokenProvider, limiter, klasyfikacja błędów)
+Gsc\GscClient ── Google\GoogleApi (Bearer tylko do *.googleapis.com) ── AccessTokenProvider (token w pamięci)
         ▼
-Sync\SyncRunner  (jedno zadanie = projekt × dataset × okno dat)
-        │  pobiera wszystkie strony wyników okna; Normalizer: fraza/URL → ID (wsadowo)
+Sync\SyncRunner (kolejka sync_runs, sekcja 9) → Gsc\GscImporter (jedno zadanie = projekt × dataset × okno dat)
+        │  strony → słownik fraz/URL-i → osf_gsc_import_staging (wsadowo)
         ▼
-Baza (transakcja): DELETE zakresu → INSERT wsadowy → COMMIT
-        │  po sukcesie: sync_state, visibility_daily, sync_version++
+Baza (jedna transakcja z blokadą wiersza projektu): kontrola property → DELETE zakresu → INSERT … SELECT → COMMIT
+        │  po sukcesie: sync_state (pokrycie, kursory), projects.last_synced_at (klucz cache raportów)
         ▼
-Analytics\*  →  usługi pluginu + REST  →  Sage (kontroler → Blade/Chart.js)  →  Dashboard
+Analytics\KeywordReport / OverviewReport (ProjectContext)  →  kontroler Sage  →  Blade + Alpine + Chart.js
 ```
 
-Reguły (testowane jednostkowo):
+### 8.0 Reguły obliczeń
 
-- Średnia pozycja okresu = `SUM(position_sum) / SUM(impressions)`; CTR = `clicks / impressions`.
-- `zmiana_pozycji = pozycja_poprzednia − pozycja_obecna` → dodatnia = **wzrost** (15 → 7 = +8, ↑).
-- Fraza obecna tylko w jednym okresie = „nowa” / „utracona” — bez delty.
-- Różnice kliknięć/wyświetleń: bezwzględna i procentowa; przy 0 w poprzednim okresie procent = brak.
-- Wzrosty/spadki wymagają minimum wyświetleń w obu okresach (domyślnie 10, konfigurowalne).
-- GSC nie zwraca wszystkich fraz: frazy zanonimizowane są pomijane, API ma limit wierszy na dzień
-  i ok. 16 miesięcy historii. UI pokazuje, jaka część kliknięć pochodzi z widocznych fraz.
-- Daty są w czasie pacyficznym (PT). UI pokazuje „dane do: <data GSC>”.
+Testowane jednostkowo (`Analytics\Metrics`) i integracyjnie (SQL raportów na ręcznie wyliczonych danych):
+
+- **Średnia pozycja (GSC)** to średnia pozycja z wyświetleń, a nie dokładna pozycja w Google; w UI zawsze
+  „Średnia pozycja (GSC)”. Okresu = `SUM(position_sum) / SUM(impressions)` (`position_sum = position × impressions`),
+  nigdy `AVG(position)`.
+- **CTR** = `SUM(clicks) / SUM(impressions)`, nigdy średnia CTR wierszy.
+- `zmiana_pozycji = pozycja_poprzednia − pozycja_obecna` → dodatnia = **wzrost** (15 → 7 = +8, ↑), ujemna = spadek.
+- Fraza obecna tylko w jednym okresie: „nowa” (brak zmiany pozycji) / „utracona” (poza listą bieżącego okresu).
+- Różnice kliknięć/wyświetleń: bezwzględne; procentowe (KPI) przy 0 w poprzednim okresie — brak.
+- **Sumy projektu** (KPI) pochodzą z `gsc_site_daily` (zapytanie `[date]`), nie z sumy fraz. GSC pomija zapytania
+  zanonimizowane i ma limit wierszy na dzień, więc suma kliknięć fraz bywa mniejsza — to oczekiwane, nie „naprawiamy”
+  tego. Dashboard pokazuje, jaka część kliknięć pochodzi z widocznych fraz.
+- **Daty** GSC są w czasie pacyficznym (PT), zapisywane bez przeliczania; UI pokazuje „Dane GSC do: <data>”.
+- **Okres** raportu: ostatnie N dni (7/28/90, domyślnie 28) **do ostatniej zaimportowanej daty** (nie „dziś”);
+  porównanie z poprzednim okresem tej samej długości. Dashboard: koniec = najnowsza data obecna zarówno w sumach
+  witryny, jak i we frazach.
+
+### 8.1 Klient Search Console API (STEP 7)
+
+`plugins/osf-seo/src/Gsc/GscClient.php` (na `Google\ApiRequester` = `GoogleApi`: Bearer tylko do `*.googleapis.com`,
+po 401 jedno odświeżenie tokenu; timeout HTTP 60 s):
+
+- `listSites()` — `GET /webmasters/v3/sites`,
+- `query()` — `POST /webmasters/v3/sites/{rawurlencode(siteUrl)}/searchAnalytics/query` z treścią:
+  `startDate`, `endDate`, `dimensions` (dowolne z `date, query, page, country, device, searchAppearance`),
+  `type=web`, `dataState=final` (domyślnie; `all` tylko w probe), `aggregationType=auto`, `rowLimit` (1–25 000), `startRow`,
+- `pages()` — generator stron: kolejne `startRow = n × rowLimit`, koniec na stronie krótszej niż `rowLimit`
+  (także pustej). Ochrona: maks. `dni × 50 000 / rowLimit + 1` stron (Google udostępnia maks. ok. 50 000 wierszy
+  dziennie na typ wyszukiwania; twardy limit 400), wykrywanie powtórzonej strony (odcisk: liczba, pierwszy i ostatni
+  wiersz). 25 000 wierszy ≠ komplet danych — GSC pomija zapytania zanonimizowane.
+- Walidacja każdego wiersza: `keys` = liczba wymiarów (same stringi), data w żądanym zakresie, `clicks`/`impressions`
+  całkowite ≥ 0 (≤ INT UNSIGNED; JSON `5.0` akceptowane), `position` liczba ≥ 0. Naruszenie → `malformed_response`
+  (cała strona odrzucona, nic nie jest zapisywane). CTR z API jest pomijany — liczymy go z sum.
+- Błędy (`GscApiException` + `ErrorCategory`, kod trafia do `sync_runs.error_code`):
+
+  | Kategoria | Źródło | Ponowienie w żądaniu | Ponowienie zadania (kolejka) |
+  |---|---|---|---|
+  | `rate_limited` | 429; 403 z powodem `rateLimitExceeded`, `userRateLimitExceeded`, `quotaExceeded`, `dailyLimitExceeded`, `RESOURCE_EXHAUSTED` | tak | tak |
+  | `transient` | 500, 502, 503, 504 (także endpoint tokenów) | tak | tak |
+  | `network` | brak odpowiedzi HTTP (DNS, timeout, TLS) | tak | tak |
+  | `malformed_response`, `pagination` | treść niezgodna z kontraktem, niestabilna paginacja | nie | tak |
+  | `permission_denied` (403), `not_found` (404), `bad_request` (400), `unauthorized` (401 po odświeżeniu), `http_error` | — | nie | nie |
+
+  W żądaniu: maks. 2 ponowienia z przerwą 1 s i 3 s; `Retry-After` (sekundy) honorowany do 10 s, dłuższy → bez
+  czekania, decyzję podejmuje kolejka. `invalid_grant` → `ReauthorizationRequired` (połączenie `needs_reauth`, sekcja 7).
+- Logi: kategoria, status HTTP, powód Google — bez nagłówków (`Authorization`), treści żądań i odpowiedzi.
+
+### 8.2 Import (STEP 8)
+
+`plugins/osf-seo/src/Gsc/GscImporter.php` — jeden import = projekt × dataset × okno dat:
+
+| Dataset | Wymiary | Tabela | Uwagi |
+|---|---|---|---|
+| `site` | `[date]` | `gsc_site_daily` (`device = 0` = wszystkie urządzenia) | prawdziwe sumy property, z zapytaniami zanonimizowanymi |
+| `query` | `[date, query]` | `gsc_query_daily` | frazy widoczne w GSC |
+| `query_page` | `[date, query, page]` | `gsc_query_page_daily` | agregacja Google per strona (`byPage`) |
+
+`gsc_page_daily` (`[date, page]`) — MVP 2 (schemat jej nie ma).
+
+1. **Pobranie**: `GscClient::pages()` (rowLimit 25 000, `startRow`), każda strona po walidacji → słownik
+   fraz/URL-i → wsadowy INSERT do `osf_gsc_import_staging` (klucz `run_id`; PHP trzyma najwyżej jedną stronę).
+   Zduplikowany klucz (data, fraza, strona) w odpowiedziach = niestabilna paginacja → błąd `pagination` (ponawiany).
+2. **Zatwierdzenie** — jedna transakcja: `SELECT … FOR UPDATE` wiersza projektu; kontrola, że property zadania =
+   `projects.gsc_property` = `projects.gsc_data_property` (inaczej `ImportAborted`, zadanie anulowane);
+   `DELETE` zakresu dat projektu w tabeli faktów; `INSERT … SELECT` ze stagingu; `first_seen`/`last_seen` słowników
+   z zatwierdzonych danych. Błąd Google/sieci/walidacji/bazy przed `COMMIT` zostawia poprzednie dane (test z triggerem
+   `SIGNAL` w trakcie `INSERT` potwierdza wycofanie `DELETE`).
+3. **Sprzątanie**: wiersze stagingu usuwane po sukcesie i po błędzie (osierocone — zadanie w STEP 9).
+
+Import jest idempotentny: ten sam zakres zaimportowany ponownie daje identyczne wiersze (zamiana zakresu),
+dane poza zakresem i innych projektów są nietknięte.
+
+**Normalizacja** (`Gsc\Dictionary`):
+- fraza = dokładny ciąg z GSC (bez zmiany wielkości liter, przycinania, normalizacji Unicode); tożsamość =
+  MD5 dokładnych bajtów UTF-8 w `keyword_hash` (UNIQUE z `project_id`) — `Buty` i `buty` to dwie frazy, jak w GSC,
+- URL = dokładny adres z GSC (`url_hash`), `path` (ścieżka + zapytanie) tylko do wyświetlania,
+- tekst dłuższy niż kolumna (500 / 2048 znaków) jest skracany w kolumnie, skrót liczony z pełnej wartości,
+- najpierw `SELECT` istniejących (paczki po 1000), `INSERT` tylko brakujących — `INSERT … ON DUPLICATE KEY` dla
+  istniejących rezerwowałby przy każdym imporcie wartości AUTO_INCREMENT (ryzyko wyczerpania INT UNSIGNED).
+
+**Pozycja**: `position_sum = position × impressions`; wiersz z 0 wyświetleń → `position_sum = 0` (nie wpływa na
+średnie; GSC w praktyce nie zwraca takich wierszy). Średnia = `SUM(position_sum) / SUM(impressions)`.
+
+**Wsady**: `Database\BulkInsert` — 1000 wierszy i maks. 512 KB SQL na zapytanie (wartości przez `$wpdb->prepare`).
+Pomiar na MariaDB 10.11 (50 000 wierszy stagingu): 100 → ~79 tys. wierszy/s, 500 → ~112 tys., **1000 → ~123 tys.**
+(ok. 48 KB/zapytanie), 5000 → ~129 tys. — powyżej 1000 zysk znikomy, a rośnie rozmiar pakietu (typowy
+`max_allowed_packet` na hostingu 16 MB, minimalny spotykany 1–4 MB). Słownik: 25 000 nowych fraz ~0,6 s, istniejących ~0,2 s.
+
+**Probe** (`GscProbe`, `wp osf-seo gsc:probe --project=<public_id>`): jedno zapytanie, domyślnie `[date]`, 7 dni
+kończących się 3 dni przed „dziś” w PT, `rowLimit` 10 (maks. 1000), `dataState=final`; raport: property, uprawnienia,
+zakres dat, liczba wierszy, kliknięcia, wyświetlenia, CTR (z sum), średnia pozycja ważona wyświetleniami, typ agregacji,
+liczba żądań, próbka wierszy. **Nic nie zapisuje do bazy**, nie wypisuje tokenów. Wymaga `osf_seo_manage_connections`
+(z `--user`) albo operatora CLI.
+
+### 8.3 Analityka: frazy, TOP N, wzrosty i spadki, dashboard (STEP 10)
+
+`plugins/osf-seo/src/Analytics`: `KeywordReport` (lista fraz), `OverviewReport` (dashboard), `Period`, `KeywordFilters`,
+`Visibility`, `ReportCache`. UI: `KeywordsController` (`/projects/{project}/keywords`), `ProjectController::show`.
+
+- **Lista fraz**: jedno zapytanie agreguje oba okresy w jednym skanie `gsc_query_daily` (zakres PK `project_id, date`)
+  sumami warunkowymi; filtry w `HAVING` (pozycja od/do, min. wyświetleń, wzrosty/spadki), wyszukiwanie przez
+  `keyword_id IN (SELECT … LIKE)` z escapowaniem `%`/`_`, sortowanie wyłącznie z białej listy (kliknięcia, Δ kliknięć,
+  wyświetlenia, Δ wyświetleń, CTR, średnia pozycja, zmiana pozycji, fraza; brak wartości zawsze na końcu, stabilny
+  tie-break), paginacja `LIMIT/OFFSET` (25/50/100) i liczba wyników `COUNT(*) OVER()` w tym samym zapytaniu
+  (wymaga MariaDB ≥ 10.2 / MySQL ≥ 8.0). Do PHP trafia wyłącznie bieżąca strona.
+- **Strona docelowa** frazy: jedno zapytanie dla fraz bieżącej strony (`gsc_query_page_daily`, indeks
+  `project_id, keyword_id, date, page_id`) — strona z największą liczbą kliknięć (potem wyświetleń) w bieżącym okresie.
+- **TOP 3/10/20/50/100** (`Visibility`): liczba fraz, których średnia pozycja (GSC) w okresie jest ≤ progu —
+  **progi skumulowane** (TOP 10 zawiera TOP 3), granica włącznie (3,0 ∈ TOP 3), porównanie z poprzednim okresem.
+  UI podkreśla, że to średnia pozycja GSC, a nie dokładny ranking SERP. (Wykres TOP N w czasie i `visibility_daily` — kolejny etap.)
+- **Wzrosty/spadki**: sortowanie po zmianie średniej pozycji; tylko frazy z co najmniej
+  `KeywordReport::MOVERS_MIN_IMPRESSIONS` = 10 wyświetleniami **w obu okresach** (stała; nadpisanie:
+  `OSF_SEO_MOVERS_MIN_IMPRESSIONS`), bez własnego „score”. Dashboard: po 10 fraz.
+- **Dashboard**: KPI (kliknięcia, wyświetlenia, CTR, średnia pozycja (GSC)) z sum witryny z porównaniem; TOP N;
+  wzrosty/spadki; udział widocznych fraz; wykres dzienny (Chart.js ładowany osobnym plikiem tylko na dashboardzie,
+  jedna oś, przełącznik kliknięcia/wyświetlenia, poprzedni okres przerywaną linią, tabela danych); stan synchronizacji.
+- **Cache dashboardu** (`ReportCache`, transient 6 h): klucz zawiera `public_id`, okres, ostatnią datę,
+  `projects.last_synced_at` i źródło danych — każdy import (i reset danych) zmienia klucz, więc dane nie są nieaktualne.
+  Lista fraz nie jest cache'owana (wiele kombinacji filtrów).
+
+**Wydajność** (`composer test:performance` = `tests/Performance/benchmark.php`: syntetyczne dane na osobnej bazie
+testowej, czasy jako mediana 3 uruchomień, `EXPLAIN` zapytań; MariaDB 10.11 w kontenerze deweloperskim, bez strojenia):
+
+| Zbiór | Lista fraz 28 dni | 90 dni (sort. zmiana pozycji) | Wyszukiwanie | Dashboard 28 dni | Dashboard 90 dni | Dashboard z cache |
+|---|---:|---:|---:|---:|---:|---:|
+| 2,4 mln wierszy `query_daily` (20 tys. fraz, ~5 tys./dzień, 480 dni) + 1 mln innego projektu | ~0,34 s | ~0,94 s | ~0,39 s | ~0,69 s | ~2,2 s | ~1 ms |
+| 5,8 mln wierszy (60 tys. fraz, ~12 tys./dzień, 480 dni) + 2 mln innego projektu | ~1,2 s | ~2,8 s | ~0,86 s | ~2,1 s | ~7,4 s | ~1 ms |
+
+`EXPLAIN`: agregacja fraz — `range` na `PRIMARY (project_id, date)` (skan tylko dni obu okresów jednego projektu;
+dane innych projektów nie są czytane) + `Using temporary; Using filesort` dla `GROUP BY keyword_id`; złączenie ze
+słownikiem — `range` na `project_last_seen` (po dodaniu warunku `k.project_id`; wcześniej pełny skan `keywords`);
+strona docelowa — `range` na `project_keyword_date_page`; sumy witryny i seria — `range` na `PRIMARY` (≤ 180 wierszy);
+`MAX(date)` — „Select tables optimized away”.
+
+Wniosek: koszt rośnie liniowo z liczbą wierszy fraz w okresie (dni × frazy dziennie). Dla typowych projektów
+(do kilku tysięcy fraz dziennie) czasy są poniżej sekundy; dla bardzo dużych property lista 90 dni i dashboard bez
+cache trwają kilka sekund. Następne kroki przy takiej skali: tabela agregatów per fraza i okres przeliczana po
+imporcie albo rollup tygodniowy (sekcja 6.4), ewentualnie indeks pokrywający `(project_id, date, keyword_id)` z metrykami.
 
 ## 9. Synchronizacja
 
-- **Po połączeniu projektu** (UI nieblokowane, postęp widoczny):
-  1. `site_daily` dla ostatnich 90 dni,
-  2. `query_daily` (i `query_page_daily`) dla ostatnich 2 × 28 dni → dashboard i porównania działają,
-  3. backfill starszych okien, od najnowszych do najstarszych, do ok. 16 miesięcy.
-- **Codziennie**: okno ostatnich ok. 7 dni od `newest_date` (zamiana zakresu jest bezpieczna).
-  `dataState = final` w MVP 1 (dane stabilne, opóźnienie zwykle 2–3 dni); najpierw zapytanie `[date]`
-  wyznacza ostatnią dostępną datę — nie zgadujemy opóźnienia.
-- **Okna**: `site` 90 dni, `query` 14 dni, `query_page` 3 dni (do strojenia po pomiarach);
-  okno z więcej niż jedną stroną wyników jest dzielone.
-- **Duplikaty**: PK z daty i kluczy + zamiana zakresu w transakcji + unikalne zadania +
-  blokada per projekt i dataset (z wygasaniem).
-- **Ponowienia**:
+Zaimplementowane w STEP 9 (`plugins/osf-seo/src/Sync`).
 
-  | Błąd | Reakcja |
-  |---|---|
-  | 429, 5xx, timeout, sieć | backoff 1 min → 5 min → 30 min → 2 h → 6 h, maks. 5 prób, `Retry-After`; potem `failed` + „Ponów” w UI |
-  | 401 | jedno odświeżenie tokenu i ponowienie |
-  | `invalid_grant` | bez ponowień: `needs_reauth` |
-  | 403 (utrata dostępu do property) | bez ponowień: projekt „brak dostępu” |
-  | 400 (zakres poza historią GSC) | okno puste, bez ponowień |
+### 9.1 Kolejka i wykonanie (D19)
 
-- **Limity API**: maks. 1 równoległe żądanie na projekt, globalnie 2–3 zadania, krótka przerwa między
-  stronami; budżet czasu zadania ok. 25 s. Dokładne limity Google do weryfikacji przy implementacji.
-- **Cron**:
-  - lokalnie: bez systemowego crona — zadania uruchamia WP-Cron przy ruchu na stronie albo ręcznie
-    `wp cron event run --due-now`; przycisk „Synchronizuj teraz” w UI,
-  - produkcja: `define('DISABLE_WP_CRON', true);` + cron systemowy co minutę uruchamiający kolejkę
-    (WP-CLI albo wywołanie `wp-cron.php`, jeśli hosting nie ma WP-CLI),
-  - kolejka zadań: Action Scheduler (dodawany razem z synchronizacją, nie wcześniej),
-  - strona ustawień pokazuje „heartbeat” kolejki, żeby martwy cron był widoczny.
+**Decyzja D19**: własna kolejka na tabeli `osf_sync_runs` + WP-Cron zamiast Action Scheduler. `sync_runs` od STEP 2
+była zaprojektowana jako tabela zadań (status, próba, `queued_at`, indeks kolejki); Action Scheduler oznaczałby
+dołączenie zewnętrznej biblioteki do publicznego repo, jej tabele i zależność od żądań loopback. Gdy skala tego
+wymaga, kolejkę można przenieść na Action Scheduler bez zmiany importera i planisty.
+
+```
+WP-Cron „osf_seo_sync_tick” (co minutę)   albo   cron systemowy: wp osf-seo sync:run
+   │  (co 5 min) SyncScheduler::planAll → SyncPlanner::plan dla projektów kwalifikujących się
+   ▼
+SyncRunner::run(budżet 20 s, maks. 25 zadań)  — GET_LOCK: jeden runner w całej instalacji
+   │  zadania „running” bez żywego runnera → ponowienie (error_code interrupted)
+   │  claimNext: status queued|retrying, available_at <= teraz, ORDER BY priority, available_at, id
+   ▼
+ProjectGuard::authorizeSystem (tylko WP-CLI i WP-Cron) → GscImporter (sekcja 8.2) → stan datasetu → SyncPlanner (kolejne okno)
+```
+
+- Budżet sprawdzany między zadaniami (pojedynczy import może trwać dłużej; `set_time_limit` ≥ 120 s,
+  `wp_raise_memory_limit`). Brak nieskończonej pętli: limit czasu i liczby zadań na uruchomienie.
+- Statusy zadań (`sync_runs.status`): `queued`, `running`, `retrying` (czeka na ponowienie, `available_at` w przyszłości),
+  `success`, `failed`, `skipped` (projekt wstrzymany/zarchiwizowany), `cancelled` (zmiana property, reset danych,
+  `needs_reauth`). Zadanie zapisuje: okno dat, dataset, źródło (`trigger_type`), próbę, `rows_fetched`, `rows_written`,
+  `api_requests`, `error_code` (kategoria), `error_message` (skrócony, bez tokenów), czasy, property.
+- Stan projektu dla UI (`SyncService::status`): `queued`/`running`/`retrying` (z zadań), `success`, `partial`
+  (część datasetów z błędem), `failed`, `never`, `needs_reauth`, `not_ready`.
+- Lokalnie (LocalWP, bez crona systemowego) WP-Cron uruchamia ruch na stronie — także wejście do panelu;
+  na produkcji: `define('DISABLE_WP_CRON', true);` i cron systemowy co minutę:
+  `wp --path=<ścieżka> osf-seo sync:run` (zalecane; planowanie + kolejka) albo `wp cron event run --due-now`,
+  a bez WP-CLI: `wget -q -O - https://seo.ohsofresh.top/wp-cron.php?doing_wp_cron >/dev/null 2>&1`.
+  Hostinger: hPanel → Zaawansowane → Cron Jobs (minimalny interwał zależny od planu; co 1–5 min wystarcza).
+- Heartbeat: opcja `osf_seo_sync_heartbeat` (ostatnie uruchomienie runnera) — `wp osf-seo status` (`sync_queue`)
+  i `wp osf-seo gsc:status` pokazują, czy kolejka żyje.
+- Utrzymanie (raz na dobę, w runnerze): usunięcie zakończonych zadań starszych niż 90 dni i osieroconego stagingu.
+
+### 9.2 Planowanie (backfill i odświeżanie)
+
+`WindowPlanner` (czysta logika, testy jednostkowe) + `SyncPlanner` (idempotentnie, pod blokadą wiersza projektu):
+po jednym oczekującym zadaniu na dataset i rodzaj (`refresh` — najnowsze dane, `backfill` — historia).
+Projekt kwalifikuje się, gdy jest aktywny, ma aktywne połączenie, wybraną property i dane z tej samej property.
+Daty GSC liczone w czasie pacyficznym („dziś” w `America/Los_Angeles`).
+
+| Etap | Okno |
+|---|---|
+| Pierwszy import sum (`site`, po wyborze property) | cała historia: dziś − 16 miesięcy … wczoraj, jedno zadanie (kilkaset wierszy) → najstarsza i najnowsza data z danymi (ostatnia data `final`) |
+| Pierwsze okno fraz (`query`, `query_page`) | najnowsze dni: [ostatnia data − w + 1, ostatnia data] → dashboard działa po kilku zadaniach |
+| Backfill | od najstarszej zaimportowanej daty wstecz, okno po oknie (**najnowsze → najstarsze**), do max(dziś − 16 mies., najstarsza data sum) |
+| Odświeżanie sum (co ≥ 20 h) | [najnowsza − 6 dni, wczoraj] — okno kroczące + nowe dni |
+| Odświeżanie fraz (po odświeżeniu sum albo nowej dacie) | od min(najnowsza + 1, ostatnia data − 6) do ostatniej daty, okno po oknie (`sync_state.refresh_cursor`) |
+
+- **Okno kroczące 7 dni** (`OSF_SEO_SYNC_REFRESH_DAYS`, 3–30): dane GSC dopracowują się po pierwszym pojawieniu,
+  a `dataState=final` pojawia się z opóźnieniem ok. 2–3 dni; codziennie importujemy ponownie ostatnie 7 dni, a nie
+  tylko „wczoraj”. Starsza historia nie jest pobierana ponownie. Po przerwie (np. cron nie działał) okno zaczyna się
+  od najnowszej zaimportowanej daty — luka jest uzupełniana.
+- **Historia**: `OSF_SEO_GSC_HISTORY_MONTHS` (domyślnie 16, maks. 16) — nie zakładamy, że Google gwarantuje stałą liczbę
+  miesięcy: dolną granicą backfillu jest najstarsza data, dla której Google zwrócił sumy witryny.
+- **Szerokość okna** z gęstości danych (wiersze/dzień ostatniego udanego zadania): cel 50 000 wierszy na zadanie
+  (≈ 2 strony API); `query` 1–31 dni (domyślnie 7), `query_page` 1–14 dni (domyślnie 3).
+- **Priorytety**: ręczne −5; `site` 10; odświeżanie fraz 20/25; backfill ostatnich 56 dni 30; starszy backfill 40/50.
+- Pokrycie datasetu jest ciągłe: `[oldest_date, newest_date]`; postęp backfillu = pokryte dni / dni dostępnej historii.
+
+### 9.3 Błędy i ponowienia
+
+| Błąd | Reakcja |
+|---|---|
+| 429, 403 z powodem limitu, 5xx, sieć | w żądaniu: 2 ponowienia (1 s, 3 s; `Retry-After` ≤ 10 s); potem zadanie `retrying`: 1 min → 5 min → 30 min → 2 h (`Retry-After` wydłuża, maks. 6 h); po 5. próbie `failed` + przerwa planowania datasetu 6 h |
+| uszkodzona odpowiedź, niestabilna paginacja, błąd bazy, przerwany proces | jak wyżej (ograniczone ponowienia zadania) |
+| 400, 403 (brak dostępu do property), 404, błąd klucza szyfrowania | `failed` bez ponowień + przerwa 24 h (bez pętli błędów) |
+| `invalid_grant` | połączenie `needs_reauth`; zadanie `failed` (`needs_reauth`); oczekujące zadania wszystkich projektów tego połączenia `cancelled`; planowanie wstrzymane do ponownego połączenia (potem wznawia się samo — kursory w `sync_state` zostają) |
+| zmiana property / reset danych w trakcie | zadanie `cancelled`, importer nie zatwierdza danych (kontrola pod blokadą wiersza projektu) |
+
+„Synchronizuj teraz” zdejmuje przerwę po błędach (`retry_after`).
+
+### 9.4 Ręczna synchronizacja
+
+`POST /projects/{project}/search-console/sync` (`osf_seo_manage_connections`, nonce + Origin) → `SyncService::requestSync`:
+w transakcji z blokadą wiersza projektu (równoległe kliknięcia są serializowane) — limit jednego zlecenia na 5 minut
+(`rate_limited`), brak nowych zadań, gdy odświeżanie czeka lub trwa (`already_queued`), inaczej wymuszone odświeżenie
+(sumy → frazy). Strona Search Console pokazuje stan, postęp backfillu, pokrycie datasetów, ostatnie zadania; w trakcie
+synchronizacji odświeża postęp z `GET …/search-console/status` (JSON, dostęp do projektu) co 10 s.
+
+CLI: `gsc:sync` (`--force` pomija limit 5 min, `--run` wykonuje zadania projektu od razu), `gsc:backfill [--run]`,
+`gsc:status [--format=json]`, `sync:run [--time-limit] [--max-jobs]`.
+
+### 9.5 Operacje na stagingu (pierwsze uruchomienie z prawdziwym Google)
+
+Wszystkie komendy w katalogu instalacji (`wp --path=<ścieżka WordPressa>` albo z katalogu `public_html`); żadna nie
+wypisuje tokenów. `<id>` = `public_id` projektu (`wp osf-seo project:list`).
+
+```bash
+wp osf-seo db:migrate                      # schemat 4 (wykonuje się też sam po wdrożeniu); dane i połączenie zostają
+wp osf-seo status                          # w tym sync_queue (heartbeat kolejki)
+wp osf-seo gsc:properties --project=<id>   # properties konta (site_url, uprawnienia, suggested)
+wp osf-seo gsc:select-property --project=<id> --property='sc-domain:example.pl'   # albo w panelu: Search Console
+wp osf-seo gsc:probe --project=<id>                                   # 7 dni [date], 10 wierszy, bez zapisu
+wp osf-seo gsc:probe --project=<id> --dimensions=query --limit=10    # próbka fraz
+wp osf-seo gsc:sync --project=<id> --run --time-limit=300           # pierwszy import (sumy → najnowsze frazy) od razu
+wp osf-seo gsc:status --project=<id>                                 # stan, pokrycie, postęp, ostatnie zadania
+wp osf-seo gsc:backfill --project=<id> --run --time-limit=600       # historia (można przerwać i powtórzyć)
+```
+
+- Wybór property w panelu sam planuje pierwszy import; `--run` tylko przyspiesza wykonanie (bez czekania na WP-Cron).
+- Backfill jest bezpieczny do wielokrotnego uruchamiania: zamiana zakresu jest idempotentna, planista nie dubluje zadań,
+  a jeden runner (GET_LOCK) wyklucza równoległe importy; przerwanie (Ctrl+C, timeout) → zadanie wraca do kolejki.
+- Cron: w hPanelu dodać zadanie co minutę `wp --path=<ścieżka> osf-seo sync:run --time-limit=50` (i opcjonalnie
+  `define('DISABLE_WP_CRON', true);`); bez crona systemowego WP-Cron wykonuje kolejkę tylko przy ruchu na stronie.
+- Weryfikacja danych: `gsc:probe --project=<id> --start=<pierwszy dzień okresu> --end=<ostatni> --limit=31` (`[date]`)
+  daje te same kliknięcia/wyświetlenia co KPI dashboardu dla tego zakresu; raport „Skuteczność” w Search Console
+  (te same daty) — sumy kliknięć i wyświetleń jak w KPI; CTR i średnia pozycja liczone z sum.
 
 ## 10. Opportunity Score (MVP 2)
 
@@ -525,6 +794,9 @@ samej nazwie. W repozytorium wyłącznie placeholdery.
 | `OSF_SEO_GOOGLE_CLIENT_ID` | OAuth Client ID (typ „Web application”) | STEP 5 |
 | `OSF_SEO_GOOGLE_CLIENT_SECRET` | OAuth Client Secret | STEP 5 |
 | `OSF_SEO_ENCRYPTION_KEY` | klucz szyfrowania refresh tokenów: 32 losowe bajty w base64 (opcjonalny prefiks `base64:`) | STEP 5 |
+| `OSF_SEO_GSC_HISTORY_MONTHS` | (opcjonalnie) ile miesięcy historii pobierać, 1–16, domyślnie 16 | STEP 9 |
+| `OSF_SEO_SYNC_REFRESH_DAYS` | (opcjonalnie) okno kroczące codziennego odświeżania, 3–30 dni, domyślnie 7 | STEP 9 |
+| `OSF_SEO_SYNC_TIME_BUDGET` | (opcjonalnie) budżet czasu jednego uruchomienia kolejki z WP-Cron, 5–300 s, domyślnie 20 | STEP 9 |
 
 ```php
 // wp-config.php — przykład z placeholderami
@@ -573,14 +845,14 @@ Warianty docelowe:
 | 4 | Powłoka panelu w Sage: routing, layout, osobne wejście Vite, logowanie, nagłówki, lista projektów | ✅ STEP 4 |
 | 5 | Projekty w UI: tworzenie, edycja, archiwizacja, przypisywanie klientów | ✅ STEP 4 (bez przypisywania w UI — na razie `wp osf-seo project:assign`) |
 | 6 | Google OAuth: PKCE/state, szyfrowanie tokenów, callback, połączenia | ✅ STEP 5 (Google mockowany; prawdziwy OAuth — po konfiguracji) |
-| 7 | Wybór property GSC | — |
-| 8 | Klient GSC API: paginacja, błędy, backoff, `wp osf-seo gsc:probe` | — |
-| 9 | Importery `site_daily`, `query_daily`, normalizacja, zamiana zakresu w transakcji | — |
-| 10 | Orkiestracja synchronizacji (Action Scheduler), postęp, „Synchronizuj teraz”/„Ponów” | — |
-| 11 | `query_page_daily` + `visibility_daily`; pomiar skali | — |
-| 12 | `AnalyticsService` (porównania, tabela fraz, TOP N, serie) + seeder danych testowych | — |
-| 13 | Widok Keywords + szczegół frazy | — |
-| 14 | Dashboard projektu + wykresy (Chart.js, REST) | — |
+| 7 | Wybór property GSC | ✅ STEP 6 (lista, sugestia, reset przy zmianie property, CLI) |
+| 8 | Klient GSC API: paginacja, błędy, backoff, `wp osf-seo gsc:probe` | ✅ STEP 7 (Google mockowany w testach; prawdziwe API — probe na stagingu) |
+| 9 | Importery `site_daily`, `query_daily`, normalizacja, zamiana zakresu w transakcji | ✅ STEP 8 (+ `query_page_daily`; staging, atomowa zamiana zakresu) |
+| 10 | Orkiestracja synchronizacji, postęp, „Synchronizuj teraz”/„Ponów” | ✅ STEP 9 (własna kolejka na `sync_runs` + WP-Cron — D19) |
+| 11 | `query_page_daily` + `visibility_daily`; pomiar skali | ✅ STEP 8/10: `query_page_daily` i pomiar (`composer test:performance`); `visibility_daily` (wykres TOP N w czasie) — do zrobienia |
+| 12 | Analityka (porównania, tabela fraz, TOP N, serie) + generator danych testowych | ✅ STEP 10 (`KeywordReport`, `OverviewReport`, benchmark) |
+| 13 | Widok Keywords + szczegół frazy | ✅ STEP 10 lista fraz (filtry, sortowanie, paginacja, strona docelowa); szczegół frazy — do zrobienia |
+| 14 | Dashboard projektu + wykresy (Chart.js, REST) | ✅ STEP 10 (KPI, TOP N, wzrosty/spadki, wykres dzienny; bez REST — dane renderowane serwerowo) |
 | 15 | Hardening i operacje (rate limit, nagłówki, status crona, testy dostępu) | — |
 
 **MVP 2**: Opportunity Score, Pages/landing pages, zaawansowane filtry, automatyczna synchronizacja, raporty.
@@ -605,6 +877,11 @@ Każdy etap to osobny commit z testem (build, `php -l`, smoke test WordPress). K
 - **Deployment** nowej struktury nieustalony (sekcja 13) — do tego czasu praca na branchu roboczym.
 - **OAuth Testing**: tokeny ważne 7 dni — publikacja aplikacji przed produkcją.
 - **Skala `query_page_daily`** — decyzja po pomiarze (sekcja 6.4).
+- **Wydajność raportów przy bardzo dużych property** — czasy rosną liniowo z liczbą wierszy fraz w okresie
+  (sekcja 8.3); przy dziesiątkach tysięcy fraz dziennie potrzebne agregaty okresowe lub rollupy.
+- **Prawdziwe API Google** — klient, import i synchronizacja testowane na atrapie; zachowanie realnego API
+  (limity, starsze daty niż 16 miesięcy, opóźnienie danych `final`) do potwierdzenia `gsc:probe` i pierwszą synchronizacją na stagingu.
+- **WP-Cron na stagingu** — bez crona systemowego kolejka działa tylko przy ruchu na stronie; heartbeat w `wp osf-seo status`.
 - **Hosting**: dostępność SSH/WP-CLI/crona i wersja PHP na Hostingerze do weryfikacji.
-- **Limity GSC API** i opóźnienie danych — do potwierdzenia empirycznie przy implementacji klienta.
+- **Limity GSC API** i opóźnienie danych — obsłużone ponowieniami i odczytem ostatniej daty z danych; do potwierdzenia na stagingu.
 - **Sesje Laravela** wymagają zapisywalnego `storage/` motywu na serwerze.

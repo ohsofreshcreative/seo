@@ -4,15 +4,21 @@ declare(strict_types=1);
 
 namespace OsfSeo;
 
+use OsfSeo\Analytics\KeywordReport;
+use OsfSeo\Analytics\OverviewReport;
+use OsfSeo\Analytics\ReportCache;
 use OsfSeo\Auth\LoginThrottle;
+use OsfSeo\Auth\ProjectContext;
 use OsfSeo\Auth\ProjectGuard;
 use OsfSeo\Auth\RoleManager;
 use OsfSeo\Auth\WpAdminAccess;
 use OsfSeo\Auth\WpRoleStore;
 use OsfSeo\Cli\DbCommand;
 use OsfSeo\Cli\GoogleCommand;
+use OsfSeo\Cli\GscCommand;
 use OsfSeo\Cli\ProjectCommand;
 use OsfSeo\Cli\StatusCommand;
+use OsfSeo\Cli\SyncCommand;
 use OsfSeo\Database\Connection;
 use OsfSeo\Database\Migrator;
 use OsfSeo\Database\SchemaInspector;
@@ -24,20 +30,37 @@ use OsfSeo\Google\OAuthClient;
 use OsfSeo\Google\OAuthFlow;
 use OsfSeo\Google\OAuthStateStore;
 use OsfSeo\Google\TokenVault;
+use OsfSeo\Gsc\GscCalendar;
+use OsfSeo\Gsc\GscClient;
+use OsfSeo\Gsc\Dictionary;
+use OsfSeo\Gsc\GscDataStore;
+use OsfSeo\Gsc\GscImporter;
+use OsfSeo\Gsc\GscProbe;
+use OsfSeo\Gsc\PropertyService;
 use OsfSeo\Http\HttpTransport;
 use OsfSeo\Http\WpHttpTransport;
 use OsfSeo\Projects\ProjectRepository;
 use OsfSeo\Projects\ProjectService;
 use OsfSeo\Setup\Installer;
 use OsfSeo\Support\Clock;
+use OsfSeo\Sync\SyncConfig;
+use OsfSeo\Sync\SyncPlanner;
+use OsfSeo\Sync\SyncRunner;
+use OsfSeo\Sync\SyncRunRepository;
+use OsfSeo\Sync\SyncScheduler;
+use OsfSeo\Sync\SyncService;
+use OsfSeo\Sync\SyncStateRepository;
+use OsfSeo\Sync\TriggerType;
 use OsfSeo\Support\Config;
 use OsfSeo\Support\Logger;
+use OsfSeo\Support\Sleeper;
 use OsfSeo\Support\SystemClock;
+use OsfSeo\Support\SystemSleeper;
 
 final class Plugin
 {
 	/** Musi być zgodna z nagłówkiem `Version` w osf-seo.php (pilnuje tego test). */
-	public const VERSION = '0.5.0';
+	public const VERSION = '0.10.0';
 
 	public const MIN_PHP = '8.2';
 
@@ -68,6 +91,7 @@ final class Plugin
 
 		$container->singleton(Config::class, static fn (): Config => new Config());
 		$container->singleton(Clock::class, static fn (): Clock => new SystemClock());
+		$container->singleton(Sleeper::class, static fn (): Sleeper => new SystemSleeper());
 		$container->singleton(Logger::class, static fn (Container $c): Logger => Logger::fromConfig($c->get(Config::class)));
 		$container->singleton(Connection::class, static fn (): Connection => Connection::fromGlobals());
 		$container->singleton(Migrator::class, static fn (Container $c): Migrator => new Migrator(
@@ -135,6 +159,91 @@ final class Plugin
 			$c->get(Logger::class),
 		));
 
+		// Search Console: odpowiedzi do 25 000 wierszy (kilka MB) — dłuższy timeout niż dla endpointów OAuth.
+		$container->singleton(GscClient::class, static fn (Container $c): GscClient => new GscClient(
+			new GoogleApi($c->get(AccessTokenProvider::class), new WpHttpTransport(GscClient::HTTP_TIMEOUT)),
+			$c->get(Sleeper::class),
+			$c->get(Logger::class),
+		));
+		$container->singleton(GscCalendar::class, static fn (Container $c): GscCalendar => new GscCalendar($c->get(Clock::class)));
+		$container->singleton(GscProbe::class, static fn (Container $c): GscProbe => new GscProbe(
+			$c->get(GscClient::class),
+			$c->get(ConnectionRepository::class),
+			$c->get(ProjectRepository::class),
+			$c->get(GscCalendar::class),
+		));
+		$container->singleton(GscDataStore::class, static fn (Container $c): GscDataStore => new GscDataStore($c->get(Connection::class)));
+		$container->singleton(Dictionary::class, static fn (Container $c): Dictionary => new Dictionary($c->get(Connection::class), $c->get(Clock::class)));
+		$container->singleton(GscImporter::class, static fn (Container $c): GscImporter => new GscImporter(
+			$c->get(GscClient::class),
+			$c->get(Connection::class),
+			$c->get(ProjectRepository::class),
+			$c->get(Dictionary::class),
+			$c->get(Logger::class),
+		));
+		$container->singleton(PropertyService::class, static function (Container $c): PropertyService {
+			$service = new PropertyService(
+				$c->get(GscClient::class),
+				$c->get(ConnectionRepository::class),
+				$c->get(ProjectRepository::class),
+				$c->get(GscDataStore::class),
+				$c->get(Connection::class),
+				$c->get(Logger::class),
+			);
+			// Reset danych anuluje oczekujące zadania starej property; wybór property planuje pierwszy import.
+			$service->onDetach(static fn (ProjectContext $context) => $c->get(SyncRunRepository::class)->cancelPending($context->projectId(), 'property_reset'));
+			$service->onSelected(static fn (ProjectContext $context) => $c->get(SyncPlanner::class)->plan($context, TriggerType::Connect));
+
+			return $service;
+		});
+
+		$container->singleton(KeywordReport::class, static fn (Container $c): KeywordReport => new KeywordReport($c->get(Connection::class), $c->get(Config::class)));
+		$container->singleton(OverviewReport::class, static fn (Container $c): OverviewReport => new OverviewReport($c->get(Connection::class), $c->get(KeywordReport::class), new ReportCache()));
+
+		$container->singleton(SyncConfig::class, static fn (Container $c): SyncConfig => new SyncConfig($c->get(Config::class)));
+		$container->singleton(SyncStateRepository::class, static fn (Container $c): SyncStateRepository => new SyncStateRepository($c->get(Connection::class), $c->get(Clock::class)));
+		$container->singleton(SyncRunRepository::class, static fn (Container $c): SyncRunRepository => new SyncRunRepository($c->get(Connection::class), $c->get(Clock::class)));
+		$container->singleton(SyncPlanner::class, static fn (Container $c): SyncPlanner => new SyncPlanner(
+			$c->get(Connection::class),
+			$c->get(ProjectRepository::class),
+			$c->get(ConnectionRepository::class),
+			$c->get(SyncStateRepository::class),
+			$c->get(SyncRunRepository::class),
+			$c->get(GscCalendar::class),
+			$c->get(SyncConfig::class),
+			$c->get(Logger::class),
+		));
+		$container->singleton(SyncRunner::class, static fn (Container $c): SyncRunner => new SyncRunner(
+			$c->get(Connection::class),
+			$c->get(SyncRunRepository::class),
+			$c->get(SyncStateRepository::class),
+			$c->get(SyncPlanner::class),
+			$c->get(GscImporter::class),
+			$c->get(ProjectGuard::class),
+			$c->get(ProjectRepository::class),
+			$c->get(ConnectionRepository::class),
+			$c->get(Logger::class),
+		));
+		$container->singleton(SyncService::class, static fn (Container $c): SyncService => new SyncService(
+			$c->get(Connection::class),
+			$c->get(ProjectRepository::class),
+			$c->get(ConnectionRepository::class),
+			$c->get(SyncPlanner::class),
+			$c->get(SyncRunner::class),
+			$c->get(SyncRunRepository::class),
+			$c->get(SyncStateRepository::class),
+			$c->get(GscCalendar::class),
+			$c->get(SyncConfig::class),
+		));
+		$container->singleton(SyncScheduler::class, static fn (Container $c): SyncScheduler => new SyncScheduler(
+			$c->get(SyncPlanner::class),
+			$c->get(SyncRunner::class),
+			$c->get(ProjectGuard::class),
+			$c->get(Installer::class),
+			$c->get(SyncConfig::class),
+			$c->get(Logger::class),
+		));
+
 		return $container;
 	}
 
@@ -149,6 +258,7 @@ final class Plugin
 		$this->get(Installer::class)->maybeUpgrade();
 
 		WpAdminAccess::register();
+		$this->get(SyncScheduler::class)->register();
 
 		add_action('deleted_user', function (int $userId): void {
 			$this->get(ProjectService::class)->forgetDeletedUser($userId);
@@ -159,6 +269,8 @@ final class Plugin
 			DbCommand::register($this);
 			ProjectCommand::register($this);
 			GoogleCommand::register($this);
+			GscCommand::register($this);
+			SyncCommand::register($this);
 		}
 	}
 

@@ -17,7 +17,7 @@ final class SchemaTest extends TestCase
 	public function test_specification_covers_all_mvp_tables(): void
 	{
 		self::assertEqualsCanonicalizing(
-			['projects', 'project_users', 'connections', 'keywords', 'pages', 'gsc_site_daily', 'gsc_query_daily', 'gsc_query_page_daily', 'visibility_daily', 'sync_state', 'sync_runs'],
+			['projects', 'project_users', 'connections', 'keywords', 'pages', 'gsc_site_daily', 'gsc_query_daily', 'gsc_query_page_daily', 'gsc_import_staging', 'visibility_daily', 'sync_state', 'sync_runs'],
 			array_keys(Schema::tables()),
 		);
 	}
@@ -68,7 +68,10 @@ final class SchemaTest extends TestCase
 	{
 		Migrator::assertOrdered(Migrator::defaultMigrations());
 
-		self::assertSame(1, Migrator::defaultMigrations()[0]->version());
+		self::assertSame(range(1, count(Migrator::defaultMigrations())), array_map(
+			static fn (Migration $migration): int => $migration->version(),
+			Migrator::defaultMigrations(),
+		), 'Wersje migracji produkcyjnych są kolejne (bez luk).');
 	}
 
 	public function test_duplicate_or_descending_migration_versions_are_rejected(): void

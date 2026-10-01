@@ -19,6 +19,9 @@ final class GoogleEndpointMock
 	/** @var array<string, list<array{status: int, json: array<string, mixed>}|WP_Error|Closure>> */
 	private array $routes = [];
 
+	/** @var array<string, array{status: int, json: array<string, mixed>}|WP_Error|Closure> odpowiedzi stałe (gdy kolejka pusta) */
+	private array $defaults = [];
+
 	private ?Closure $filter = null;
 
 	public function register(): void
@@ -43,6 +46,18 @@ final class GoogleEndpointMock
 	public function on(string $url, array|WP_Error|Closure $response): self
 	{
 		$this->routes[$url][] = $response;
+
+		return $this;
+	}
+
+	/**
+	 * Odpowiedź dla każdego kolejnego żądania pod adres, gdy kolejka `on()` jest pusta.
+	 *
+	 * @param array{status: int, json: array<string, mixed>}|WP_Error|Closure $response
+	 */
+	public function always(string $url, array|WP_Error|Closure $response): self
+	{
+		$this->defaults[$url] = $response;
 
 		return $this;
 	}
@@ -78,7 +93,7 @@ final class GoogleEndpointMock
 		];
 		$this->requests[] = $request;
 
-		$response = isset($this->routes[$url]) && $this->routes[$url] !== [] ? array_shift($this->routes[$url]) : null;
+		$response = isset($this->routes[$url]) && $this->routes[$url] !== [] ? array_shift($this->routes[$url]) : ($this->defaults[$url] ?? null);
 
 		if ($response === null) {
 			return new WP_Error('http_request_failed', 'Unexpected request in test.');
@@ -93,7 +108,7 @@ final class GoogleEndpointMock
 		}
 
 		return [
-			'headers' => ['content-type' => 'application/json'],
+			'headers' => ['content-type' => 'application/json'] + ($response['headers'] ?? []),
 			'body' => (string) json_encode($response['json']),
 			'response' => ['code' => $response['status'], 'message' => ''],
 			'cookies' => [],

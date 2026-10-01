@@ -16,6 +16,9 @@ use wpdb;
  */
 final class Connection
 {
+	/** @var array<int, int> głębokość transakcji per obiekt $wpdb */
+	private static array $transactionDepth = [];
+
 	public function __construct(private readonly wpdb $wpdb)
 	{
 	}
@@ -118,13 +121,30 @@ final class Connection
 	}
 
 	/**
+	 * Transakcja. Wywołanie zagnieżdżone dołącza do zewnętrznej transakcji (w MySQL
+	 * `START TRANSACTION` wewnątrz transakcji niejawnie zatwierdziłby poprzednie zmiany).
+	 * Głębokość liczymy per połączenie $wpdb, bo usługi mogą mieć własne instancje Connection.
+	 *
 	 * @template T
 	 * @param callable(self): T $callback
 	 * @return T
 	 */
 	public function transaction(callable $callback): mixed
 	{
+		$key = spl_object_id($this->wpdb);
+
+		if ((self::$transactionDepth[$key] ?? 0) > 0) {
+			self::$transactionDepth[$key]++;
+
+			try {
+				return $callback($this);
+			} finally {
+				self::$transactionDepth[$key]--;
+			}
+		}
+
 		$this->execute('START TRANSACTION');
+		self::$transactionDepth[$key] = 1;
 
 		try {
 			$result = $callback($this);
@@ -135,7 +155,39 @@ final class Connection
 			$this->wpdb->query('ROLLBACK');
 
 			throw $exception;
+		} finally {
+			unset(self::$transactionDepth[$key]);
 		}
+	}
+
+	public function inTransaction(): bool
+	{
+		return (self::$transactionDepth[spl_object_id($this->wpdb)] ?? 0) > 0;
+	}
+
+	/**
+	 * Blokada nazwana MySQL (GET_LOCK) — trzymana przez połączenie do zwolnienia albo rozłączenia
+	 * (np. śmierci procesu PHP). Nazwę zawężamy do bazy i prefiksu (współdzielony serwer MySQL).
+	 */
+	public function acquireLock(string $name, int $timeout = 0): bool
+	{
+		return $this->fetchValue('SELECT GET_LOCK(%s, %d)', [$this->lockName($name), $timeout]) === '1';
+	}
+
+	public function releaseLock(string $name): void
+	{
+		$this->fetchValue('SELECT RELEASE_LOCK(%s)', [$this->lockName($name)]);
+	}
+
+	public function lockName(string $name): string
+	{
+		return 'osf_seo_' . $name . '_' . substr(md5($this->databaseName() . '|' . $this->prefix()), 0, 12);
+	}
+
+	/** Escapowanie `%` i `_` w wartości LIKE (wildcardy dokleja wywołujący). */
+	public function escapeLike(string $value): string
+	{
+		return $this->wpdb->esc_like($value);
 	}
 
 	/**

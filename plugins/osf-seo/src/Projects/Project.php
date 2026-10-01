@@ -24,6 +24,8 @@ final class Project
 		public readonly ?int $connectionId,
 		public readonly ?string $gscProperty,
 		public readonly ?string $gscPermission,
+		/** Property GSC, z której pochodzą zapisane dane (null: brak danych albo pochodzenie nieznane). */
+		public readonly ?string $gscDataProperty,
 		public readonly ?DateTimeImmutable $lastSyncedAt,
 		public readonly int $createdBy,
 		public readonly DateTimeImmutable $createdAt,
@@ -47,6 +49,7 @@ final class Project
 			connectionId: $row['connection_id'] === null ? null : (int) $row['connection_id'],
 			gscProperty: $row['gsc_property'],
 			gscPermission: $row['gsc_permission'],
+			gscDataProperty: $row['gsc_data_property'] ?? null,
 			lastSyncedAt: self::date($row['last_synced_at']),
 			createdBy: (int) $row['created_by'],
 			createdAt: self::date($row['created_at']) ?? new DateTimeImmutable('@0'),

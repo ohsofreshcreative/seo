@@ -12,7 +12,7 @@ use OsfSeo\Http\HttpTransport;
  * Autoryzowane żądania do API Google w imieniu połączenia. Po 401 odświeża access token
  * i ponawia żądanie dokładnie raz. Token Bearer trafia wyłącznie do https://*.googleapis.com.
  */
-final class GoogleApi
+final class GoogleApi implements ApiRequester
 {
 	public function __construct(
 		private readonly AccessTokenProvider $tokens,

@@ -40,6 +40,8 @@ final class StatusReport
 	 *     google_errors: list<string>,
 	 *     google_redirect_uri: string,
 	 *     google_connections: array<string, int>|null,
+	 *     sync_heartbeat?: string|null,
+	 *     sync_pending?: int|null,
 	 * } $facts
 	 * @return array{ok: bool, rows: list<array{check: string, value: string, status: string}>}
 	 */
@@ -97,6 +99,7 @@ final class StatusReport
 					)),
 				'status' => self::INFO,
 			],
+			self::syncQueue($facts['sync_heartbeat'] ?? null, $facts['sync_pending'] ?? null),
 			['check' => 'environment', 'value' => $facts['environment'], 'status' => self::INFO],
 			['check' => 'log_level', 'value' => $facts['log_level'], 'status' => self::INFO],
 		];
@@ -126,6 +129,24 @@ final class StatusReport
 		}
 
 		return ['check' => 'google_oauth', 'value' => 'configured', 'status' => self::OK];
+	}
+
+	/**
+	 * Heartbeat kolejki synchronizacji (ostatnie uruchomienie runnera) — martwy cron jest widoczny.
+	 *
+	 * @return array{check: string, value: string, status: string}
+	 */
+	private static function syncQueue(?string $heartbeat, ?int $pending): array
+	{
+		$value = $heartbeat === null
+			? 'never ran (WP-Cron or system cron: wp osf-seo sync:run)'
+			: 'last run ' . $heartbeat . ' UTC';
+
+		if ($pending !== null) {
+			$value .= ', ' . $pending . ' pending job(s)';
+		}
+
+		return ['check' => 'sync_queue', 'value' => $value, 'status' => self::INFO];
 	}
 
 	/**

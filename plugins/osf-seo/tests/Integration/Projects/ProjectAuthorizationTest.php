@@ -262,6 +262,24 @@ final class ProjectAuthorizationTest extends ProjectsTestCase
 		$this->guard->authorizeSystem($this->projectA->publicId);
 	}
 
+	public function test_system_access_is_available_to_wp_cron_jobs(): void
+	{
+		$cron = static fn (): bool => true;
+		add_filter('wp_doing_cron', $cron);
+
+		try {
+			$context = $this->guard->authorizeSystem($this->projectA->publicId);
+		} finally {
+			remove_filter('wp_doing_cron', $cron);
+		}
+
+		self::assertTrue($context->isSystem());
+		self::assertSame($this->projectA->publicId, $context->publicId());
+
+		$this->expectException(AccessDenied::class);
+		$this->guard->authorizeSystem($this->projectA->publicId);
+	}
+
 	public function test_project_context_cannot_be_constructed_outside_the_guard(): void
 	{
 		$constructor = (new ReflectionClass(ProjectContext::class))->getConstructor();

@@ -221,6 +221,13 @@ wp osf-seo project:assign <public_id> <user> [--role=viewer|manager]
 wp osf-seo project:unassign <public_id> <user>
 wp osf-seo google:status        # konfiguracja OAuth (tylko nazwy i stan, bez wartości), redirect URI, połączenia
 wp osf-seo google:generate-key  # nowy OSF_SEO_ENCRYPTION_KEY do wp-config.php (nigdzie nie zapisywany)
+wp osf-seo gsc:properties --project=<public_id>                 # properties konta Google projektu
+wp osf-seo gsc:select-property --project=<id> --property=<url>  # --reset-data przy danych innej property
+wp osf-seo gsc:probe --project=<id>                             # mała próbka prawdziwych danych, bez zapisu
+wp osf-seo gsc:sync|gsc:backfill --project=<id> [--run]         # zlecenie (i opcjonalnie wykonanie) synchronizacji
+wp osf-seo gsc:status --project=<id>                            # stan synchronizacji i pokrycie danych
+wp osf-seo sync:run             # kolejka synchronizacji (cron systemowy)
+composer test:performance       # benchmark raportów + EXPLAIN na syntetycznych danych (OSOBNA baza testowa)
 ```
 
 Testy integracyjne czyszczą i usuwają tabele — **nigdy nie wskazuj bazy strony**. Zmienne:

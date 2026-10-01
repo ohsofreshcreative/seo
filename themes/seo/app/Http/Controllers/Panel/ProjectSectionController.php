@@ -12,7 +12,6 @@ use Symfony\Component\HttpFoundation\Response;
 final class ProjectSectionController
 {
 	public const SECTIONS = [
-		'keywords' => ['title' => 'Frazy', 'description' => 'Ranking fraz z Google Search Console: średnia pozycja (GSC), kliknięcia, wyświetlenia, CTR i porównanie okresów.'],
 		'opportunities' => ['title' => 'Szanse SEO', 'description' => 'Frazy z potencjałem wzrostu i przejrzystym Opportunity Score (MVP 2).'],
 		'pages' => ['title' => 'Strony', 'description' => 'Landing pages z Google Search Console i frazy dla każdego adresu (MVP 2).'],
 		'audit' => ['title' => 'Audyt', 'description' => 'Techniczny audyt SEO z własnego crawlera (MVP 3).'],

@@ -1,8 +1,4 @@
 {
-  "_module.esm-BAvuMQKY.js": {
-    "file": "assets/module.esm-BAvuMQKY.js",
-    "name": "module.esm"
-  },
   "_navigation-_Ms0R5o1.css": {
     "file": "assets/navigation-_Ms0R5o1.css",
     "src": "_navigation-_Ms0R5o1.css"
@@ -20,6 +16,10 @@
   "_pagination-ZQCciRw_.css": {
     "file": "assets/pagination-ZQCciRw_.css",
     "src": "_pagination-ZQCciRw_.css"
+  },
+  "_preload-helper-ChGswCUq.js": {
+    "file": "assets/preload-helper-ChGswCUq.js",
+    "name": "preload-helper"
   },
   "_swiper-HzbfsHSZ.css": {
     "file": "assets/swiper-HzbfsHSZ.css",
@@ -67,7 +67,7 @@
     ]
   },
   "resources/css/panel.css": {
-    "file": "assets/panel-C25yPxyN.css",
+    "file": "assets/panel-CB7rKYWa.css",
     "name": "panel",
     "names": [
       "panel.css"
@@ -92,12 +92,12 @@
     "src": "resources/images/pointer.svg"
   },
   "resources/js/app.js": {
-    "file": "assets/app-DOjETUl4.js",
+    "file": "assets/app-Bq1HPOF9.js",
     "name": "app",
     "src": "resources/js/app.js",
     "isEntry": true,
     "imports": [
-      "_module.esm-BAvuMQKY.js"
+      "_preload-helper-ChGswCUq.js"
     ],
     "dynamicImports": [
       "resources/js/blocks/reviews.js",
@@ -248,12 +248,21 @@
     "isEntry": true
   },
   "resources/js/panel.js": {
-    "file": "assets/panel-BrL_6FQw.js",
+    "file": "assets/panel-D3BUUJ4a.js",
     "name": "panel",
     "src": "resources/js/panel.js",
     "isEntry": true,
     "imports": [
-      "_module.esm-BAvuMQKY.js"
+      "_preload-helper-ChGswCUq.js"
+    ],
+    "dynamicImports": [
+      "resources/js/panel/chart.js"
     ]
+  },
+  "resources/js/panel/chart.js": {
+    "file": "assets/chart-C00298p0.js",
+    "name": "chart",
+    "src": "resources/js/panel/chart.js",
+    "isDynamicEntry": true
   }
 }

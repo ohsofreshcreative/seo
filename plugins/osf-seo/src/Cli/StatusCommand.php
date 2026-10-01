@@ -11,6 +11,7 @@ use OsfSeo\Google\ConnectionRepository;
 use OsfSeo\Google\GoogleConfig;
 use OsfSeo\Plugin;
 use OsfSeo\Setup\Installer;
+use OsfSeo\Sync\SyncRunner;
 use WP_CLI;
 
 /**
@@ -108,7 +109,20 @@ final class StatusCommand
 			'google_errors' => $google->errors(),
 			'google_redirect_uri' => $google->redirectUri(),
 			'google_connections' => $this->googleConnections(),
+			'sync_heartbeat' => is_string($heartbeat = get_option(SyncRunner::HEARTBEAT_OPTION)) && $heartbeat !== '' ? $heartbeat : null,
+			'sync_pending' => $this->pendingJobs(),
 		];
+	}
+
+	private function pendingJobs(): ?int
+	{
+		try {
+			$db = $this->plugin->get(\OsfSeo\Database\Connection::class);
+
+			return (int) $db->fetchValue("SELECT COUNT(*) FROM `{$db->table('sync_runs')}` WHERE status IN ('queued', 'running', 'retrying')");
+		} catch (\Throwable) {
+			return null;
+		}
 	}
 
 	/**

@@ -4,8 +4,10 @@ Wewnętrzne narzędzie SEO agencji OhSoFresh: projekty klientów połączone z G
 automatyczne wykrywanie fraz, porównania okresów, wzrosty i spadki, szanse SEO oraz dashboardy.
 Jedynym źródłem danych w MVP jest Google Search Console API — koszt zewnętrznych usług: 0 zł.
 
-> **Status:** fundament (plugin: bootstrap, role i uprawnienia, logger, `wp osf-seo status`).
-> Aplikacja nie ma jeszcze panelu ani integracji z Google — plan i postęp prac:
+> **Status:** MVP 1 w toku — plugin i panel: projekty i uprawnienia, Google OAuth, wybór property GSC,
+> import danych Search Console (sumy witryny, frazy, frazy × strony), kolejka synchronizacji z backfillem
+> ok. 16 miesięcy i codziennym odświeżaniem, lista fraz z porównaniem okresów oraz dashboard projektu
+> (KPI, TOP 3/10/20/50/100 wg średniej pozycji GSC, wzrosty i spadki). Plan i postęp:
 > [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 >
 > **Repozytorium jest publiczne.** Nie commituj żadnych sekretów (sekcja „Konfiguracja”).
@@ -108,11 +110,26 @@ composer lint     # php -l
 OSF_SEO_TEST_DB_NAME=osf_seo_test OSF_SEO_TEST_DB_USER=root OSF_SEO_TEST_DB_PASSWORD=... \
 OSF_SEO_TEST_DB_HOST="localhost:/ścieżka/do/mysqld.sock" composer test:integration
 
+# wydajność raportów na syntetycznych danych (ta sama OSOBNA baza testowa)
+composer test:performance
+
 # stan pluginu w WordPressie
 wp osf-seo status
 wp osf-seo db:status
 wp osf-seo db:migrate
+
+# Google Search Console (bez wypisywania tokenów)
+wp osf-seo gsc:properties --project=<public_id>
+wp osf-seo gsc:select-property --project=<public_id> --property=<site_url> [--reset-data]
+wp osf-seo gsc:probe --project=<public_id> [--dimensions=query] [--limit=10]
+wp osf-seo gsc:sync --project=<public_id> [--run] [--force]
+wp osf-seo gsc:backfill --project=<public_id> [--run]
+wp osf-seo gsc:status --project=<public_id> [--format=json]
+wp osf-seo sync:run          # kolejka synchronizacji — dla crona systemowego (co minutę)
 ```
+
+Synchronizacja działa w tle przez WP-Cron (lokalnie wystarczy ruch na stronie); na serwerze zalecany cron
+systemowy z `wp osf-seo sync:run` — szczegóły w `docs/ARCHITECTURE.md`, sekcja 9.
 
 WP-CLI w Local wymaga socketu MySQL strony — gotowy szablon komendy jest w `AGENTS.md`.
 
