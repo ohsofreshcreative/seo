@@ -112,6 +112,8 @@ Motyw powstał z marketingowego motywu `h2otwock` i wciąż zawiera jego kod: bl
 
 ## 6. Reguły domenowe Google Search Console (łatwo je pomylić)
 
+- Szanse SEO (`src/Opportunities`, `docs/ARCHITECTURE.md` sekcja 10) to sygnały do sprawdzenia, nie gwarancja wzrostu:
+  rekomendacje formułuj jako hipotezy („Sprawdź…”), nigdy jako diagnozę ani obietnicę; progi tylko w `OpportunityConfig`.
 - Pozycja z GSC to **średnia pozycja**. W UI: „Średnia pozycja (GSC)” — nigdy „pozycja w Google”.
   Widoki TOP 3/10/20/50/100 oraz wzrosty/spadki muszą jasno komunikować, że to dane oparte
   na średniej pozycji GSC, a nie dokładny SERP rank tracking.
@@ -168,7 +170,8 @@ Fundament panelu powstał w STEP 4 (`docs/ARCHITECTURE.md`, sekcje 4.1–4.4). O
 2. Standardowe utilities Tailwind bez ograniczeń legacy (`text-sm`, `font-medium`, `rounded-*` itd.),
    gdy są uzasadnione UI. Nie komplikuj design systemu.
 3. Powtarzalne elementy → komponenty Blade `resources/views/components/panel/*` (`<x-panel.* />`:
-   `button`, `card`, `page-header`, `field`, `badge`, `flash`, `empty-state`, `nav-link`, `nonce`),
+   `button`, `card`, `page-header`, `field`, `badge`, `flash`, `empty-state`, `nav-link`, `nonce`, `delta`, `stat`,
+   `score`, `confidence`, `opportunity-status`),
    nie `@apply` ani własne klasy. Własny CSS tylko, gdy utilities nie wystarczają.
 4. Tokeny kolorów (`brand-*`) w bloku `@theme` w `resources/css/panel.css`; bez hexów w Blade;
    bez dark mode w MVP. `panel.css` skanuje tylko pliki panelu (`source(none)` + `@source`),
@@ -226,7 +229,9 @@ wp osf-seo gsc:select-property --project=<id> --property=<url>  # --reset-data p
 wp osf-seo gsc:probe --project=<id>                             # mała próbka prawdziwych danych, bez zapisu
 wp osf-seo gsc:sync|gsc:backfill --project=<id> [--run]         # zlecenie (i opcjonalnie wykonanie) synchronizacji
 wp osf-seo gsc:status --project=<id>                            # stan synchronizacji i pokrycie danych
-wp osf-seo sync:run             # kolejka synchronizacji (cron systemowy)
+wp osf-seo sync:run             # kolejka synchronizacji (cron systemowy), potem przeliczenie szans SEO
+wp osf-seo opportunities:analyze --project=<id> [--days=7|28|90] [--force]   # szanse SEO z zapisanych danych GSC
+wp osf-seo opportunities:list --project=<id> [--days=28] [--type=…] [--status=open|all|…] [--format=json]
 composer test:performance       # benchmark raportów + EXPLAIN na syntetycznych danych (OSOBNA baza testowa)
 ```
 
