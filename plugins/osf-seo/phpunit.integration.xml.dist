@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Testy integracyjne: prawdziwy WordPress + prawdziwa baza MySQL/MariaDB (OSOBNA, testowa).
+  Konfiguracja bazy przez zmienne środowiskowe — patrz tests/Integration/wp-tests-config.php.
+  Ostrzeżenia z rdzenia WordPressa nie oblewają testów (restrict*, ignoreIndirectDeprecations),
+  z kodu pluginu i wywołane przez kod pluginu — tak.
+-->
+<phpunit xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:noNamespaceSchemaLocation="vendor/phpunit/phpunit/phpunit.xsd"
+         bootstrap="tests/Integration/bootstrap.php"
+         cacheDirectory=".phpunit.cache"
+         colors="true"
+         beStrictAboutOutputDuringTests="true"
+         failOnDeprecation="true"
+         failOnNotice="true"
+         failOnWarning="true"
+         failOnRisky="true">
+  <testsuites>
+    <testsuite name="integration">
+      <directory>tests/Integration</directory>
+    </testsuite>
+  </testsuites>
+  <source restrictNotices="true" restrictWarnings="true" ignoreIndirectDeprecations="true">
+    <include>
+      <directory>src</directory>
+    </include>
+  </source>
+</phpunit>

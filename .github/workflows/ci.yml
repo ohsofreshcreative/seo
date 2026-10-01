@@ -1,0 +1,130 @@
+# CI OSF SEO — bez sekretów: bazy danych to efemeryczne kontenery usług (root bez hasła),
+# testy integracyjne mockują cały ruch HTTP (WP_HTTP_BLOCK_EXTERNAL).
+name: CI
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  plugin-unit:
+    name: Plugin — lint + unit (PHP ${{ matrix.php }})
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        php: ['8.2', '8.4']
+    defaults:
+      run:
+        working-directory: plugins/osf-seo
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          extensions: mbstring, dom, sodium, intl
+          coverage: none
+          tools: composer:v2
+
+      - name: Composer install
+        run: composer install --no-interaction --no-progress --prefer-dist
+
+      - name: Lint
+        run: composer lint
+
+      - name: Unit tests
+        run: composer test
+
+  plugin-integration:
+    name: Plugin — integration (PHP ${{ matrix.php }}, ${{ matrix.db.name }})
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        php: ['8.2', '8.4']
+        db:
+          - name: MariaDB 10.11
+            image: mariadb:10.11
+          - name: MySQL 8.0
+            image: mysql:8.0
+    services:
+      database:
+        image: ${{ matrix.db.image }}
+        env:
+          MARIADB_ALLOW_EMPTY_ROOT_PASSWORD: '1'
+          MARIADB_DATABASE: osf_seo_test
+          MYSQL_ALLOW_EMPTY_PASSWORD: 'yes'
+          MYSQL_DATABASE: osf_seo_test
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 --silent || mariadb-admin ping -h 127.0.0.1 --silent"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=30
+    defaults:
+      run:
+        working-directory: plugins/osf-seo
+    env:
+      OSF_SEO_TEST_DB_NAME: osf_seo_test
+      OSF_SEO_TEST_DB_USER: root
+      OSF_SEO_TEST_DB_HOST: 127.0.0.1:3306
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          extensions: mbstring, dom, sodium, intl, mysqli
+          coverage: none
+          tools: composer:v2
+
+      - name: Composer install
+        run: composer install --no-interaction --no-progress --prefer-dist
+
+      - name: Integration tests
+        run: composer test:integration
+
+  theme:
+    name: Theme — PHP lint + build reproducibility
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: themes/seo
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.2'
+          coverage: none
+
+      - name: PHP lint
+        run: find . -name '*.php' -not -path './vendor/*' -not -path './node_modules/*' -print0 | xargs -0 -n1 php -l > /dev/null
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: yarn
+          cache-dependency-path: themes/seo/yarn.lock
+
+      - name: Yarn install
+        run: yarn install --frozen-lockfile
+
+      - name: Build
+        run: yarn build
+
+      # public/build jest commitowany (deploy nie buduje assetów) — musi odpowiadać źródłom.
+      - name: public/build matches sources
+        run: |
+          git status --porcelain -- public/build
+          test -z "$(git status --porcelain -- public/build)"

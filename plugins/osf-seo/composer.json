@@ -1,0 +1,35 @@
+{
+  "name": "ohsofresh/osf-seo",
+  "description": "OSF SEO — logika aplikacji (plugin WordPress).",
+  "type": "wordpress-plugin",
+  "license": "proprietary",
+  "require": {
+    "php": ">=8.2"
+  },
+  "require-dev": {
+    "johnpbloch/wordpress-core": "^6.8",
+    "phpunit/phpunit": "^11.5"
+  },
+  "autoload": {
+    "psr-4": {
+      "OsfSeo\\": "src/"
+    }
+  },
+  "autoload-dev": {
+    "psr-4": {
+      "OsfSeo\\Tests\\": "tests/"
+    }
+  },
+  "config": {
+    "platform": {
+      "php": "8.2.0"
+    },
+    "sort-packages": true
+  },
+  "minimum-stability": "stable",
+  "scripts": {
+    "test": "phpunit",
+    "test:integration": "phpunit -c phpunit.integration.xml.dist",
+    "lint": "find osf-seo.php src tests -name '*.php' -print0 | xargs -0 -n1 php -l"
+  }
+}
