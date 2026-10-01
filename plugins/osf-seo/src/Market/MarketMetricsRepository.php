@@ -42,6 +42,7 @@ final class MarketMetricsRepository
 		$byKey = [];
 
 		foreach ($keywords as $keyword) {
+			$keyword = (string) $keyword;
 			$byKey[bin2hex(MarketKeyword::key($keyword))] = $keyword;
 		}
 
@@ -149,6 +150,8 @@ final class MarketMetricsRepository
 		);
 
 		foreach ($ids as $keyword => $id) {
+			// Klucze tablic PHP zamieniają frazy liczbowe („2024”) na int.
+			$keyword = (string) $keyword;
 			$item = $metrics[$keyword] ?? null;
 			$upsert->add([
 				$id,
@@ -203,6 +206,8 @@ final class MarketMetricsRepository
 		);
 
 		foreach ($ids as $keyword => $id) {
+			// Klucze tablic PHP zamieniają frazy liczbowe („2024”) na int.
+			$keyword = (string) $keyword;
 			$upsert->add([
 				$id,
 				$market->provider,
@@ -217,6 +222,35 @@ final class MarketMetricsRepository
 				$now,
 				$now,
 			]);
+		}
+
+		$upsert->flush();
+
+		return count($ids);
+	}
+
+	/**
+	 * Intencja wyszukiwania od dostawcy (informational, navigational, commercial, transactional) — zapisywana tylko,
+	 * gdy dostawca ją zwrócił (brak wartości niczego nie nadpisuje).
+	 *
+	 * @param array<string, string> $intents postać znormalizowana → intencja
+	 */
+	public function storeIntent(Market $market, array $intents): int
+	{
+		$ids = $this->ensure($market, array_map('strval', array_keys($intents)));
+		$now = $this->now();
+		$upsert = new BulkInsert(
+			$this->db,
+			$this->table(),
+			['id', 'provider', 'location_code', 'language_code', 'keyword_key', 'keyword', 'search_intent', 'intent_fetched_at', 'created_at', 'updated_at'],
+			['%d', '%s', '%d', '%s', 'UNHEX(%s)', '%s', '%s', '%s', '%s', '%s'],
+			'ON DUPLICATE KEY UPDATE search_intent = VALUES(search_intent), intent_fetched_at = VALUES(intent_fetched_at), updated_at = VALUES(updated_at)',
+		);
+
+		foreach ($ids as $keyword => $id) {
+			// Klucze tablic PHP zamieniają frazy liczbowe („2024”) na int.
+			$keyword = (string) $keyword;
+			$upsert->add([$id, $market->provider, $market->locationCode, $market->languageCode, bin2hex(MarketKeyword::key($keyword)), mb_substr($keyword, 0, 255, 'UTF-8'), $intents[$keyword], $now, $now, $now]);
 		}
 
 		$upsert->flush();

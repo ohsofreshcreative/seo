@@ -38,7 +38,8 @@ final class MarketSyncService
 	/** Wstrzymanie automatyki po błędzie konta: ['until' => UTC, 'reason' => kategoria]. */
 	public const PAUSE_OPTION = 'osf_seo_market_pause';
 
-	private const LOCK = 'market_sync';
+	/** Wspólna blokada wszystkich płatnych żądań DataForSEO (dane rynkowe i wyszukiwanie fraz) — spójne limity kosztów. */
+	public const LOCK = 'market_sync';
 
 	private const COOLDOWN_TRANSIENT = 'osf_seo_market_manual_';
 
@@ -372,6 +373,10 @@ final class MarketSyncService
 			'pending_tasks' => $this->tasks->pendingCount($context?->projectId()),
 			'usage_24h' => $this->tasks->usage($now->modify('-1 day')->format('Y-m-d H:i:s'), $context?->projectId()),
 			'usage_30d' => $this->tasks->usage($now->modify('-30 days')->format('Y-m-d H:i:s'), $context?->projectId()),
+			'usage_breakdown' => [
+				'today' => $this->tasks->usageByPurpose($now->format('Y-m-d 00:00:00'), $context?->projectId()),
+				'month' => $this->tasks->usageByPurpose($now->format('Y-m-01 00:00:00'), $context?->projectId()),
+			],
 			'budget' => $budget->toArray(),
 			'paused' => $this->paused(),
 			'auto_refresh' => $this->config->autoRefresh(),
@@ -512,7 +517,8 @@ final class MarketSyncService
 		return [$this->metrics->storeVolume($market, $keywords, $byKeyword, $taskId, $this->config->volumeTtlDays()), $unmatched];
 	}
 
-	private function pause(ProviderErrorCategory $category): void
+	/** Wstrzymanie automatyki po błędzie konta (logowanie, środki) — wspólne dla danych rynkowych i wyszukiwania fraz. */
+	public function pause(ProviderErrorCategory $category): void
 	{
 		update_option(self::PAUSE_OPTION, ['until' => $this->offset(MarketDataConfig::PAUSE_AFTER_ACCOUNT_ERROR), 'reason' => $category->value], false);
 	}
