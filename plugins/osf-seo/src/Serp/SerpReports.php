@@ -270,6 +270,27 @@ final class SerpReports
 	}
 
 	/**
+	 * Stan pomiarów monitorowanych fraz projektu (klucz pamięci podręcznej zestawień): liczba fraz, sprawdzonych i sumy
+	 * identyfikatorów ostatnich pomiarów — zmienia się przy każdym nowym pomiarze, dodaniu i usunięciu frazy.
+	 *
+	 * @return array{checked: int, key: string}
+	 */
+	public function measurementsVersion(int $projectId): array
+	{
+		$row = $this->db->fetchRow(
+			"SELECT COUNT(*) AS tracked, COALESCE(SUM(last_snapshot_id IS NOT NULL), 0) AS checked, COALESCE(MAX(last_snapshot_id), 0) AS max_id,
+				COALESCE(SUM(last_snapshot_id), 0) AS sum_id
+			FROM `{$this->db->table('serp_tracked_keywords')}` WHERE project_id = %d AND status = 'active'",
+			[$projectId],
+		) ?? [];
+
+		return [
+			'checked' => (int) ($row['checked'] ?? 0),
+			'key' => implode(':', [(int) ($row['tracked'] ?? 0), (int) ($row['checked'] ?? 0), (string) ($row['max_id'] ?? 0), (string) ($row['sum_id'] ?? 0)]),
+		];
+	}
+
+	/**
 	 * Konkurenci organiczni: domeny z najnowszych pełnych SERP-ów monitorowanych fraz (fakty, bez ocen).
 	 * Dla każdej domeny — najlepsza pozycja na frazę, potem: liczba fraz, TOP3/10/20, średnia pozycja (tylko frazy z domeną),
 	 * frazy wspólne z projektem (oba w wynikach).
@@ -288,7 +309,7 @@ final class SerpReports
 			default => 'keywords DESC, top10 DESC',
 		};
 		$rows = $this->db->fetchAll(
-			"SELECT x.domain_id, d.host, COUNT(*) AS keywords, SUM(x.best <= 3) AS top3, SUM(x.best <= 10) AS top10, SUM(x.best <= 20) AS top20,
+			"SELECT STRAIGHT_JOIN x.domain_id, d.host, COUNT(*) AS keywords, SUM(x.best <= 3) AS top3, SUM(x.best <= 10) AS top10, SUM(x.best <= 20) AS top20,
 				ROUND(AVG(x.best), 1) AS avg_rank, SUM(x.project_found) AS overlap, COUNT(*) OVER () AS total_rows
 			FROM (
 				SELECT STRAIGHT_JOIN r.snapshot_id, r.domain_id, MIN(r.rank_group) AS best, MAX(t.last_found) AS project_found

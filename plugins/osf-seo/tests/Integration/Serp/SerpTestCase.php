@@ -165,7 +165,7 @@ abstract class SerpTestCase extends MarketTestCase
 	protected function resetSerpOptions(): void
 	{
 		$db = self::db();
-		$db->execute("DELETE FROM `{$db->optionsTable()}` WHERE option_name LIKE %s", ['%osf_seo_serp_%']);
+		$db->execute("DELETE FROM `{$db->optionsTable()}` WHERE option_name LIKE %s OR option_name LIKE %s", ['%osf_seo_serp_%', '%osf_seo_rc_%']);
 		wp_cache_flush();
 	}
 

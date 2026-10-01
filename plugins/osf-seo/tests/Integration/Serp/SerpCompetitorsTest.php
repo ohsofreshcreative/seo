@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace OsfSeo\Tests\Integration\Serp;
 
+use OsfSeo\Analytics\ReportCache;
 use OsfSeo\Serp\Competitor;
+use OsfSeo\Serp\CompetitorService;
 use OsfSeo\Serp\RankChange;
 use OsfSeo\Serp\SerpNotFound;
 use OsfSeo\Support\ValidationException;
@@ -166,6 +168,34 @@ final class SerpCompetitorsTest extends SerpTestCase
 		$sorted = $byAverage;
 		sort($sorted);
 		self::assertSame($sorted, $byAverage, 'Sortowanie po średniej pozycji SERP rosnąco.');
+	}
+
+	public function test_cached_organic_aggregation_follows_new_measurements_and_keyword_changes(): void
+	{
+		$cached = new CompetitorService($this->competitorRepository, $this->serpReports, $this->serp, $this->captureLogger(), new ReportCache());
+		$context = $this->trackedProject(['pierwsza', 'druga']);
+		$this->measure($context, [
+			'pierwsza' => DataForSeoFakes::serpTop([1 => 'stary-lider.pl'], 10),
+			'druga' => DataForSeoFakes::serpTop([1 => 'stary-lider.pl'], 10),
+		]);
+
+		self::assertSame('stary-lider.pl', $cached->organic($context)['rows'][0]['host']);
+		self::assertSame('stary-lider.pl', $cached->organic($context)['rows'][0]['host'], 'Kolejne wejście z pamięci podręcznej.');
+
+		$this->measureNextWeek($context, [
+			'pierwsza' => DataForSeoFakes::serpTop([1 => 'nowy-lider.pl', 2 => 'nowy-lider.pl'], 10),
+			'druga' => DataForSeoFakes::serpTop([1 => 'nowy-lider.pl'], 10),
+		]);
+		$data = $cached->organic($context);
+		self::assertSame('nowy-lider.pl', $data['rows'][0]['host'], 'Nowy pomiar zmienia klucz — bez jawnego unieważniania.');
+		self::assertSame(2, $data['keywords']);
+
+		$competitor = $this->competitors->create($context, ['domain' => 'nowy-lider.pl', 'name' => 'Lider']);
+		self::assertSame($competitor->publicId, $cached->organic($context)['rows'][0]['competitor']->publicId, 'Oznaczenie konkurentów liczone poza pamięcią podręczną.');
+
+		$this->serp->removeKeywords($context, [$this->row($context, 'druga')->publicId]);
+		self::assertSame(1, $cached->organic($context)['rows'][0]['keywords']);
+		self::assertSame(1, $cached->organic($context)['keywords']);
 	}
 
 	public function test_competitor_of_another_project_is_not_found(): void

@@ -31,6 +31,7 @@
     "test": "phpunit",
     "test:integration": "phpunit -c phpunit.integration.xml.dist",
     "lint": "find osf-seo.php src tests -name '*.php' -print0 | xargs -0 -n1 php -l",
-    "test:performance": "php tests/Performance/benchmark.php"
+    "test:performance": "php tests/Performance/benchmark.php",
+    "test:performance:serp": "php tests/Performance/serp-benchmark.php"
   }
 }

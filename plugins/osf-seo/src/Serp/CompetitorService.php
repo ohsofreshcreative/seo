@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace OsfSeo\Serp;
 
+use OsfSeo\Analytics\ReportCache;
 use OsfSeo\Auth\Capabilities;
 use OsfSeo\Auth\ProjectContext;
 use OsfSeo\Support\Logger;
@@ -24,6 +25,7 @@ final class CompetitorService
 		private readonly SerpReports $reports,
 		private readonly SerpTrackingService $serp,
 		private readonly Logger $logger,
+		private readonly ?ReportCache $cache = null,
 	) {
 	}
 
@@ -129,7 +131,9 @@ final class CompetitorService
 	}
 
 	/**
-	 * Konkurenci organiczni (bez domen projektu), z oznaczeniem już monitorowanych.
+	 * Konkurenci organiczni (bez domen projektu), z oznaczeniem już monitorowanych. Agregacja najnowszych pełnych SERP-ów
+	 * (setki tysięcy wierszy przy tysiącach fraz) jest zapamiętywana; klucz zawiera stan pomiarów projektu (nowy pomiar,
+	 * dodanie lub usunięcie frazy zmienia klucz), więc nie wymaga jawnego unieważniania.
 	 *
 	 * @return array{rows: list<array<string, mixed>>, total: int, keywords: int}
 	 */
@@ -137,7 +141,11 @@ final class CompetitorService
 	{
 		$project = DomainFamily::normalize($context->project()->domain) ?? $context->project()->domain;
 		$exclude = $this->reports->familyDomainIds($project);
-		$data = $this->reports->organicCompetitors($context->projectId(), $exclude, $perPage, ($page - 1) * $perPage, $sort);
+		$version = $this->reports->measurementsVersion($context->projectId());
+		$compute = fn (): array => $this->reports->organicCompetitors($context->projectId(), $exclude, $perPage, ($page - 1) * $perPage, $sort);
+		$data = $this->cache === null || $version['checked'] === 0
+			? $compute()
+			: $this->cache->remember(['serp_organic', $context->projectId(), $version['key'], $exclude, $sort, $page, $perPage], $compute);
 		$configured = $this->competitors->all($context->projectId(), true);
 
 		foreach ($data['rows'] as &$row) {
@@ -154,7 +162,7 @@ final class CompetitorService
 
 		unset($row);
 
-		return $data + ['keywords' => count($this->reports->latestSnapshots($context->projectId()))];
+		return $data + ['keywords' => $version['checked']];
 	}
 
 	/**

@@ -404,6 +404,7 @@ final class Plugin
 			$c->get(SerpReports::class),
 			$c->get(SerpTrackingService::class),
 			$c->get(Logger::class),
+			new ReportCache(),
 		));
 
 		$container->singleton(KeywordReport::class, static fn (Container $c): KeywordReport => new KeywordReport(
