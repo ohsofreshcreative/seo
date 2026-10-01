@@ -239,7 +239,7 @@ final class DataForSeoSerpProviderTest extends TestCase
 
 		self::assertCount(3, $page->items);
 		self::assertSame(2, $page->skipped, 'Adres nie-http i pozycja spoza typu pominięte.');
-		self::assertSame(['https://konkurent.pl/a/?srsltid=x', 'https://konkurent.pl/b/'], [$page->items[0]->url, $page->items[1]->url], 'Obie strony domeny zachowane; fragment usunięty.');
+		self::assertSame(['https://konkurent.pl/a/', 'https://konkurent.pl/b/'], [$page->items[0]->url, $page->items[1]->url], 'Obie strony domeny zachowane; fragment i parametr srsltid usunięte.');
 		self::assertSame('xn--d1acufc.xn--p1ai', $page->items[2]->host, 'Domena z adresu, gdy brak pola domain.');
 		$first = $page->items[0];
 		self::assertSame(SerpItem::FLAG_FEATURED | SerpItem::FLAG_AMP | SerpItem::FLAG_RATING | SerpItem::FLAG_PRICE | SerpItem::FLAG_SITELINKS, $first->flags);

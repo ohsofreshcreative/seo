@@ -364,7 +364,10 @@ final class DataForSeoSerpProvider implements SerpProvider
 			return null;
 		}
 
+		// Bez fragmentu i bez parametru śledzącego Google `srsltid` (na wypadek, gdyby `remove_from_url` go nie usunął) —
+		// ten sam adres ma być rozpoznawany między pomiarami.
 		$url = trim((string) preg_replace('/#.*$/s', '', $value));
+		$url = (string) preg_replace(['/([?&])srsltid=[^&]*(&|$)/', '/[?&]$/'], ['$1', ''], $url);
 
 		if ($url === '' || strlen($url) > 2048 || preg_match('#^https?://#i', $url) !== 1 || preg_match('/[\x00-\x1F\x7F\s]/', $url) === 1) {
 			return null;

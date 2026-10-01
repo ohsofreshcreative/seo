@@ -14,7 +14,9 @@ use OsfSeo\Auth\RoleManager;
 use OsfSeo\Auth\WpAdminAccess;
 use OsfSeo\Auth\WpRoleStore;
 use OsfSeo\Cli\DbCommand;
+use OsfSeo\Cli\CompetitorCommand;
 use OsfSeo\Cli\DiscoveryCommand;
+use OsfSeo\Cli\SerpCommand;
 use OsfSeo\Cli\GoogleCommand;
 use OsfSeo\Cli\GscCommand;
 use OsfSeo\Cli\MarketCommand;
@@ -28,6 +30,7 @@ use OsfSeo\Database\SchemaInspector;
 use OsfSeo\DataForSeo\DataForSeoClient;
 use OsfSeo\DataForSeo\DataForSeoConfig;
 use OsfSeo\DataForSeo\DataForSeoDiscoveryProvider;
+use OsfSeo\DataForSeo\DataForSeoSerpProvider;
 use OsfSeo\DataForSeo\DataForSeoProvider;
 use OsfSeo\Discovery\DiscoveryCandidateRepository;
 use OsfSeo\Discovery\DiscoveryConfig;
@@ -39,6 +42,22 @@ use OsfSeo\Discovery\DiscoveryService;
 use OsfSeo\Discovery\DiscoverySettingsRepository;
 use OsfSeo\Discovery\KeywordDiscoveryProvider;
 use OsfSeo\Discovery\SeedSuggester;
+use OsfSeo\Serp\CompetitorRepository;
+use OsfSeo\Serp\CompetitorService;
+use OsfSeo\Serp\SerpCollector;
+use OsfSeo\Serp\SerpConfig;
+use OsfSeo\Serp\SerpContextRepository;
+use OsfSeo\Serp\SerpDictionary;
+use OsfSeo\Serp\SerpPlanner;
+use OsfSeo\Serp\SerpProvider;
+use OsfSeo\Serp\SerpReports;
+use OsfSeo\Serp\SerpRunRepository;
+use OsfSeo\Serp\SerpSettingsRepository;
+use OsfSeo\Serp\SerpSnapshotRepository;
+use OsfSeo\Serp\SerpStore;
+use OsfSeo\Serp\SerpSubmitter;
+use OsfSeo\Serp\SerpTrackingService;
+use OsfSeo\Serp\TrackedKeywordRepository;
 use OsfSeo\Google\AccessTokenProvider;
 use OsfSeo\Google\ConnectionRepository;
 use OsfSeo\Google\GoogleApi;
@@ -91,7 +110,7 @@ use OsfSeo\Support\SystemSleeper;
 final class Plugin
 {
 	/** Musi być zgodna z nagłówkiem `Version` w osf-seo.php (pilnuje tego test). */
-	public const VERSION = '0.13.0';
+	public const VERSION = '0.14.0';
 
 	public const MIN_PHP = '8.2';
 
@@ -310,6 +329,83 @@ final class Plugin
 			$c->get(Logger::class),
 		));
 
+		// Pozycje SERP i konkurenci (STEP 14): DataForSEO Google Organic (Standard) za interfejsem SerpProvider; płatne
+		// zlecenia wyłącznie z SerpSubmitter (rezerwacja kosztu we wspólnych limitach, wysyłka pod wspólną blokadą).
+		$container->singleton(SerpConfig::class, static fn (Container $c): SerpConfig => new SerpConfig($c->get(Config::class)));
+		$container->singleton(SerpProvider::class, static fn (Container $c): SerpProvider => new DataForSeoSerpProvider(
+			$c->get(DataForSeoClient::class),
+			$c->get(DataForSeoConfig::class),
+		));
+		$container->singleton(SerpContextRepository::class, static fn (Container $c): SerpContextRepository => new SerpContextRepository($c->get(Connection::class), $c->get(Clock::class)));
+		$container->singleton(TrackedKeywordRepository::class, static fn (Container $c): TrackedKeywordRepository => new TrackedKeywordRepository($c->get(Connection::class), $c->get(Clock::class)));
+		$container->singleton(SerpSnapshotRepository::class, static fn (Container $c): SerpSnapshotRepository => new SerpSnapshotRepository($c->get(Connection::class), $c->get(Clock::class)));
+		$container->singleton(SerpRunRepository::class, static fn (Container $c): SerpRunRepository => new SerpRunRepository($c->get(Connection::class), $c->get(Clock::class), $c->get(SerpSnapshotRepository::class)));
+		$container->singleton(SerpSettingsRepository::class, static fn (Container $c): SerpSettingsRepository => new SerpSettingsRepository($c->get(Connection::class), $c->get(Clock::class)));
+		$container->singleton(CompetitorRepository::class, static fn (Container $c): CompetitorRepository => new CompetitorRepository($c->get(Connection::class), $c->get(Clock::class)));
+		$container->singleton(SerpReports::class, static fn (Container $c): SerpReports => new SerpReports($c->get(Connection::class)));
+		$container->singleton(SerpPlanner::class, static fn (Container $c): SerpPlanner => new SerpPlanner(
+			$c->get(SerpProvider::class),
+			$c->get(TrackedKeywordRepository::class),
+			$c->get(SerpConfig::class),
+			$c->get(MarketSyncService::class),
+			$c->get(Clock::class),
+		));
+		$container->singleton(SerpSubmitter::class, static fn (Container $c): SerpSubmitter => new SerpSubmitter(
+			$c->get(Connection::class),
+			$c->get(SerpProvider::class),
+			$c->get(TrackedKeywordRepository::class),
+			$c->get(SerpRunRepository::class),
+			$c->get(SerpSnapshotRepository::class),
+			$c->get(SerpContextRepository::class),
+			$c->get(MarketTaskRepository::class),
+			$c->get(MarketSyncService::class),
+			$c->get(SerpPlanner::class),
+			$c->get(Clock::class),
+			$c->get(Logger::class),
+		));
+		$container->singleton(SerpCollector::class, static fn (Container $c): SerpCollector => new SerpCollector(
+			$c->get(Connection::class),
+			$c->get(SerpProvider::class),
+			$c->get(SerpSnapshotRepository::class),
+			$c->get(SerpRunRepository::class),
+			new SerpStore(
+				$c->get(Connection::class),
+				new SerpDictionary($c->get(Connection::class), $c->get(Clock::class)),
+				$c->get(SerpSnapshotRepository::class),
+				$c->get(TrackedKeywordRepository::class),
+				$c->get(Clock::class),
+			),
+			$c->get(SerpConfig::class),
+			$c->get(MarketSyncService::class),
+			$c->get(Clock::class),
+			$c->get(Logger::class),
+		));
+		$container->singleton(SerpTrackingService::class, static fn (Container $c): SerpTrackingService => new SerpTrackingService(
+			$c->get(SerpProvider::class),
+			$c->get(SerpPlanner::class),
+			$c->get(SerpSubmitter::class),
+			$c->get(SerpCollector::class),
+			$c->get(TrackedKeywordRepository::class),
+			$c->get(SerpRunRepository::class),
+			$c->get(SerpSettingsRepository::class),
+			$c->get(SerpContextRepository::class),
+			$c->get(CompetitorRepository::class),
+			$c->get(SerpReports::class),
+			$c->get(SerpConfig::class),
+			$c->get(MarketSyncService::class),
+			$c->get(MarketMetricsRepository::class),
+			$c->get(ProjectGuard::class),
+			$c->get(Connection::class),
+			$c->get(Clock::class),
+			$c->get(Logger::class),
+		));
+		$container->singleton(CompetitorService::class, static fn (Container $c): CompetitorService => new CompetitorService(
+			$c->get(CompetitorRepository::class),
+			$c->get(SerpReports::class),
+			$c->get(SerpTrackingService::class),
+			$c->get(Logger::class),
+		));
+
 		$container->singleton(KeywordReport::class, static fn (Container $c): KeywordReport => new KeywordReport(
 			$c->get(Connection::class),
 			$c->get(Config::class),
@@ -368,6 +464,8 @@ final class Plugin
 			$scheduler->onAfterRun(static fn (): array => $c->get(MarketSyncService::class)->runBackground((float) $c->get(SyncConfig::class)->timeBudget()));
 			// Wyszukiwanie nowych fraz: żądania aktywnych przebiegów i przeliczenie kandydatów — osobny krok, błąd nie dotyka GSC.
 			$scheduler->onAfterRun(static fn (): array => $c->get(DiscoveryService::class)->runBackground((float) $c->get(SyncConfig::class)->timeBudget()));
+			// Pozycje SERP: odbiór wyników (bezpłatny), pomiary z harmonogramu i wysyłka paczek — osobny krok, błąd nie dotyka GSC.
+			$scheduler->onAfterRun(static fn (): array => $c->get(SerpTrackingService::class)->runBackground((float) $c->get(SyncConfig::class)->timeBudget()));
 
 			return $scheduler;
 		});
@@ -437,6 +535,8 @@ final class Plugin
 			OpportunityCommand::register($this);
 			MarketCommand::register($this);
 			DiscoveryCommand::register($this);
+			SerpCommand::register($this);
+			CompetitorCommand::register($this);
 			SyncCommand::register($this);
 		}
 	}

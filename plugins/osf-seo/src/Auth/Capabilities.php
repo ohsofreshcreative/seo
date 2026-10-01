@@ -36,6 +36,9 @@ final class Capabilities
 	/** Wyszukiwanie nowych fraz: płatne przebiegi (także wymuszone odświeżenie), koszty, status i notatki fraz, wykluczenia. */
 	public const MANAGE_KEYWORD_DISCOVERY = 'osf_seo_manage_keyword_discovery';
 
+	/** Pozycje SERP i konkurenci: konkurenci, monitorowane frazy, ustawienia śledzenia, płatne pomiary, koszty. */
+	public const MANAGE_SERP_TRACKING = 'osf_seo_manage_serp_tracking';
+
 	/**
 	 * @return list<string>
 	 */
@@ -51,6 +54,7 @@ final class Capabilities
 			self::MANAGE_OPPORTUNITIES,
 			self::MANAGE_MARKET_DATA,
 			self::MANAGE_KEYWORD_DISCOVERY,
+			self::MANAGE_SERP_TRACKING,
 		];
 	}
 }
