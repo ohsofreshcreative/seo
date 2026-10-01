@@ -1,14 +1,20 @@
-# OSF SEO
+# Wibble
 
-Wewnętrzne narzędzie SEO agencji OhSoFresh: projekty klientów połączone z Google Search Console,
-automatyczne wykrywanie fraz, porównania okresów, wzrosty i spadki, szanse SEO oraz dashboardy.
-Jedynym źródłem danych w MVP jest Google Search Console API — koszt zewnętrznych usług: 0 zł.
+Wewnętrzne narzędzie SEO agencji OhSoFresh (dawniej **OSF SEO**): projekty klientów połączone z Google Search Console,
+automatyczne wykrywanie fraz, porównania okresów, wzrosty i spadki, szanse SEO, dashboardy oraz dane rynkowe fraz.
+
+Źródła danych: **Google Search Console API** (źródło prawdy o skuteczności strony) i **DataForSEO** — zatwierdzony płatny
+dostawca danych rynkowych (wolumen, historia wolumenu, CPC, konkurencja Ads, trudność SEO), z lokalnymi limitami kosztów.
+
+> **Nazwy techniczne:** plugin `osf-seo`, stałe `OSF_SEO_*`, tabele `osf_*`, namespace `OsfSeo\` i komendy `wp osf-seo …`
+> celowo pozostają bez zmian — techniczny rebrand będzie osobnym etapem.
 
 > **Status:** MVP 1 w toku — plugin i panel: projekty i uprawnienia, Google OAuth, wybór property GSC,
 > import danych Search Console (sumy witryny, frazy, frazy × strony), kolejka synchronizacji z backfillem
 > ok. 16 miesięcy i codziennym odświeżaniem, lista fraz z porównaniem okresów oraz dashboard projektu
-> (KPI, TOP 3/10/20/50/100 wg średniej pozycji GSC, wzrosty i spadki) oraz Szanse SEO (niski CTR, frazy blisko TOP,
-> słaba pozycja, spadki, możliwa kanibalizacja — z priorytetem, pewnością i pracą nad szansą). Plan i postęp:
+> (KPI, TOP 3/10/20/50/100 wg średniej pozycji GSC, wzrosty i spadki), Szanse SEO (niski CTR, frazy blisko TOP,
+> słaba pozycja, spadki, możliwa kanibalizacja — z priorytetem, pewnością i pracą nad szansą) oraz dane rynkowe fraz
+> z DataForSEO (STEP 12: wolumen, trudność SEO, CPC, konkurencja Ads; limity kosztów). Plan i postęp:
 > [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 >
 > **Repozytorium jest publiczne.** Nie commituj żadnych sekretów (sekcja „Konfiguracja”).
@@ -50,8 +56,7 @@ Root repozytorium odpowiada katalogowi `wp-content/` instalacji WordPress — be
    git switch -c <branch> --track origin/<branch>
    ```
 
-   `<branch>` to `main` po zmergowaniu reorganizacji repozytorium — do tego czasu `main` ma
-   jeszcze starą strukturę (motyw w roocie), więc użyj brancha roboczego.
+   `<branch>` to zwykle `main` (struktura z `plugins/` i `themes/` w roocie) albo branch roboczy.
    Pliki WordPressa spoza whitelisty (uploads, domyślne motywy, `index.php`) zostają nietknięte.
 3. Zainstaluj zależności motywu i zbuduj assety:
 
@@ -131,6 +136,14 @@ wp osf-seo sync:run          # kolejka synchronizacji — dla crona systemowego 
 # Szanse SEO (analiza zapisanych danych GSC, bez wywołań Google)
 wp osf-seo opportunities:analyze --project=<public_id> [--days=7|28|90] [--force]
 wp osf-seo opportunities:list --project=<public_id> [--days=28] [--type=low_ctr] [--status=open] [--format=json]
+
+# Dane rynkowe DataForSEO (płatne API — zawsze najpierw --dry-run; szczegóły: docs/ARCHITECTURE.md, sekcja 11)
+wp osf-seo dataforseo:status [--project=<public_id>]            # konfiguracja bez sekretów, rynek, metryki, koszty, limity
+wp osf-seo dataforseo:sync --project=<public_id> --dry-run --limit=10   # plan i szacowany koszt, bez żadnego żądania
+wp osf-seo dataforseo:sync --project=<public_id> --limit=10     # płatna synchronizacja (w ramach limitów)
+wp osf-seo dataforseo:keyword --project=<public_id> --keyword="fraza"   # zapisane metryki frazy (bez API)
+wp osf-seo dataforseo:run --collect-only                        # odbiór wyników zadań wolumenu (bezpłatny)
+wp osf-seo dataforseo:locations --country=PL                    # bezpłatna weryfikacja kodów rynku
 ```
 
 Synchronizacja działa w tle przez WP-Cron (lokalnie wystarczy ruch na stronie); na serwerze zalecany cron
@@ -148,6 +161,14 @@ lub w zmiennych środowiskowych. Przykłady zawierają tylko placeholdery:
 define('OSF_SEO_GOOGLE_CLIENT_ID', 'your-client-id');
 define('OSF_SEO_GOOGLE_CLIENT_SECRET', 'your-client-secret');
 define('OSF_SEO_ENCRYPTION_KEY', 'base64:...'); // wygeneruj: wp osf-seo google:generate-key
+
+// wp-config.php — DataForSEO (placeholdery! login i hasło z zakładki „API Access” panelu DataForSEO)
+define('OSF_SEO_DATAFORSEO_LOGIN', 'your-dataforseo-api-login');
+define('OSF_SEO_DATAFORSEO_PASSWORD', 'your-dataforseo-api-password');
+// Opcjonalne bezpieczniki kosztów (domyślnie: 4 zadania na przebieg, 1 USD / dobę, 10 USD / miesiąc)
+define('OSF_SEO_DATAFORSEO_MAX_TASKS_PER_RUN', 4);
+define('OSF_SEO_DATAFORSEO_DAILY_COST_LIMIT', 1.00);
+define('OSF_SEO_DATAFORSEO_MONTHLY_COST_LIMIT', 10.00);
 ```
 
 - `OSF_SEO_ENCRYPTION_KEY` szyfruje refresh tokeny Google w bazie (32 losowe bajty w base64). Klucz
@@ -157,13 +178,18 @@ define('OSF_SEO_ENCRYPTION_KEY', 'base64:...'); // wygeneruj: wp osf-seo google:
   `https://seo.ohsofresh.top/oauth/google/callback`. Google wymaga `https` (poza `localhost`), więc
   lokalnie potrzebna jest strona Local z włączonym SSL i jej własny URI dopisany w Google Cloud.
 - Stan konfiguracji (bez wartości sekretów): `wp osf-seo google:status` albo panel → Ustawienia.
+- DataForSEO: dane logowania wyłącznie w `wp-config.php`/env (nigdy w repo, bazie, logach ani JS). Synchronizacja danych
+  rynkowych nie startuje sama po wdrożeniu — pierwszą uruchamia się jawnie (panel → projekt → Dane rynkowe albo
+  `wp osf-seo dataforseo:sync`), potem metryki starsze niż 30 dni odświeżają się w tle w ramach limitów.
 
-Pełna lista stałych: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md), sekcja 12.
+Pełna lista stałych: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md), sekcja 13.
 
 ## Bezpieczeństwo
 
 - Repozytorium jest publiczne: żadnych sekretów w kodzie, testach, fixture'ach, dokumentacji
-  i historii Git.
+  i historii Git (także danych logowania DataForSEO — testy i CI używają wyłącznie atrapy HTTP).
+- Wdrożenie wyłącznie zawężone: `plugins/osf-seo/` → `wp-content/plugins/osf-seo/`, `themes/seo/` → `wp-content/themes/seo/`
+  — nigdy całe repozytorium do `wp-content`.
 - Zgłoszenia problemów bezpieczeństwa kieruj bezpośrednio do zespołu OhSoFresh, nie przez publiczne issues.
 
 ## Licencja
