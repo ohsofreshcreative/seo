@@ -25,6 +25,9 @@ final class MarketTaskRepository
 
 	public const STATUS_EXPIRED = 'expired';
 
+	/** `trigger_type` żądań wyszukiwania nowych fraz (STEP 13). */
+	public const TRIGGER_DISCOVERY = 'discovery';
+
 	/** Po ilu dniach usuwamy listę fraz zakończonego zadania (wiersz z kosztem zostaje). */
 	private const KEYWORDS_RETENTION_DAYS = 30;
 
@@ -206,6 +209,27 @@ final class MarketTaskRepository
 			'cost' => round((float) ($row['cost'] ?? 0), 6),
 			'reported_cost' => round((float) ($row['reported_cost'] ?? 0), 6),
 		];
+	}
+
+	/**
+	 * Zużycie od podanej chwili z podziałem: wzbogacanie fraz danymi rynkowymi (STEP 12) i wyszukiwanie nowych fraz
+	 * (STEP 13, `trigger_type = discovery`). Limity kosztów są wspólne — to tylko podział do wglądu.
+	 *
+	 * @return array{enrichment: array{tasks: int, cost: float}, discovery: array{tasks: int, cost: float}}
+	 */
+	public function usageByPurpose(string $since, ?int $projectId = null): array
+	{
+		$result = ['enrichment' => ['tasks' => 0, 'cost' => 0.0], 'discovery' => ['tasks' => 0, 'cost' => 0.0]];
+
+		foreach ($this->db->fetchAll(
+			"SELECT trigger_type = %s AS discovery, COUNT(*) AS tasks, COALESCE(SUM(COALESCE(cost, estimated_cost)), 0) AS cost
+			FROM `{$this->table()}` WHERE created_at >= %s" . ($projectId === null ? '' : ' AND project_id = %d') . ' GROUP BY discovery',
+			$projectId === null ? [self::TRIGGER_DISCOVERY, $since] : [self::TRIGGER_DISCOVERY, $since, $projectId],
+		) as $row) {
+			$result[(int) $row['discovery'] === 1 ? 'discovery' : 'enrichment'] = ['tasks' => (int) $row['tasks'], 'cost' => round((float) $row['cost'], 6)];
+		}
+
+		return $result;
 	}
 
 	/**

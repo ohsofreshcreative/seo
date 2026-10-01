@@ -140,4 +140,100 @@ final class DataForSeoFakes
 			'result' => [['se_type' => 'google', 'location_code' => 2616, 'language_code' => 'pl', 'total_count' => count($items), 'items_count' => count($items), 'items' => $items]],
 		], 20000, $cost);
 	}
+
+	/**
+	 * Dane frazy DataForSEO Labs (KeywordDataInfo): wolumen, CPC, konkurencja 0–1, historia, trudność SEO, intencja.
+	 *
+	 * @return array<string, mixed>
+	 */
+	public static function labsKeyword(string $keyword, ?int $volume, ?int $difficulty = 30, ?float $cpc = 2.5, ?float $competition = 0.42, ?string $intent = 'commercial', bool $anotherLanguage = false): array
+	{
+		return [
+			'se_type' => 'google',
+			'keyword' => $keyword,
+			'location_code' => 2616,
+			'language_code' => 'pl',
+			'keyword_info' => [
+				'se_type' => 'google',
+				'last_updated_time' => '2026-09-14 03:12:44 +00:00',
+				'competition' => $competition,
+				'competition_level' => $competition === null ? null : ($competition >= 0.66 ? 'HIGH' : ($competition >= 0.33 ? 'MEDIUM' : 'LOW')),
+				'cpc' => $cpc,
+				'search_volume' => $volume,
+				'low_top_of_page_bid' => $cpc === null ? null : round($cpc * 0.4, 2),
+				'high_top_of_page_bid' => $cpc === null ? null : round($cpc * 1.8, 2),
+				'categories' => [10021, 13418],
+				'monthly_searches' => $volume === null ? null : [
+					['year' => 2026, 'month' => 8, 'search_volume' => $volume],
+					['year' => 2026, 'month' => 7, 'search_volume' => (int) round($volume * 0.9)],
+				],
+			],
+			'keyword_properties' => [
+				'se_type' => 'google',
+				'core_keyword' => null,
+				'synonym_clustering_algorithm' => 'text_processing',
+				'keyword_difficulty' => $difficulty,
+				'detected_language' => $anotherLanguage ? 'en' : 'pl',
+				'is_another_language' => $anotherLanguage,
+			],
+			'serp_info' => null,
+			'avg_backlinks_info' => null,
+			'search_intent_info' => $intent === null ? null : ['se_type' => 'google', 'main_intent' => $intent, 'foreign_intent' => null, 'last_updated_time' => '2026-09-01 00:00:00 +00:00'],
+		];
+	}
+
+	/**
+	 * Wynik DataForSEO Labs Related Keywords: `items[].keyword_data` + głębokość.
+	 *
+	 * @param list<array{0: array<string, mixed>, 1: int}> $items [dane frazy, głębokość]
+	 * @return array<string, mixed>
+	 */
+	public static function relatedResult(string $seed, array $items, ?array $seedData = null, ?int $total = null, float $cost = 0.0): array
+	{
+		return self::envelope([
+			'result_count' => 1,
+			'cost' => $cost,
+			'result' => [[
+				'se_type' => 'google',
+				'seed_keyword' => $seed,
+				'seed_keyword_data' => $seedData,
+				'location_code' => 2616,
+				'language_code' => 'pl',
+				'total_count' => $total ?? count($items),
+				'items_count' => count($items),
+				'items' => array_map(static fn (array $item): array => [
+					'se_type' => 'google',
+					'keyword_data' => $item[0],
+					'depth' => $item[1],
+					'related_keywords' => [],
+				], $items),
+			]],
+		], 20000, $cost);
+	}
+
+	/**
+	 * Wynik DataForSEO Labs Keyword Suggestions: `items[]` = dane frazy.
+	 *
+	 * @param list<array<string, mixed>> $items
+	 * @return array<string, mixed>
+	 */
+	public static function suggestionsResult(string $seed, array $items, ?array $seedData = null, ?int $total = null, float $cost = 0.0, int $offset = 0): array
+	{
+		return self::envelope([
+			'result_count' => 1,
+			'cost' => $cost,
+			'result' => [[
+				'se_type' => 'google',
+				'seed_keyword' => $seed,
+				'seed_keyword_data' => $seedData,
+				'location_code' => 2616,
+				'language_code' => 'pl',
+				'total_count' => $total ?? count($items),
+				'items_count' => count($items),
+				'offset' => $offset,
+				'offset_token' => bin2hex(random_bytes(8)),
+				'items' => $items,
+			]],
+		], 20000, $cost);
+	}
 }

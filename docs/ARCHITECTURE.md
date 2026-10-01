@@ -21,12 +21,13 @@ nigdy wartości sekretów.
 9. [Synchronizacja](#9-synchronizacja)
 10. [Szanse SEO (STEP 11)](#10-szanse-seo-step-11)
 11. [Dane rynkowe (DataForSEO, STEP 12)](#11-dane-rynkowe-dataforseo-step-12)
-12. [Bezpieczeństwo](#12-bezpieczeństwo)
-13. [Konfiguracja i sekrety](#13-konfiguracja-i-sekrety)
-14. [Deployment (do ustalenia)](#14-deployment-do-ustalenia)
-15. [Roadmapa i stan prac](#15-roadmapa-i-stan-prac)
-16. [Porządki w motywie (C1–C5)](#16-porządki-w-motywie-c1c5)
-17. [Ryzyka i otwarte kwestie](#17-ryzyka-i-otwarte-kwestie)
+12. [Nowe frazy (STEP 13)](#12-nowe-frazy-step-13)
+13. [Bezpieczeństwo](#13-bezpieczeństwo)
+14. [Konfiguracja i sekrety](#14-konfiguracja-i-sekrety)
+15. [Deployment (do ustalenia)](#15-deployment-do-ustalenia)
+16. [Roadmapa i stan prac](#16-roadmapa-i-stan-prac)
+17. [Porządki w motywie (C1–C5)](#17-porządki-w-motywie-c1c5)
+18. [Ryzyka i otwarte kwestie](#18-ryzyka-i-otwarte-kwestie)
 
 ---
 
@@ -35,7 +36,8 @@ nigdy wartości sekretów.
 Panel SEO dla stron agencji i jej klientów. Po dodaniu projektu i połączeniu go z Google Search
 Console system sam pobiera frazy, na które strona pojawia się w Google, zapisuje historię we własnej
 bazie i pokazuje: ranking fraz (średnia pozycja GSC), porównania okresów, wzrosty i spadki,
-szanse SEO, landing pages i wykresy.
+szanse SEO, landing pages i wykresy. Od STEP 13 wyszukuje też **nowe frazy**, na które strona jeszcze nie ma widoczności
+(seedy → DataForSEO Labs → deduplikacja → widoczność w GSC → priorytet → decyzja; sekcja 12).
 
 Źródła danych: Google Search Console (źródło prawdy o skuteczności strony: kliknięcia, wyświetlenia, CTR, średnia pozycja
 GSC, strony docelowe, historia) oraz — od STEP 12 — **DataForSEO** jako zatwierdzony płatny dostawca danych rynkowych
@@ -55,7 +57,7 @@ API wymaga osobnej decyzji architektonicznej; integracje dostawców wyłącznie 
 | D5 | Hosting: Hostinger. Staging: `https://seo.ohsofresh.top`. Bez Redis/persistent object cache w MVP | Cache przez transients/bazę; nic nie zależy od Redis |
 | D6 | Lokalnie system działa bez systemowego crona (WP-Cron); na produkcji podpinamy cron systemowy | Sekcja 9.1 |
 | D7 | Aplikacja OAuth w trybie External/Testing akceptowana do czasu publikacji | Refresh tokeny w trybie Testing wygasają po 7 dniach — publikacja przed produkcją |
-| D8 | Motyw czyszczony etapami do czystego Sage 11 tylko dla OSF SEO (C1–C5), build/test po każdym etapie | Sekcja 16 |
+| D8 | Motyw czyszczony etapami do czystego Sage 11 tylko dla OSF SEO (C1–C5), build/test po każdym etapie | Sekcja 17 |
 | D9 | Panel: standardowe utilities Tailwind, proste konwencje (AGENTS.md, sekcja 8) | Dawne ograniczenia projektu marketingowego nie obowiązują |
 | D10 | Wykresy: Chart.js. React niepotrzebny (do usunięcia w cleanupie) | — |
 | D11 | MVP 1 bez rozbicia fraz na device/country | Nie mnożymy danych bez potrzeby; priorytet: query, page, date, clicks, impressions, CTR, średnia pozycja |
@@ -64,7 +66,7 @@ API wymaga osobnej decyzji architektonicznej; integracje dostawców wyłącznie 
 | D14 | `query_page_daily` eksperymentalnie; pomiar na kilku projektach przed decyzją o retencji/rollupie | Sekcja 6.4 |
 | D15 | Opportunity Score dopiero w MVP 2 | Sekcja 10 (tylko specyfikacja) |
 | D16 | `public_id` (ULID) w URL + `ProjectGuard` | ULID tylko utrudnia enumerację; zabezpieczeniem jest autoryzacja |
-| D17 | Repozytorium publiczne: sekrety wyłącznie w `wp-config.php` / zmiennych środowiskowych | Sekcja 13 |
+| D17 | Repozytorium publiczne: sekrety wyłącznie w `wp-config.php` / zmiennych środowiskowych | Sekcja 14 |
 | D18 | Zmiana property GSC przy istniejących danych = jawny reset (usunięcie danych projektu i ponowny import); bez izolacji danych per property | Prostszy model (klucze faktów bez property), zero ryzyka mieszania danych. Sekcja 7.1 |
 | D19 | Kolejka synchronizacji: własna, na `osf_sync_runs` + WP-Cron / cron systemowy (zamiast Action Scheduler) | Bez zewnętrznej biblioteki w publicznym repo i dodatkowych tabel; jeden runner (GET_LOCK), budżet czasu. Sekcja 9.1 |
 | D20 | Szanse SEO w modelu hybrydowym: dowody wyliczane z danych GSC (wykrycia okresu zastępowane przy analizie), stan pracy trwały; szansa = projekt × stabilny odcisk (property, typ, podstrona/fraza/para adresów) | Lista zadań przetrwa przeliczenia i ponowny import; bez kopiowania faktów GSC. Sekcja 10 |
@@ -76,6 +78,13 @@ API wymaga osobnej decyzji architektonicznej; integracje dostawców wyłącznie 
 | D26 | Osobny mały runner danych rynkowych (`market_tasks`, krok po kolejce GSC) zamiast `sync_runs` | `SyncRunner` jest specyficzny dla GSC (`Dataset::from` na każdym wierszu) — zadanie innego dostawcy w `sync_runs` zatrzymałoby kolejkę GSC; awaria DataForSEO nie może wpływać na import GSC. Sekcja 11.8 |
 | D27 | Twarde bezpieczniki kosztów: limit płatnych zadań na przebieg, lokalne limity dzienny i miesięczny, plan bez API (dry-run), automatyka tylko po pierwszej jawnej synchronizacji projektu, wstrzymanie po błędzie konta | Błąd w kodzie nie może wygenerować tysięcy płatnych zadań; wdrożenie niczego nie uruchamia. Sekcja 11.6 |
 | D28 | Szanse SEO: dane rynkowe wyłącznie jako kontekst (wyświetlanie); priorytet i pewność bez zmian | Wagę wolumenu i trudności ustalimy po zebraniu prawdziwych danych; szanse działają bez DataForSEO. Sekcja 11.9 |
+| D29 | Wyszukiwanie nowych fraz za interfejsem `KeywordDiscoveryProvider`; minimalny zestaw endpointów: DataForSEO Labs **Related Keywords** i **Keyword Suggestions** (Live) | Jeden seed na żądanie (relacja „z którego seeda”), w odpowiedzi wolumen, trudność SEO, CPC, konkurencja Ads i intencja (bez płatnego wzbogacania), cena za element ograniczana limitem; Keyword Ideas nie przypisuje wyników do seedów, Google Ads Keywords For Keywords nie ma trudności SEO, frazy domen i SERP poza zakresem. Sekcja 12.2 |
+| D30 | Wyszukiwanie korzysta z bezpieczników danych rynkowych: te same limity dzienny i miesięczny (rejestr `market_tasks`, `trigger_type = discovery`), ta sama blokada płatnych żądań i wstrzymanie po błędzie konta; bez drugiego budżetu. Panel tylko kolejkuje przebieg po potwierdzeniu planu, wykonuje go tło (albo CLI) | Jeden budżet = jeden bezpiecznik dla całego DataForSEO; żądanie przeglądarki nigdy nie wysyła płatnego żądania ani nie czeka na dostawcę. Sekcje 12.4, 12.10 |
+| D31 | Kandydat = projekt × fraza rynkowa (`market_keywords`); metryki nie są kopiowane; źródła fraza × seed × metoda | Jedna fraza z wielu seedów = jeden kandydat z zachowanymi relacjami; metryki wspólne ze STEP 12 i innymi projektami rynku. Sekcja 12.5 |
+| D32 | Metryki z odpowiedzi discovery zapisywane do wspólnych `market_keywords` tylko przy braku danych lub po TTL; intencja z odpowiedzi; bez osobnego wzbogacania kandydatów | Zero dodatkowych płatnych żądań na kandydata; świeży wolumen Google Ads ze STEP 12 nie jest nadpisywany. Sekcja 12.9 |
+| D33 | Priorytet odkrycia 0–100 jako przejrzysta suma ograniczonych składników (popyt i CPC w skali log z limitem, CPC maks. 5 pkt); nazwa „Priorytet”, nigdy „wartość biznesowa” | Wynik wyjaśnialny w UI, żadna metryka nie dominuje; to sygnał do sprawdzenia, nie prognoza. Sekcja 12.7 |
+| D34 | Cache seeda: projekt × dostawca × rynek × metoda z co najmniej tak szerokimi parametrami, TTL 30 dni; pobranie mimo cache tylko z `osf_seo_manage_keyword_discovery` | Brak podwójnej opłaty za ten sam seed (także przy podwójnym kliknięciu — jeden aktywny przebieg i odstęp 60 s). Sekcja 12.9 |
+| D35 | Widoczność GSC kandydata: deterministyczne klasy (nieznana, brak, słaba, już widoczna) po kluczu rynkowym, średnia pozycja ważona wyświetleniami; reset property zachowuje kandydatów i decyzje (widoczność → nieznana) | Pozycja 45 z popytem pozostaje szansą, pozycja 2 ze stałą widocznością nie; decyzje nie znikają przy zmianie property. Sekcja 12.6 |
 
 ## 3. Repozytorium i środowiska
 
@@ -188,6 +197,18 @@ POST /projects/{project}/opportunities/{opportunity}   (osf_seo_manage_opportuni
 POST /projects/{project}/opportunities/analyze         (osf_seo_manage_opportunities; „Przelicz szanse”, limit 1 / 60 s)
 ```
 
+Zaimplementowane w STEP 13 (`{run}`, `{candidate}` = ULID; mutacje i koszty — `osf_seo_manage_keyword_discovery`, nonce + Origin):
+
+```
+GET  /projects/{project}/discovery                         (lista: ?q, status, visibility, min_volume, max_kd, min_priority, intent, excluded, sort, dir, page)
+GET  /projects/{project}/discovery/keywords/{candidate}    (szczegóły frazy)        POST …/keywords/{candidate} (status, note)
+GET  /projects/{project}/discovery/runs/{run}              (przebieg)               GET  …/runs/{run}/status (JSON postępu; koszt tylko z capability)
+GET  /projects/{project}/discovery/new                     (formularz)              POST /projects/{project}/discovery/preview (plan i koszt, bez API)
+POST /projects/{project}/discovery/runs                    (uruchomienie: expected_requests, expected_cost z podglądu; raz na 60 s)
+POST /projects/{project}/discovery/runs/{run}/cancel       POST /projects/{project}/discovery/bulk (status zaznaczonych)
+POST /projects/{project}/discovery/exclusions              (wykluczone słowa projektu)
+```
+
 Kolejne etapy:
 
 ```
@@ -206,7 +227,7 @@ plugins/osf-seo/
 │   ├── Auth/            # Capabilities, Roles, RoleManager, ProjectGuard, ProjectContext, ProjectNotFound, AccessDenied
 │   ├── Setup/           # Lifecycle (aktywacja/dezaktywacja), Installer (instalacja i aktualizacje, bez usuwania danych)
 │   ├── Support/         # Config (stałe/env), Logger, Redactor (maskowanie sekretów)
-│   ├── Cli/             # wp osf-seo status, db:*, project:*, google:*, gsc:*, sync:run, opportunities:*, dataforseo:*
+│   ├── Cli/             # wp osf-seo status, db:*, project:*, google:*, gsc:*, sync:run, opportunities:*, dataforseo:*, discovery:*
 │   ├── Database/        # Connection ($wpdb + wyjątki, transakcje, GET_LOCK), BulkInsert, Migrator, Migrations/, Schema (spec), SchemaInspector
 │   ├── Projects/        # Project, ProjectRepository, ProjectService, DomainNormalizer, statusy i role
 │   ├── Http/            # HttpTransport (WP HTTP API), HttpResponse — cały ruch do Google
@@ -216,7 +237,8 @@ plugins/osf-seo/
 │   ├── Analytics/       # Metrics, Period, KeywordReport, OverviewReport, Visibility, ReportCache
 │   ├── Opportunities/   # Szanse SEO (STEP 11): OpportunityDetector, CtrModel, OpportunityScorer, ConfidenceModel, Fingerprint, OpportunityExplainer, OpportunityConfig, OpportunityDataSource, OpportunityAnalyzer, OpportunityRepository, OpportunityService, OpportunityScheduler
 │   ├── Market/          # Dane rynkowe (STEP 12): KeywordMetricsProvider (interfejs), MarketKeyword (normalizacja), MarketSyncService, repozytoria, plan, limity kosztów
-│   ├── DataForSeo/      # DataForSeoClient (HTTP, Basic Auth, błędy), DataForSeoProvider, DataForSeoMarkets, KeywordRules
+│   ├── DataForSeo/      # DataForSeoClient (HTTP, Basic Auth, błędy), DataForSeoResponse, DataForSeoProvider, DataForSeoDiscoveryProvider (Labs), DataForSeoMarkets, KeywordRules
+│   ├── Discovery/       # Nowe frazy (STEP 13): KeywordDiscoveryProvider (interfejs), DiscoveryPlanner, DiscoveryRunner (jedyne płatne żądania), DiscoveryService, DiscoveryRefresher, VisibilityClassifier, DiscoveryScorer, SeedSuggester, SeedList, ExclusionList, repozytoria
 │   ├── Rest/            # (później) endpointy dla panelu — w MVP 1 dane renderowane serwerowo + JSON stanu synchronizacji
 │   ├── Serp/            # (przyszłość) dokładny ranking SERP za osobnym interfejsem dostawcy — średnia pozycja GSC ≠ pozycja SERP
 │   └── Crawler/         # (MVP 3)
@@ -229,14 +251,14 @@ plugins/osf-seo/
 themes/seo/
 ├── functions.php                   # ->withRouting(using: …) + PanelMiddleware::GLOBAL
 ├── routes/web.php                  # trasy panelu (capabilities jako literały)
-├── app/Http/Controllers/Panel/     # Auth, Dashboard, Project (przegląd = dashboard GSC), Keywords, Opportunities (szanse SEO), MarketData (dane rynkowe), ProjectSection, SearchConsole (OAuth, property, synchronizacja), Settings
+├── app/Http/Controllers/Panel/     # Auth, Dashboard, Project (przegląd = dashboard GSC), Keywords, Opportunities (szanse SEO), MarketData (dane rynkowe), Discovery (nowe frazy), ProjectSection, SearchConsole (OAuth, property, synchronizacja), Settings
 ├── app/Http/Middleware/Panel/      # PanelHeaders, UnslashInput, RequirePlugin, Authenticate, VerifyNonce, ResolveProject
 ├── app/Panel/                      # PanelUrl (adresy, bezpieczny redirect), PanelResponse (404/403/503), Flash, Format (liczby i daty PL)
 ├── app/View/Composers/Panel/       # Layout: użytkownik, projekty do przełącznika, bieżący projekt, flash
 ├── resources/css/panel.css         # osobne wejście Vite: Tailwind 4 (source(none)) + forms + tokeny brand-*
-├── resources/js/panel.js           # Alpine (bez jQuery, GSAP, Reacta, CDN); panel/chart.js — Chart.js ładowany dynamicznie tylko na dashboardzie
-├── resources/views/panel/          # layouts/{base,guest,app}, auth/login, dashboard, projects/*, opportunities/*, settings, error
-└── resources/views/components/panel/  # button, card, page-header, field, badge, flash, empty-state, nav-link, nonce, delta, stat, score, confidence, opportunity-status
+├── resources/js/panel.js           # Alpine (bez jQuery, GSAP, Reacta, CDN): postęp synchronizacji i wyszukiwania fraz; panel/chart.js — Chart.js ładowany dynamicznie tylko na dashboardzie
+├── resources/views/panel/          # layouts/{base,guest,app}, auth/login, dashboard, projects/*, opportunities/*, discovery/*, settings, error
+└── resources/views/components/panel/  # button, card, page-header, field, badge, flash, empty-state, nav-link, nonce, delta, stat, score, confidence, opportunity-status, visibility, candidate-status
 ```
 
 ### 4.4 Panel a wp-admin i motyw legacy
@@ -266,6 +288,7 @@ Zaimplementowane w STEP 1 (`plugins/osf-seo/src/Auth`). Kod sprawdza **capabilit
 | `osf_seo_manage_settings` | ustawienia aplikacji |
 | `osf_seo_manage_opportunities` | szanse SEO: status, notatka, data wdrożenia, ręczne przeliczenie (od STEP 11, wersja 0.11.0) |
 | `osf_seo_manage_market_data` | płatna synchronizacja danych rynkowych (DataForSEO), podgląd planu, koszty i limity (od STEP 12, wersja 0.12.0) |
+| `osf_seo_manage_keyword_discovery` | wyszukiwanie nowych fraz: plan i koszt, płatne uruchomienie, pobranie mimo cache, anulowanie, decyzje i notatki, wykluczenia, koszty (od STEP 13, wersja 0.13.0) |
 
 | Rola | Capabilities |
 |---|---|
@@ -403,6 +426,29 @@ ENUM(queued, running, success, failed, skipped, retrying, cancelled); `priority`
 - **`osf_keywords.market_key`** BINARY(16) NULL + indeks (`project_id`, `market_key`) — klucz rynkowy frazy GSC (wyliczany w tle).
 
 Tabele danych rynkowych nie należą do `GscDataStore::DATA_TABLES` — reset property ich nie usuwa.
+
+**Nowe frazy** (od schematu 7, migracja `M0007CreateKeywordDiscovery` — nowe tabele i kolumny dopuszczające NULL, sekcja 12):
+
+- **`osf_market_keywords`** + `search_intent` VARCHAR(16) ascii NULL, `intent_fetched_at` DATETIME NULL (intencja z odpowiedzi discovery).
+- **`osf_discovery_runs`** — `id`; `public_id` CHAR(26) ascii_bin; `project_id`; `provider`, `location_code`, `language_code`; `method`; `depth`;
+  `status` ENUM(queued, running, completed, partial, failed, cancelled); `trigger_type`; `seeds_count`, `max_candidates`, `seed_limit`,
+  `min_volume`, `max_difficulty`, `forced`, `options` (JSON); `tasks_planned`, `tasks_done`, `estimated_cost`, `cost` DECIMAL(12,6);
+  `items_received`, `candidates_new`, `candidates_seen`, `rejected` (JSON: powód → liczba); `blocked_by`, `error_code`, `error_message`;
+  `created_by`, `created_at`, `started_at`, `finished_at`, `updated_at`. UNIQUE(`public_id`), indeksy `project_run` (`project_id`, `id`),
+  `status_run` (`status`, `id`).
+- **`osf_discovery_run_seeds`** — PK(`run_id`, `seed_key` BINARY(16)); `seed`, `source` (manual/gsc/opportunity), `position`, `status`
+  ENUM(pending, running, done, cached, failed, cancelled), `pages_done`, `next_offset`, `items`, `candidates_new`, `cost`, `task_id`
+  (`market_tasks.id`), `attempts`, `error_code`, `next_attempt_at`, `started_at`, `finished_at`.
+- **`osf_discovery_candidates`** — `id`; `public_id` CHAR(26) **utf8mb4_bin** (sekcja 12.14); `project_id`; `market_keyword_id`; `status`
+  ENUM(new, review, accepted, dismissed); `note`; `status_changed_at`/`_by`; `seeds_count`, `best_relation`; `visibility` ENUM(unknown, none,
+  low, visible), `gsc_impressions`, `gsc_clicks`, `gsc_position` DECIMAL(6,2), `target_url`; `priority` TINYINT NULL, `score` (JSON składników);
+  `excluded`; `provider_meta` (JSON); `first_run_id`, `last_run_id`; `discovered_at`, `last_seen_at`, `scored_at`, `created_at`, `updated_at`.
+  UNIQUE(`public_id`), UNIQUE `project_market_keyword` (`project_id`, `market_keyword_id`), indeks `project_priority` (`project_id`, `priority`).
+- **`osf_discovery_candidate_sources`** — PK(`candidate_id`, `seed_key`, `method`); `seed`, `run_id`, `relation`, `depth`, `result_position`,
+  `first_seen_at`, `last_seen_at`; indeks `run` (`run_id`).
+- **`osf_discovery_settings`** — PK(`project_id`); `excluded_terms`, `refresh_key` (klucz danych przeliczenia), `refreshed_at`, `updated_by`, `updated_at`.
+
+Tabele wyszukiwania nie należą do `GscDataStore::DATA_TABLES` — reset property ich nie usuwa (sekcja 12.6).
 
 **Wersja schematu**: opcja `osf_seo_db_version` (autoload), podbijana po każdej udanej migracji.
 
@@ -1047,7 +1093,8 @@ kontekst w szczegółach szansy, karta w Ustawieniach; CLI `wp osf-seo dataforse
 - **Brak danych = NULL**, w UI „—” (z podpowiedzią: brak danych u dostawcy / jeszcze nie pobrano) — nigdy 0. Prawdziwe 0 od dostawcy jest pokazywane jako 0.
 - **Abstrakcja (D23)**: aplikacja zależy od `KeywordMetricsProvider` (rynek, reguły fraz, zlecenie i odbiór wolumenu, trudność, szacunek kosztu,
   opis endpointów). `DataForSeoProvider` + `DataForSeoClient` to jedyna implementacja. Płatne metody wywołuje wyłącznie `MarketSyncService`
-  — nigdy kontroler, widok, raport, analiza szans ani importer GSC.
+  — nigdy kontroler, widok, raport, analiza szans ani importer GSC. Wyszukiwanie nowych fraz (STEP 13) ma osobny interfejs i wysyła płatne
+  żądania wyłącznie z `DiscoveryRunner`, w ramach tych samych limitów i blokady (sekcja 12, D30).
 - **Awaria DataForSEO nie psuje Wibble**: synchronizacja GSC, dashboard, frazy i szanse działają bez danych rynkowych i bez dostawcy;
   krok w tle jest osobny (D26), a odczyt danych rynkowych w szansach ma własną obsługę błędu.
 
@@ -1094,6 +1141,7 @@ limity liczą koszt zgłoszony przez API.
   Unicode NFC (gdy dostępne `intl`), małe litery UTF-8 (`Ł` → `ł`), białe znaki (także twarda spacja i znaki zerowej szerokości) → jedna spacja,
   bez spacji na krańcach. Polskie znaki i interpunkcja zostają (`żółw` ≠ `zolw`). Klucz = MD5 (binarnie) postaci znormalizowanej.
   Warianty GSC różniące się wielkością liter lub spacjami (`Buty` / `buty`) to jedna fraza rynkowa (jeden płatny odczyt).
+  Frazy liczbowe (`2024`) są zawsze tekstem — PHP zamienia takie klucze tablic na int (poprawka błędu w STEP 13, test regresji).
 - **Mapowanie wyników** (`ResultMapper`): fraza z odpowiedzi → wysłana fraza po postaci znormalizowanej, pomocniczo po postaci „luźnej”
   (bez interpunkcji) tylko gdy jednoznaczna; niedopasowane wyniki są pomijane (liczone), wysłana fraza bez wyniku = brak danych.
 - `keywords.market_key` wylicza `MarketKeyBackfill` w tle (co 5 min, paczkami) i przed planem synchronizacji — importer GSC jest bez zmian.
@@ -1220,9 +1268,302 @@ Wykonuje osoba z dostępem do stagingu — nie agent. Zakłada wdrożony kod STE
 - Normalizacja bez `intl` nie łączy rozłożonych znaków diakrytycznych (GSC zwraca zwykle NFC).
 - Frazy odrzucone przez reguły Google Ads (np. z „?”) nie mają danych rynkowych; nowe frazy GSC dostają klucz rynkowy w ciągu ~5 min.
 - Odbiór wyników Standard zależy od crona (bez ruchu i crona systemowego wyniki czekają; do 30 dni u dostawcy, 48 h w Wibble — potem ponowne zlecenie).
-- Brak wpływu na priorytet szans, brak odkrywania nowych fraz, monitoringu konkurencji i dokładnego rankingu SERP — kolejne etapy.
+- Brak wpływu na priorytet szans, monitoringu konkurencji i dokładnego rankingu SERP — kolejne etapy (odkrywanie nowych fraz: STEP 13, sekcja 12).
 
-## 12. Bezpieczeństwo
+## 12. Nowe frazy (STEP 13)
+
+Zaimplementowane w STEP 13 (`plugins/osf-seo/src/Discovery`, `src/DataForSeo/DataForSeoDiscoveryProvider.php`; UI: `DiscoveryController`,
+moduł „Nowe frazy”; CLI `wp osf-seo discovery:*`). Cel: znaleźć frazy, które mogą być wartościowe dla projektu, a na które strona
+jeszcze nie ma widoczności (albo ma słabą). Przepływ: **seedy → wyszukiwanie (płatne) → metryki rynkowe (z tej samej odpowiedzi) →
+deduplikacja → widoczność w GSC → trafność i priorytet → decyzja (praca nad frazą)**.
+
+### 12.1 Zasady
+
+- **Bez AI i bez zgadywania** — wszystkie reguły (seedy, deduplikacja, widoczność, priorytet, strona docelowa) są deterministyczne
+  i opisane w tej sekcji. Nic nie jest zakodowane pod konkretny projekt (brak wbudowanych seedów i wykluczeń).
+- **Płatne żądania wyłącznie z `DiscoveryRunner`** (krok w tle albo `wp osf-seo discovery:run`), pod wspólną blokadą i wspólnymi limitami
+  kosztów danych rynkowych (D30) — nigdy z kontrolera, widoku, raportu, analizy szans ani importera GSC. Panel tylko kolejkuje przebieg
+  po potwierdzeniu planu; wdrożenie niczego nie uruchamia.
+- **Abstrakcja (D29)**: aplikacja zależy od `KeywordDiscoveryProvider` (rynek, reguły fraz, metody, endpointy, limity, szacunek kosztu,
+  wyszukiwanie); `DataForSeoDiscoveryProvider` (na `DataForSeoClient` ze STEP 12) jest jedyną implementacją.
+- **Priorytet odkrycia** to sygnał „warto sprawdzić”, nie wartość biznesowa ani prognoza ruchu (12.7).
+- **GSC bez zmian**: wyszukiwanie tylko czyta dane GSC (widoczność, strona docelowa, podpowiedzi seedów). Reset property nie usuwa
+  kandydatów ani decyzji (12.6). **Szanse SEO bez zmian**: wykrywanie, priorytet i pewność szans nie korzystają z nowych fraz.
+- Poza zakresem: monitoring konkurencji, harmonogram śledzenia SERP, Keyword Gap, pełna strategia i backlog, linki, AI.
+
+### 12.2 Endpointy, ceny i wybór (D29)
+
+Weryfikacja jak w 11.2: docs.dataforseo.com był zablokowany przez politykę sieci środowiska implementacji — parametry i pola potwierdzono
+w oficjalnym kliencie DataForSEO (repozytorium GitHub z dokumentacją endpointów), ceny cytatami oficjalnego cennika w wynikach wyszukiwania
+(październik 2026). **Przed pierwszym płatnym użyciem potwierdź ceny w panelu DataForSEO.**
+
+| Endpoint (`https://api.dataforseo.com/v3/…`) | Wejście | Wynik | Limit / paginacja | Cena | Decyzja |
+|---|---|---|---|---|---|
+| `dataforseo_labs/google/related_keywords/live` | 1 seed, `depth` 0–4 | frazy z „Podobne wyszukiwania” Google w głąb od seeda (głębokość 1/2/3/4 → maks. ok. 8/72/584/4680 fraz); każda z `keyword_data` i `depth` | `limit` ≤ 1000, `offset`, `filters` (do 8 warunków), `order_by` (do 3) | 0,012 USD za żądanie + 0,00012 USD za zwrócony element | **wybrany** — frazy tematycznie bliskie seedowi; głębokość = kontrola liczby wyników i kosztu; relacja z seedem (głębokość) |
+| `dataforseo_labs/google/keyword_suggestions/live` | 1 seed | frazy zawierające seed (długi ogon) | `limit` ≤ 1000, `offset` (i `offset_token`), `exact_match`, filtry | jak wyżej | **wybrany** — długi ogon frazy seeda, paginacja |
+| `dataforseo_labs/google/keyword_ideas/live` | do 200 seedów | frazy z tych samych kategorii produktowych | `limit` ≤ 1000, `offset` | jak wyżej | pominięty — wynik nieprzypisany do seeda (nie da się zachować „z którego seeda”), szerszy i mniej trafny |
+| Labs `keywords_for_site`, `ranked_keywords` | domena | frazy domeny / pozycje SERP domeny | — | jak wyżej | pominięte — analiza domen (konkurencji) i SERP poza zakresem STEP 13 |
+| `keywords_data/google_ads/keywords_for_keywords` | do 20 seedów | pomysły Google Ads | Standard / Live | 0,06 / 0,09 USD za zadanie | pominięty — bez trudności SEO i intencji (wymagałby płatnego wzbogacenia każdej frazy), bez relacji z seedem |
+
+- Oba wybrane endpointy działają tylko w trybie **Live** (Labs nie ma Standard), jeden seed na żądanie. Element wyniku (`keyword_data`
+  albo element listy) zawiera wszystko, czego potrzebuje kandydat: `keyword_info` (wolumen, `monthly_searches`, CPC, `competition` 0–1,
+  `competition_level`, stawki), `keyword_properties` (`keyword_difficulty`, `core_keyword`, `is_another_language`, `detected_language`)
+  i `search_intent_info.main_intent` — **bez osobnych płatnych żądań wzbogacających** (D32).
+- Wysyłane parametry: `keyword`, `location_code`/`language_code` rynku projektu (11.3), `limit`, `offset`, `include_seed_keyword` tylko
+  na pierwszej stronie (dane samego seeda), `include_serp_info: false` (SERP to kolejny etap), `ignore_synonyms: false`, sortowanie po wolumenie
+  malejąco, filtry dostawcy `search_volume >= min` i opcjonalnie `keyword_difficulty <= max` (mniej zwróconych elementów = niższy koszt);
+  Related: `depth`; Suggestions: `exact_match: false`. **`include_clickstream_data` nie jest wysyłane nigdy** (podwójna cena).
+- Szacunek kosztu żądania = `0,012 + (limit + 1) × 0,00012` USD (limit elementów + dane seeda) — górna granica; limity kosztów liczą koszt
+  zgłoszony przez API (`cost`), a bez niego szacunek. Ceny w stałych `OSF_SEO_DATAFORSEO_PRICE_DISCOVERY_REQUEST` / `…_ITEM`.
+- Mapowanie jak w STEP 12: `competition` 0–1 → `competition_index` 0–100, poziom LOW/MEDIUM/HIGH, CPC w USD, `monthly_searches` → historia.
+- **Intencja** = `search_intent_info.main_intent` (informacyjna, nawigacyjna, komercyjna, transakcyjna) z odpowiedzi discovery, zapisywana
+  w `market_keywords.search_intent`. Bez lokalnej heurystyki i bez płatnego endpointu Search Intent; brak intencji = „—”.
+
+### 12.3 Seedy
+
+- Źródła: **ręczne** (pole tekstowe: wiersze, przecinki, średniki), **podpowiedzi z GSC**, **podpowiedzi z szans SEO**. Podpowiedzi są
+  pokazywane przed wysłaniem czegokolwiek i wybierane przez użytkownika — nic nie trafia do API automatycznie.
+- Podpowiedzi GSC (`SeedSuggester`, bez API): frazy z największą liczbą kliknięć w ostatnich 90 dniach, ≥ 50 wyświetleń, średnia pozycja
+  (GSC) ≤ 20 (tematy, w których strona już ma trafność), 1–4 słowa, bez fraz z nazwą marki z domeny projektu (heurystyka: pierwszy człon
+  domeny). Projekt nie ma osobnej listy tematów — tematy projektu to jego frazy GSC.
+- Podpowiedzi z szans: główna fraza otwartych, aktywnych szans typów „blisko TOP”, „słaba pozycja”, „niski CTR” z analizy 28 dni (wg priorytetu).
+- Seedy są normalizowane jak dane rynkowe (`MarketKeyword`), duplikaty scalane; przed planem odrzucane: krótsze niż 2 znaki, niespełniające
+  reguł dostawcy (`KeywordRules`: > 80 znaków, > 10 słów, niedozwolone znaki), ponad `OSF_SEO_DISCOVERY_MAX_SEEDS` (20).
+
+### 12.4 Przebieg: plan, uruchomienie i cykl życia (D30)
+
+1. **Plan bez API** (`DiscoveryPlanner`) — rynek, seedy, metoda, głębokość, filtry, limit. Na seed: limit elementów = min(limit kandydatów
+   przebiegu / liczba seedów, maks. wyników metody — np. 72 przy głębokości 2), żądania (strony) = ⌈elementy / 1000⌉, najwyżej 5 stron,
+   maks. koszt. Seedy z cache (12.9) = 0 żądań. Suma: żądania, maks. elementów, **maks. koszt**, pozostały budżet dzienny i miesięczny
+   i czy plan się w nim mieści. Suma limitów seedów ≤ limit kandydatów, więc maksymalny koszt jest znany przed wysłaniem.
+2. **Uruchomienie** (`DiscoveryService::start`, `osf_seo_manage_keyword_discovery`) — plan przeliczany ponownie; przebieg nie powstaje, gdy:
+   dostawca nieskonfigurowany, rynek nieobsługiwany, brak seedów, plan większy lub droższy niż potwierdzony podgląd (`expected_requests`,
+   `expected_cost` → „plan się zmienił”), wszystko z cache („nic do pobrania”), wstrzymanie po błędzie konta, plan ponad limit kosztów,
+   inny aktywny przebieg projektu (blokada `discovery_start_{projekt}` + sprawdzenie w bazie), ręczne uruchomienie < 60 s od poprzedniego.
+   Wynik: przebieg `queued` — **żądanie przeglądarki niczego nie wysyła do API**.
+3. **Wykonanie** (`DiscoveryRunner`) — w tle (12.10) albo w CLI, pod wspólną blokadą `MarketSyncService::LOCK`. Każde żądanie (seed × strona):
+   kontrola wspólnych limitów → wiersz `market_tasks` (`trigger_type = discovery`, endpoint `labs_related_keywords` /
+   `labs_keyword_suggestions`, koszt szacowany) → wywołanie → koszt zgłoszony przez API → metryki, kandydaci i źródła → postęp.
+4. **Stany przebiegu**: `queued` (w kolejce) → `running` (w trakcie) → `completed` (wszystkie seedy pobrane lub z cache) / `partial` (część
+   seedów z błędem) / `failed` (wszystkie z błędem) / `cancelled` (anulowany — wysłane żądania zostają w rejestrze kosztów; seed pobierany
+   w chwili anulowania zapisuje opłaconą stronę, kolejne strony nie są wysyłane). Przebieg zatrzymany limitem kosztów pozostaje aktywny
+   z `blocked_by` i wznawia się, gdy limit pozwoli (albo można go anulować).
+5. **Stany seeda**: `pending`, `running`, `done`, `cached` (bez kosztu), `failed`, `cancelled`; seed ma `next_offset`, `pages_done`,
+   `task_id` (ostatnie zadanie w `market_tasks`), koszt, liczbę elementów i nowych fraz, kod błędu, `next_attempt_at`.
+6. **Paginacja**: kolejna strona od `offset`, aż: mniej elementów niż limit strony, limit na seed, `total_count` dostawcy albo 5 stron.
+7. **Błędy** (klasyfikacja jak w 11.7): jawny limit żądań dostawcy (nic nie wykonano) → seed wraca do kolejki za 5 min (maks. 3 próby);
+   błąd konta (logowanie, środki) → wspólne wstrzymanie DataForSEO na 24 h, seed czeka, przebieg zablokowany (`paused`); sieć, 5xx,
+   uszkodzona odpowiedź → seed `failed` **bez ponawiania** (żądanie mogło zostać opłacone — koszt szacowany zostaje w limicie); nieprawidłowe
+   żądanie → `failed`, koszt 0. Seed „w trakcie” od ponad godziny (proces padł) → `failed` (`interrupted`) bez ponawiania.
+8. **Zapis przebiegu**: kiedy i kto (`created_by`), rynek, dostawca, metoda, głębokość, filtry, limity, `forced`, seedy (pozycja, źródło),
+   zadania w `market_tasks`, koszt szacowany i zgłoszony, odebrane elementy, nowe i ponownie znalezione frazy, odrzucenia wg powodu,
+   ostatni błąd (kod i komunikat — bez danych logowania).
+
+### 12.5 Model kandydata i deduplikacja (D31)
+
+- Tabele `discovery_runs`, `discovery_run_seeds`, `discovery_candidates`, `discovery_candidate_sources`, `discovery_settings` (sekcja 6.2).
+- **Kandydat = projekt × fraza rynkowa** (`UNIQUE(project_id, market_keyword_id)`). Metryki (wolumen, historia, trudność SEO, CPC,
+  konkurencja Ads, intencja) **nie są kopiowane** — odczyt z `market_keywords`, wspólnych ze STEP 12 i innymi projektami tego rynku.
+  Kandydat ma: `public_id` (ULID), status pracy, notatkę, kto i kiedy zmienił status, liczbę seedów i najsilniejsze powiązanie, widoczność
+  GSC (klasa, wyświetlenia, kliknięcia, średnia pozycja GSC), stronę docelową, priorytet i jego składniki (`score`), `excluded`,
+  `provider_meta` (fraza główna, kategorie, wykryty język — z pierwszego odkrycia), pierwszy i ostatni przebieg, `discovered_at`, `last_seen_at`.
+- **Źródła** (`discovery_candidate_sources`, PK fraza × seed × metoda): seed, przebieg, powiązanie 0–100, głębokość, pozycja w wynikach,
+  pierwsze i ostatnie wystąpienie. Ta sama fraza z dwóch seedów = jeden kandydat z dwoma źródłami („Znaleziona z 2 seedów”).
+- **Deduplikacja deterministyczna** po kluczu rynkowym `MarketKeyword` (NFC, małe litery UTF-8, białe znaki → jedna spacja): „Strona  Internetowa”
+  = „strona internetowa”. Polskie znaki zostają, **bez stemmingu i lematyzacji**: „strona internetowa” ≠ „strony internetowe” (odmiany to osobne
+  frazy z własnym wolumenem w Google), „żółw” ≠ „zolw”. Świadomie zachowawczo — błędne scalenie ukryłoby frazę z własnym popytem.
+- Ponowne odkrycie (inny seed lub przebieg) aktualizuje `last_seen_at`, `last_run_id` i źródła; status i notatka zostają.
+- Nowe frazy przebiegu są ograniczone limitem kandydatów (`max_candidates`; nadmiar liczony jako odrzucenie `limit`).
+
+### 12.6 Widoczność w GSC (D35)
+
+Dopasowanie po `keywords.market_key` — wszystkie warianty frazy GSC projektu o tym samym kluczu rynkowym (wielkość liter, spacje); okno
+`OSF_SEO_DISCOVERY_WINDOW_DAYS` (90) dni do ostatniej zaimportowanej daty; wyświetlenia i kliknięcia = sumy, **średnia pozycja (GSC) =
+Σ position_sum / Σ impressions** (nigdy średnia pozycji). Klasy (`VisibilityClassifier`, w tej kolejności):
+
+| Klasa | Reguła |
+|---|---|
+| Nieznana | projekt nie ma danych GSC (brak importu albo po resecie property, przed nowym importem) |
+| Brak widoczności | < `OSF_SEO_DISCOVERY_MIN_IMPRESSIONS` (10) wyświetleń w oknie — także fraza nieobecna w GSC |
+| Słaba widoczność | średnia pozycja (GSC) > `OSF_SEO_DISCOVERY_VISIBLE_POSITION` (10) |
+| Słaba widoczność (sporadyczna) | pozycja ≤ 10, ale wyświetlenia < `OSF_SEO_DISCOVERY_VISIBLE_SHARE` (10%) oczekiwanych (wolumen × dni okna / 30) |
+| Już widoczna | pozostałe: pozycja ≤ 10 i stała obecność |
+
+- Przykłady: średnia pozycja 45 przy wolumenie 500 → Słaba widoczność, luka 13,1 z 15 pkt — fraza zostaje wartościowa; pozycja 2 i 3000
+  wyświetleń w 90 dniach przy wolumenie 1000 → Już widoczna, luka 0, domyślnie ukryta (filtr „luka widoczności” = brak, słaba, nieznana).
+- Etykiety w UI: „Widoczność GSC” i „Średnia pozycja (GSC)” — to dane GSC, nie dokładny ranking SERP.
+- **Strona docelowa** (wskazówka): adres z największą liczbą kliknięć, potem wyświetleń, dla tej frazy w GSC (query × page, to samo okno) —
+  tylko gdy GSC go zna; inaczej „Brak przypisanej strony”. Bez zgadywania po treści lub adresach.
+- **Reset property**: kandydaci, źródła i decyzje zostają; widoczność → Nieznana, klucz przeliczenia unieważniony — po nowym imporcie
+  widoczność i priorytet przeliczają się w tle bez płatnych żądań.
+- Przeliczenie (`DiscoveryRefresher`) po wynikach przebiegu, zmianie wykluczeń i w tle co 5 min, ale tylko po zmianie klucza danych
+  (wersja reguł, ostatnia data GSC, `last_synced_at`, property danych, rynek, odcisk kandydatów i metryk, wykluczenia, progi).
+
+### 12.7 Priorytet odkrycia 0–100 (D33)
+
+Przejrzysta suma ograniczonych składników (`DiscoveryScorer`); wolumen i CPC w skali logarytmicznej z limitem
+`L(x, cap) = min(1, log10(1 + x) / log10(1 + cap))`, więc jedna ogromna fraza nie dominuje liniowo:
+
+| Składnik | Maks. | Wzór | Brak danych |
+|---|---:|---|---|
+| Popyt | 35 | 35 × L(wolumen, 10 000) | 0 |
+| Osiągalność | 25 | 25 × (1 − trudność SEO / 100) | 12,5 (neutralnie) |
+| Trafność | 20 | 20 × min(1, najsilniejsze powiązanie / 100 + 0,1 × (liczba seedów − 1)) | — |
+| Luka GSC | 15 | brak widoczności 15; słaba 15 × max(0,2; min(1; (pozycja − 10) / 40)); sporadyczna 6; już widoczna 0 | nieznana 7,5 |
+| Sygnał komercyjny | 5 | 5 × L(CPC, 10 USD) — celowo mała waga: CPC nie może dominować priorytetu SEO | 0 |
+
+Priorytet = zaokrąglona suma (0–100); składniki zapisane w `score` i pokazywane w szczegółach frazy.
+**Powiązanie z seedem** (0–100): sam seed 100; Related Keywords głębokość 1/2/3/4 → 80/60/40/30; Keyword Suggestions: fraza zawiera frazę seeda
+jako ciąg całych słów → 80, w pozostałych przypadkach → 60.
+Przykład: wolumen 1000, trudność SEO 30, CPC 2 USD, głębokość 1, jeden seed, brak widoczności → 26,3 + 17,5 + 16 + 15 + 2,3 = **77**; ta sama
+fraza już widoczna → 62. Nazwa w UI: „Priorytet” (priorytet odkrycia) — nigdy „wartość biznesowa”.
+
+### 12.8 Filtry jakości i wykluczenia
+
+- **Po stronie dostawcy** (mniej płatnych elementów): min. wolumen (domyślnie `OSF_SEO_DISCOVERY_MIN_VOLUME` = 10) i opcjonalnie maks. trudność
+  SEO 0–99 (domyślnie bez limitu — filtr nie jest agresywny).
+- **Lokalnie przy zapisie** (odrzucenia liczone w przebiegu wg powodu): pusta fraza, duplikat w odpowiedzi, wykluczenie projektu, inny język
+  (`is_another_language`; domyślnie odrzucane, opcja „uwzględnij inne języki”), wolumen < min albo brak wolumenu, trudność > maks.,
+  limit kandydatów. Trafność seeda nie odrzuca — wchodzi do priorytetu.
+- **Wykluczenia projektu** (`discovery_settings.excluded_terms`, maks. 200, prowadzi agencja): dopasowanie po całych słowach postaci
+  znormalizowanej, `*` na końcu słowa = dowolna końcówka („darmow*”), wielowyrazowe = ciąg słów. Zmiana listy przelicza kandydatów:
+  pasujący dostają `excluded` (ukryci; filtr „pokaż wykluczone”), a nowe wyniki z pasującymi frazami nie są zapisywane. Brak listy wbudowanej.
+- **Limit kandydatów na przebieg jest obowiązkowy**: 100 / 250 / 500 / 1000 w panelu (domyślnie 250), w CLI `--limit`; górna granica
+  `OSF_SEO_DISCOVERY_MAX_CANDIDATES` (1000, zakres 10–5000). Ogranicza elementy pobierane od dostawcy i nowe frazy przebiegu.
+
+### 12.9 Cache seedów, TTL i ponowne użycie metryk (D32, D34)
+
+- Seed nie jest pobierany ponownie (status `cached`, koszt 0), gdy w projekcie w ciągu `OSF_SEO_DISCOVERY_TTL_DAYS` (30 dni) zakończono
+  pobranie tego seeda tą samą metodą, u tego samego dostawcy i na tym samym rynku, z co najmniej tak szerokimi parametrami (głębokość ≥,
+  limit na seed ≥, min. wolumen ≤, maks. trudność ≥ albo bez limitu). Jego kandydaci już są w projekcie.
+- **Pobranie ponowne mimo cache** (`force`) — tylko z `osf_seo_manage_keyword_discovery` (agencja, administrator); klient nie uruchamia
+  wyszukiwania w ogóle.
+- Cache jest per projekt (przebieg tworzy kandydatów projektu): ten sam seed w innym projekcie na tym samym rynku to nowe żądanie,
+  ale metryki fraz są wspólne (`market_keywords`).
+- **Metryki**: odpowiedź discovery zapisuje wolumen z historią, CPC, konkurencję Ads i trudność SEO do wspólnych `market_keywords` tylko,
+  gdy fraza nie ma danych albo minął TTL (świeży wolumen Google Ads ze STEP 12 nie jest nadpisywany; NULL od dostawcy niczego nie zmienia);
+  intencja jest aktualizowana zawsze, gdy dostawca ją zwrócił. Wolumen Labs to ta sama miara (średnia miesięczna liczba wyszukiwań Google),
+  więc zapisane metryki obowiązują też w liście fraz i synchronizacji STEP 12 (z tym samym TTL) — fraza odkryta, a potem widoczna w GSC,
+  nie wymaga ponownego płatnego wzbogacenia. Kandydaci nigdy nie wywołują osobnych żądań wzbogacających.
+
+### 12.10 Przetwarzanie w tle (D30)
+
+- `DiscoveryService::runBackground` — krok po kolejce GSC i po kroku danych rynkowych (`SyncScheduler::onAfterRun`: WP-Cron i
+  `wp osf-seo sync:run`), wyłącznie w procesie systemowym (cron, CLI) — nigdy przy renderowaniu strony.
+- Kolejność: zamknięcie przerwanych seedów → zakończenie przebiegów bez pracy → (gdy dostawca skonfigurowany, bez wstrzymania i przy wolnej
+  wspólnej blokadzie) najwyżej `OSF_SEO_DATAFORSEO_MAX_TASKS_PER_RUN` (4) żądań w budżecie czasu `OSF_SEO_SYNC_TIME_BUDGET` (20 s) → przeliczenie kandydatów projektów
+  z nowymi wynikami → co 5 min sprawdzenie klucza danych pozostałych projektów (przeliczenie tylko po zmianie).
+- Wspólna blokada sprawia, że synchronizacja danych rynkowych i wyszukiwanie nigdy nie wysyłają płatnych żądań równocześnie; limit żądań
+  na przebieg dotyczy każdego kroku osobno, **limity kosztów są wspólne**.
+- Izolacja od GSC: osobne tabele, bez `sync_runs`; każdy krok po kolejce ma własną obsługę błędu (log), więc awaria wyszukiwania nie
+  zatrzymuje importu GSC, danych rynkowych ani analizy szans.
+- Postęp w panelu: JSON stanu odpytywany co 5 s tylko, gdy przebieg trwa (Alpine); stronę można opuścić — przebieg trwa w tle.
+  Bez crona systemowego tło działa przy ruchu na stronie (WP-Cron); `wp osf-seo discovery:run` wykonuje przebieg od razu.
+
+### 12.11 Praca nad frazą
+
+Statusy: **Nowa** (`new`) → **Do analizy** (`review`) → **Zaakceptowana** (`accepted`) / **Odrzucona** (`dismissed`), dowolne przejścia;
+notatka (do 2000 znaków); zapis, kto i kiedy zmienił status. Zmiana pojedynczo (szczegóły frazy) i zbiorczo (zaznaczone na liście).
+Domyślna lista pokazuje frazy „do decyzji” (Nowa, Do analizy). Ponowne odkrycie nie zmienia decyzji. Strategia i backlog — kolejny etap.
+
+### 12.12 UI — moduł „Nowe frazy”
+
+- **Lista** (`/projects/{project}/discovery`): Fraza (+ intencja), Wolumen, Trudność SEO, Priorytet, Widoczność GSC, Średnia pozycja (GSC),
+  Źródło (seedy), Status; rozwijane szczegóły: CPC, Konkurencja Ads, intencja, seedy, strona docelowa, data odkrycia. Filtry serwerowe:
+  szukaj, status, widoczność, min. wolumen, maks. trudność SEO, min. priorytet, intencja, wykluczone; sortowanie: priorytet, wolumen, trudność
+  SEO, średnia pozycja (GSC), data odkrycia, fraza; paginacja po 50. Brak danych rynkowych = „—”, nigdy 0.
+- **Szczegóły frazy**: metryki, historia wolumenu, widoczność i strona docelowa, składniki priorytetu, źródła (seed, metoda, powiązanie,
+  przebieg), status, notatka, kto i kiedy zmienił status.
+- **„Znajdź nowe frazy”** (`/discovery/new`): seedy (pole + podpowiedzi GSC i szans widoczne przed wysłaniem), metoda i głębokość, limit
+  kandydatów, min. wolumen, maks. trudność SEO, inne języki, pobranie mimo cache → **„Sprawdź koszt”** (bezpłatny plan: żądania, maks. elementów,
+  maks. koszt, seedy z cache, pozostały budżet dzienny i miesięczny, rynek) → **„Uruchom wyszukiwanie”** z jawnym potwierdzeniem
+  (przycisk blokowany po kliknięciu; formularz niesie potwierdzone `expected_requests` i `expected_cost`).
+- **Przebieg** (`/discovery/runs/{run}`): postęp na żywo, seedy, odrzucenia, koszt (tylko z capability), anulowanie.
+- **Dane rynkowe**: wydatki dziś i w miesiącu względem wspólnych limitów (wszystkie projekty, łącznie z wyszukiwaniem), dla projektu podział
+  miesiąca na „wzbogacanie fraz” / „wyszukiwanie nowych fraz” i suma dnia; zadania wyszukiwania w tabeli ostatnich zadań. **Ustawienia**: konfiguracja wyszukiwania (TTL, limity, progi widoczności).
+- **Klient** (`osf_seo_client`): lista, szczegóły i przebiegi tylko do odczytu — bez kosztów, przycisków, zaznaczania i wykluczeń.
+
+### 12.13 CLI
+
+```bash
+wp osf-seo discovery:suggest --project=<id> [--format=json]                        # podpowiedzi seedów z GSC i szans (bez API)
+wp osf-seo discovery:plan --project=<id> --seeds="a, b" [--method=related|suggestions] [--depth=1-3] [--limit=<n>] \
+  [--min-volume=<n>] [--max-kd=<n>] [--include-other-languages] [--force] [--format=json]   # plan: ZERO żądań do API
+wp osf-seo discovery:run --project=<id> --seeds="a, b" [opcje planu] [--yes] [--queue-only] [--max-seconds=300]   # PŁATNE: plan → potwierdzenie → wykonanie
+wp osf-seo discovery:status --project=<id> [--run=<id>] [--format=json]            # aktywny przebieg, ostatnie przebiegi, liczby (bez API)
+wp osf-seo discovery:list --project=<id> [--status=open|all|…] [--visibility=gap|all|…] [--sort=…] [--search=…] [--page=<n>] [--format=json]
+wp osf-seo discovery:cancel --project=<id> --run=<id>                              # anulowanie (wysłane żądania zostają w kosztach)
+wp osf-seo discovery:refresh --project=<id>                                        # przeliczenie widoczności i priorytetu (bez API)
+```
+
+`--seeds-file=<plik>` czyta seedy z lokalnego pliku. `--format=json` zwraca wyłącznie JSON (plan: `dry_run: true`, `api_requests: 0`).
+Komendy płatne i zmieniające wymagają `--user` z `osf_seo_manage_keyword_discovery`; bez `--user` — dostęp systemowy (jak inne komendy).
+
+### 12.14 Uprawnienia i bezpieczeństwo
+
+- Nowa capability **`osf_seo_manage_keyword_discovery`** (wersja 0.13.0; administrator i `osf_seo_admin`): plan i podgląd kosztu, uruchomienie,
+  `force`, anulowanie, decyzje, notatki, wykluczenia, widok kosztów. Odczyt listy i szczegółów: dostęp do projektu (`osf_seo_access`).
+- `ProjectGuard` → `ProjectContext`; przebieg i kandydat z URL-a szukane wyłącznie po (`project_id` z kontekstu, `public_id`) — identyfikator
+  innego projektu, wewnętrzne ID i nieprawidłowy ULID → 404. Mutacje: trasa `ResolveProject:osf_seo_manage_keyword_discovery` + kontrola
+  w `DiscoveryService` (obrona w głąb), nonce i zgodny Origin.
+- Frazy od dostawcy i URL-e GSC to dane zewnętrzne — zawsze escapowane; linki tylko `http(s)` z `rel="noopener noreferrer"`.
+- Logi i błędy: kategoria, kod i identyfikator przebiegu — bez danych logowania i treści żądań; JSON postępu dla klienta bez kosztów.
+- `discovery_candidates.public_id` jest `utf8mb4_bin` (nie `ascii_bin` jak w innych tabelach): `$wpdb` traktuje tabelę z kolumnami ascii
+  i utf8mb4 bez kolumny binarnej jako ASCII i odrzuca zapytania z polskimi znakami; komunikaty błędów przebiegu zapisywane przez `update()`.
+
+### 12.15 Wydajność (pomiar)
+
+Benchmark `composer test:performance` (MariaDB 10.11; dane jak w 11.11 plus 25 000 kandydatów — projekt: 5000, w tym 3000 fraz z danymi GSC;
+inny projekt/rynek: 20 000 — 33 333 źródła, 330 przebiegów z 3300 seedami):
+
+| Przypadek | Czas (mediana z 3) |
+|---|---:|
+| Lista domyślna (do decyzji, luka widoczności, wg priorytetu) | 27 ms |
+| Wszystkie, wg wolumenu, min. wolumen 1000 + maks. trudność SEO 40 | 33 ms |
+| Wyszukiwanie + intencja komercyjna | 22 ms |
+| Wg średniej pozycji (GSC), strona 20 | 39 ms |
+| Szczegóły frazy (źródła, historia) | 1 ms |
+| Przeliczenie widoczności GSC i priorytetu 5000 kandydatów (wymuszone) | 938 ms |
+| Plan 10 seedów (cache, bez API) | 1 ms |
+| Podpowiedzi seedów (GSC 90 dni + szanse) | 283 ms |
+| Stan modułu (liczby, aktywny przebieg) | 16 ms |
+
+- Lista: `c` range `project_priority` (kandydaci projektu) → `m` eq_ref PRIMARY (`STRAIGHT_JOIN`), sortowanie w pamięci po ≤ liczbie kandydatów
+  projektu, `COUNT(*) OVER()`. Szczegóły: const `public_id`; źródła ref PRIMARY (`candidate_id`); historia range PRIMARY.
+- Widoczność GSC: paczki po 500 kluczy, `keywords` range `project_market_key` → `gsc_query_daily` ref `project_keyword_date`; strona docelowa:
+  → `gsc_query_page_daily` ref `project_keyword_date_page`. Liczba seedów: `c` ref `project_priority` → źródła ref PRIMARY.
+- Cache seedów: `discovery_runs` ref `project_run` → seedy ref PRIMARY. Aktywny przebieg: range `status_run`.
+- Liczby modułu i odcisk przeliczenia wybierają pełny skan kandydatów, gdy projekt ma dużą część tabeli (tu 20%); przy wielu projektach
+  planer użyje `project_priority`/`project_market_keyword`. Wszystkie zapytania bez N+1.
+
+### 12.16 Bezpieczny smoke test na stagingu (1–2 seedy)
+
+Wykonuje osoba z dostępem do stagingu — nie agent. Zakłada wdrożony kod STEP 13, schemat 7, stałe DataForSEO w `wp-config.php` i projekt
+z danymi GSC (rynek Polska/polski).
+
+1. `wp osf-seo status` (schemat 7, `dataforseo: configured`), `wp osf-seo dataforseo:status --project=<id>` (koszty dziś/miesiąc, limity).
+2. `wp osf-seo discovery:suggest --project=<id>` — wybierz 1–2 seedy (bezpłatnie).
+3. `wp osf-seo discovery:plan --project=<id> --seeds="<seed 1>, <seed 2>" --depth=1 --limit=20` — plan bez żądań: 2 żądania, ≤ 16 fraz,
+   maks. **0,02616 USD** (2 × (0,012 + 9 × 0,00012)); jeden seed: 1 żądanie, maks. 0,01308 USD.
+4. `wp osf-seo discovery:run --project=<id> --seeds="<seed 1>, <seed 2>" --depth=1 --limit=20` — pokazuje ten sam plan i pyta o potwierdzenie;
+   wykonuje przebieg od razu (pod wspólną blokadą i limitami).
+5. `wp osf-seo discovery:status --project=<id> --run=<id>` (koszt zgłoszony ≈ szacunek), `discovery:list --project=<id> --visibility=all`,
+   panel „Nowe frazy” (lista, szczegóły, widoczność, „—” dla braków), „Dane rynkowe” (koszt w podziale „wyszukiwanie nowych fraz”).
+6. Powtórzenie kroku 3 z tymi samymi seedami — plan: seedy z cache, 0 żądań, 0 USD. Porównać koszt z panelem DataForSEO; dopiero potem
+   zwiększać liczbę seedów, głębokość i limit.
+
+### 12.17 Ograniczenia
+
+- Ceny i parametry zweryfikowane pośrednio (12.2); lokalne limity są bezpiecznikiem, nie rozliczeniem.
+- Metody: Related Keywords i Keyword Suggestions; bez Keyword Ideas, fraz domen konkurencji i SERP (kolejne etapy).
+- Metryki kandydata odświeżają się, gdy fraza zostanie znaleziona ponownie albo trafi do synchronizacji STEP 12 (fraza w GSC) — bez
+  osobnego odświeżania kandydatów; `provider_meta` pochodzi z pierwszego odkrycia.
+- Intencja tylko z odpowiedzi discovery (frazy wyłącznie z GSC nie mają intencji).
+- Cache seedów per projekt (nie między projektami); głębokość 4 niedostępna (do ~4680 fraz na seed).
+- Deduplikacja bez lematyzacji — odmiany frazy to osobni kandydaci (świadomie).
+- Strona docelowa i widoczność wymagają danych GSC (inaczej „Nieznana” / „Brak przypisanej strony”); tło zależy od crona (jak kolejka GSC).
+
+## 13. Bezpieczeństwo
 
 - **Autoryzacja projektów**: `ProjectGuard` → `ProjectContext` albo 404; repozytoria i usługi
   analityczne przyjmują wyłącznie `ProjectContext`.
@@ -1253,9 +1594,13 @@ Wykonuje osoba z dostępem do stagingu — nie agent. Zakłada wdrożony kod STE
   budowany w pamięci; nie trafiają do pól obiektów, bazy, logów, wyjątków, HTML, JSON ani JS); żądania wyłącznie do
   `https://api.dataforseo.com/v3/` (biała lista ścieżek); `Redactor` maskuje nagłówki Basic; płatna synchronizacja tylko z
   `osf_seo_manage_market_data` (trasa `ResolveProject` + kontrola w `MarketSyncService`), nonce, zgodny Origin i potwierdzona liczba fraz.
-- **Repozytorium publiczne**: sekcja 13; skan sekretów przed commitem; `.gitignore` blokuje pliki z sekretami.
+- **Nowe frazy** (STEP 13): przebieg i kandydat z URL-a szukane wyłącznie po (`project_id` z `ProjectContext`, `public_id`) — obce ID → 404;
+  płatne uruchomienie, pobranie mimo cache, decyzje i wykluczenia wymagają `osf_seo_manage_keyword_discovery` (trasa + kontrola w
+  `DiscoveryService`), nonce, zgodnego Origin i potwierdzonego planu (`expected_requests`, `expected_cost`); klient — tylko odczyt, bez kosztów.
+  Frazy od dostawcy escapowane jak dane GSC (sekcja 12.14).
+- **Repozytorium publiczne**: sekcja 14; skan sekretów przed commitem; `.gitignore` blokuje pliki z sekretami.
 
-## 13. Konfiguracja i sekrety
+## 14. Konfiguracja i sekrety
 
 Stałe w `wp-config.php` (poza repozytorium) mają pierwszeństwo przed zmiennymi środowiskowymi o tej
 samej nazwie. W repozytorium wyłącznie placeholdery.
@@ -1281,6 +1626,12 @@ samej nazwie. W repozytorium wyłącznie placeholdery.
 | `OSF_SEO_DATAFORSEO_SYNC_LIMIT` | (opcjonalnie) maks. fraz w jednej synchronizacji projektu, domyślnie 1000 | STEP 12 |
 | `OSF_SEO_DATAFORSEO_AUTO_REFRESH` | (opcjonalnie) `0` wyłącza automatyczne odświeżanie (odbiór wyników zadań działa dalej) | STEP 12 |
 | `OSF_SEO_DATAFORSEO_PRICE_VOLUME_TASK`, `…_PRICE_DIFFICULTY_REQUEST`, `…_PRICE_DIFFICULTY_ITEM` | (opcjonalnie) ceny do szacunku przed wywołaniem (domyślnie 0.06 / 0.012 / 0.00012 USD) | STEP 12 |
+| `OSF_SEO_DATAFORSEO_PRICE_DISCOVERY_REQUEST`, `…_PRICE_DISCOVERY_ITEM` | (opcjonalnie) ceny wyszukiwania fraz (Labs Related Keywords / Keyword Suggestions) do szacunku (domyślnie 0.012 / 0.00012 USD) | STEP 13 |
+| `OSF_SEO_DISCOVERY_TTL_DAYS` | (opcjonalnie) cache seeda w projekcie, 1–365 dni, domyślnie 30 | STEP 13 |
+| `OSF_SEO_DISCOVERY_MAX_SEEDS` | (opcjonalnie) maks. seedów na wyszukiwanie, 1–50, domyślnie 20 | STEP 13 |
+| `OSF_SEO_DISCOVERY_MAX_CANDIDATES` | (opcjonalnie) górna granica limitu kandydatów na wyszukiwanie, 10–5000, domyślnie 1000 | STEP 13 |
+| `OSF_SEO_DISCOVERY_MIN_VOLUME` | (opcjonalnie) domyślny minimalny wolumen, domyślnie 10 | STEP 13 |
+| `OSF_SEO_DISCOVERY_WINDOW_DAYS`, `…_MIN_IMPRESSIONS`, `…_VISIBLE_POSITION`, `…_VISIBLE_SHARE` | (opcjonalnie) widoczność GSC kandydatów: okno 28–480 dni (90), min. wyświetleń (10), średnia pozycja „już widoczna” (10), min. udział wyświetleń w wolumenie (0.1) | STEP 13 |
 
 ```php
 // wp-config.php — przykład z placeholderami
@@ -1296,7 +1647,7 @@ define('OSF_SEO_DATAFORSEO_PASSWORD', 'your-dataforseo-api-password');
 - Brak stałych = integracja wyłączona (panel pokazuje nazwy brakujących stałych, `wp osf-seo status`: INFO);
   błędny format klucza = FAIL w `wp osf-seo status`.
 
-## 14. Deployment (do ustalenia)
+## 15. Deployment (do ustalenia)
 
 Stan: CI (`.github/workflows/ci.yml`) uruchamia wyłącznie testy i build — w repozytorium nie ma skryptu deployu.
 Reorganizacja jest w `main`. Wcześniejsza integracja Git Hostingera skopiowała cały root repozytorium do `wp-content`
@@ -1320,7 +1671,7 @@ Warianty docelowe:
   dwa połączenia Git w hPanelu, każde z własnym katalogiem.
 - **C (niezalecany)**: integracja Git Hostingera wprost na `wp-content` — wystawiłaby na serwer cały root repo.
 
-## 15. Roadmapa i stan prac
+## 16. Roadmapa i stan prac
 
 **MVP 1** (tylko GSC, koszt zewnętrznych usług: 0 zł; od STEP 12 — DataForSEO, D3):
 
@@ -1344,14 +1695,15 @@ Warianty docelowe:
 | 15 | Hardening i operacje (rate limit, nagłówki, status crona, testy dostępu) | — |
 | 16 | Szanse SEO: wykrywanie (niski CTR, blisko TOP, słaba pozycja, spadki, możliwa kanibalizacja), priorytet i pewność, grupowanie po podstronach, praca nad szansą, automatyczne przeliczanie | ✅ STEP 11 (sekcja 10; obserwacja po wdrożeniu — wersja podstawowa) |
 | 17 | DataForSEO: fundament (dostawca za interfejsem, klient, limity kosztów, rejestr zadań) i wzbogacenie fraz danymi rynkowymi (wolumen, historia, CPC, konkurencja Ads, trudność SEO) | ✅ STEP 12 (sekcja 11) |
+| 18 | Nowe frazy: seedy (ręczne, GSC, szanse), wyszukiwanie DataForSEO Labs w tle z planem i limitami kosztów, deduplikacja, widoczność GSC, priorytet odkrycia, praca nad frazą, wykluczenia | ✅ STEP 13 (sekcja 12) |
 
 **MVP 2**: ~~Opportunity Score~~ (STEP 11), Pages/landing pages, zaawansowane filtry, automatyczna synchronizacja, raporty.
 **MVP 3**: własny crawler, audyt techniczny, połączenie crawler + GSC.
 **MVP 4**: panel klienta, raporty, rekomendacje AI.
-**Kolejne etapy** (kolejność orientacyjna): odkrywanie nowych fraz, monitoring konkurencji i dokładny ranking SERP (DataForSEO SERP —
-osobne pojęcie od średniej pozycji GSC), luka fraz/treści, strategia i backlog SEO.
+**Kolejne etapy** (kolejność orientacyjna): ~~odkrywanie nowych fraz~~ (STEP 13), monitoring konkurencji i dokładny ranking SERP (DataForSEO SERP —
+osobne pojęcie od średniej pozycji GSC), luka fraz/treści, strategia i backlog SEO (zaakceptowane nowe frazy jako wejście).
 
-## 16. Porządki w motywie (C1–C5)
+## 17. Porządki w motywie (C1–C5)
 
 Każdy etap to osobny commit z testem (build, `php -l`, smoke test WordPress). Kolejność:
 
@@ -1363,12 +1715,15 @@ Każdy etap to osobny commit z testem (build, `php -l`, smoke test WordPress). K
 | C4 | frontend: `variables.scss`, style i JS bloków, marketingowe obrazy i font, pakiety gsap, swiper, baguettebox, jquery, react, wtyczki block-editora w Vite |
 | C5 | nazewnictwo: `package.json`, `composer.json`, `style.css`, text domain |
 
-## 17. Ryzyka i otwarte kwestie
+## 18. Ryzyka i otwarte kwestie
 
-- **Deployment** nowej struktury nieustalony (sekcja 14) — wdrażać wyłącznie katalog pluginu i motywu (nigdy całe repo do `wp-content`).
+- **Deployment** nowej struktury nieustalony (sekcja 15) — wdrażać wyłącznie katalog pluginu i motywu (nigdy całe repo do `wp-content`).
 - **DataForSEO (STEP 12)**: płatne API — lokalne limity są bezpiecznikiem, nie rozliczeniem (rozliczenie w panelu DataForSEO; tam też warto
   ustawić limit kosztów konta). Ceny i limity zweryfikowane pośrednio (sekcja 11.2) — przed pierwszym użyciem potwierdzić w panelu DataForSEO.
   Kody lokalizacji potwierdzić `wp osf-seo dataforseo:locations --country=PL` (bezpłatne).
+- **Nowe frazy (STEP 13)**: ceny Labs zweryfikowane pośrednio (sekcja 12.2); priorytet odkrycia i progi widoczności to przybliżenie do kalibracji
+  na prawdziwych projektach (stałe `OSF_SEO_DISCOVERY_*`). Koszt wyszukiwania zależy od liczby zwróconych elementów — pierwszy przebieg na stagingu
+  z 1–2 seedami i małym limitem (sekcja 12.16).
 - **OAuth Testing**: tokeny ważne 7 dni — publikacja aplikacji przed produkcją.
 - **Skala `query_page_daily`** — decyzja po pomiarze (sekcja 6.4).
 - **Wydajność raportów przy bardzo dużych property** — czasy rosną liniowo z liczbą wierszy fraz w okresie

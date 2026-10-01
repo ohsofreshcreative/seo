@@ -3,8 +3,8 @@
 /**
  * Plugin Name:       OSF SEO
  * Plugin URI:        https://github.com/ohsofreshcreative/seo
- * Description:       Logika aplikacji Wibble (techniczna nazwa: OSF SEO): projekty, Google Search Console, dane rynkowe DataForSEO, synchronizacja i analityka.
- * Version:           0.12.0
+ * Description:       Logika aplikacji Wibble (techniczna nazwa: OSF SEO): projekty, Google Search Console, dane rynkowe i wyszukiwanie nowych fraz (DataForSEO), synchronizacja i analityka.
+ * Version:           0.13.0
  * Requires at least: 6.6
  * Requires PHP:      8.2
  * Author:            OhSoFresh

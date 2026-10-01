@@ -33,6 +33,7 @@ final class SettingsController
 			'googleConnections' => osf_seo()->get(ConnectionRepository::class)->statusCounts(),
 			// Dane rynkowe (DataForSEO): tylko nazwy brakujących stałych, limity i zużycie — nigdy wartości sekretów.
 			'market' => osf_seo()->get(\OsfSeo\Market\MarketSyncService::class)->status(),
+			'discovery' => osf_seo()->get(\OsfSeo\Discovery\DiscoveryService::class)->config()->effective(),
 		]);
 	}
 }

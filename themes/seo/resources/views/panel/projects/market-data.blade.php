@@ -15,7 +15,14 @@
   $connected = $status['configured'] && ! in_array($lastError, [ProviderErrorCategory::Authentication, ProviderErrorCategory::Billing], true);
   $budget = $status['budget'];
   $projectMetrics = $status['project_metrics'];
-  $taskLabels = ['google_ads_search_volume' => 'Wolumen (Google Ads, Standard)', 'labs_bulk_keyword_difficulty' => 'Trudność SEO (Labs, Live)'];
+  $taskLabels = [
+    'google_ads_search_volume' => 'Wolumen (Google Ads, Standard)',
+    'labs_bulk_keyword_difficulty' => 'Trudność SEO (Labs, Live)',
+    'labs_related_keywords' => 'Nowe frazy: powiązane (Labs, Live)',
+    'labs_keyword_suggestions' => 'Nowe frazy: zawierające seed (Labs, Live)',
+  ];
+  $triggerLabels = ['auto' => 'automatycznie', 'discovery' => 'wyszukiwanie fraz'];
+  $breakdown = $status['usage_breakdown'] ?? null;
   $taskStatuses = ['pending' => 'czeka na wynik', 'completed' => 'zakończone', 'failed' => 'błąd', 'expired' => 'przeterminowane'];
 @endphp
 
@@ -119,6 +126,16 @@
             <dt class="text-slate-500">Ten miesiąc (UTC)</dt>
             <dd class="text-right font-medium tabular-nums text-slate-900">{{ Format::usd($budget['spent_month'], 4) }} / {{ Format::usd($budget['monthly_limit']) }}</dd>
           </div>
+          @if ($breakdown !== null)
+            <div class="flex justify-between gap-4 py-3">
+              <dt class="text-slate-500">Projekt — w tym miesiącu</dt>
+              <dd class="text-right tabular-nums text-slate-900">
+                <span class="block">wzbogacanie fraz: {{ Format::usd($breakdown['month']['enrichment']['cost'], 4) }} ({{ Format::number($breakdown['month']['enrichment']['tasks']) }})</span>
+                <span class="block">wyszukiwanie nowych fraz: {{ Format::usd($breakdown['month']['discovery']['cost'], 4) }} ({{ Format::number($breakdown['month']['discovery']['tasks']) }})</span>
+                <span class="block text-xs text-slate-500">dziś: {{ Format::usd($breakdown['today']['enrichment']['cost'] + $breakdown['today']['discovery']['cost'], 4) }}; limity są wspólne</span>
+              </dd>
+            </div>
+          @endif
           <div class="flex justify-between gap-4 py-3">
             <dt class="text-slate-500">Projekt — ostatnie 30 dni</dt>
             <dd class="text-right font-medium tabular-nums text-slate-900">
@@ -194,7 +211,7 @@
             @foreach ($recent as $task)
               <tr>
                 <td class="py-2 pr-4 text-slate-600">{{ Format::datetime($task['created_at']) }}</td>
-                <td class="py-2 pr-4 text-slate-900">{{ $taskLabels[$task['endpoint']] ?? $task['endpoint'] }} <span class="text-xs text-slate-500">· {{ $task['trigger_type'] === 'auto' ? 'automatycznie' : 'ręcznie' }}</span></td>
+                <td class="py-2 pr-4 text-slate-900">{{ $taskLabels[$task['endpoint']] ?? $task['endpoint'] }} <span class="text-xs text-slate-500">· {{ $triggerLabels[$task['trigger_type']] ?? 'ręcznie' }}</span></td>
                 <td class="py-2 pr-4 text-right">{{ Format::number((int) $task['keywords_count']) }}</td>
                 <td @class(['py-2 pr-4', 'text-amber-700' => in_array($task['status'], ['failed', 'expired'], true), 'text-slate-600' => ! in_array($task['status'], ['failed', 'expired'], true)])>
                   {{ $taskStatuses[$task['status']] ?? $task['status'] }}

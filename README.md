@@ -1,10 +1,12 @@
 # Wibble
 
 Wewnętrzne narzędzie SEO agencji OhSoFresh (dawniej **OSF SEO**): projekty klientów połączone z Google Search Console,
-automatyczne wykrywanie fraz, porównania okresów, wzrosty i spadki, szanse SEO, dashboardy oraz dane rynkowe fraz.
+automatyczne wykrywanie fraz, porównania okresów, wzrosty i spadki, szanse SEO, dashboardy, dane rynkowe fraz
+oraz wyszukiwanie nowych fraz, na które strona jeszcze nie ma widoczności.
 
 Źródła danych: **Google Search Console API** (źródło prawdy o skuteczności strony) i **DataForSEO** — zatwierdzony płatny
-dostawca danych rynkowych (wolumen, historia wolumenu, CPC, konkurencja Ads, trudność SEO), z lokalnymi limitami kosztów.
+dostawca danych rynkowych (wolumen, historia wolumenu, CPC, konkurencja Ads, trudność SEO, intencja) i nowych fraz
+(DataForSEO Labs), ze wspólnymi lokalnymi limitami kosztów.
 
 > **Nazwy techniczne:** plugin `osf-seo`, stałe `OSF_SEO_*`, tabele `osf_*`, namespace `OsfSeo\` i komendy `wp osf-seo …`
 > celowo pozostają bez zmian — techniczny rebrand będzie osobnym etapem.
@@ -14,7 +16,9 @@ dostawca danych rynkowych (wolumen, historia wolumenu, CPC, konkurencja Ads, tru
 > ok. 16 miesięcy i codziennym odświeżaniem, lista fraz z porównaniem okresów oraz dashboard projektu
 > (KPI, TOP 3/10/20/50/100 wg średniej pozycji GSC, wzrosty i spadki), Szanse SEO (niski CTR, frazy blisko TOP,
 > słaba pozycja, spadki, możliwa kanibalizacja — z priorytetem, pewnością i pracą nad szansą) oraz dane rynkowe fraz
-> z DataForSEO (STEP 12: wolumen, trudność SEO, CPC, konkurencja Ads; limity kosztów). Plan i postęp:
+> z DataForSEO (STEP 12: wolumen, trudność SEO, CPC, konkurencja Ads; limity kosztów) oraz moduł „Nowe frazy”
+> (STEP 13: seedy z GSC, szans lub wpisane ręcznie → DataForSEO Labs w tle z planem i kosztem przed uruchomieniem →
+> deduplikacja, widoczność w GSC, priorytet odkrycia, decyzje i wykluczenia). Plan i postęp:
 > [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 >
 > **Repozytorium jest publiczne.** Nie commituj żadnych sekretów (sekcja „Konfiguracja”).
@@ -131,7 +135,7 @@ wp osf-seo gsc:probe --project=<public_id> [--dimensions=query] [--limit=10]
 wp osf-seo gsc:sync --project=<public_id> [--run] [--force]
 wp osf-seo gsc:backfill --project=<public_id> [--run]
 wp osf-seo gsc:status --project=<public_id> [--format=json]
-wp osf-seo sync:run          # kolejka synchronizacji — dla crona systemowego (co minutę); potem przeliczenie szans SEO
+wp osf-seo sync:run          # kolejka synchronizacji — dla crona systemowego (co minutę); potem szanse SEO, dane rynkowe i nowe frazy w tle
 
 # Szanse SEO (analiza zapisanych danych GSC, bez wywołań Google)
 wp osf-seo opportunities:analyze --project=<public_id> [--days=7|28|90] [--force]
@@ -144,6 +148,14 @@ wp osf-seo dataforseo:sync --project=<public_id> --limit=10     # płatna synchr
 wp osf-seo dataforseo:keyword --project=<public_id> --keyword="fraza"   # zapisane metryki frazy (bez API)
 wp osf-seo dataforseo:run --collect-only                        # odbiór wyników zadań wolumenu (bezpłatny)
 wp osf-seo dataforseo:locations --country=PL                    # bezpłatna weryfikacja kodów rynku
+
+# Nowe frazy (DataForSEO Labs — płatne; zawsze najpierw plan; szczegóły: docs/ARCHITECTURE.md, sekcja 12)
+wp osf-seo discovery:suggest --project=<public_id>              # podpowiedzi seedów z GSC i szans SEO (bez API)
+wp osf-seo discovery:plan --project=<public_id> --seeds="fraza 1, fraza 2" --depth=1 --limit=20   # plan i maks. koszt, zero żądań
+wp osf-seo discovery:run --project=<public_id> --seeds="fraza 1, fraza 2" --depth=1 --limit=20    # płatne: plan → potwierdzenie → wykonanie
+wp osf-seo discovery:status --project=<public_id> [--run=<id>]  # postęp, ostatnie przebiegi, koszty
+wp osf-seo discovery:list --project=<public_id> [--status=open] [--visibility=gap] [--format=json]
+wp osf-seo discovery:refresh --project=<public_id>              # przeliczenie widoczności GSC i priorytetu (bez API)
 ```
 
 Synchronizacja działa w tle przez WP-Cron (lokalnie wystarczy ruch na stronie); na serwerze zalecany cron
@@ -181,8 +193,11 @@ define('OSF_SEO_DATAFORSEO_MONTHLY_COST_LIMIT', 10.00);
 - DataForSEO: dane logowania wyłącznie w `wp-config.php`/env (nigdy w repo, bazie, logach ani JS). Synchronizacja danych
   rynkowych nie startuje sama po wdrożeniu — pierwszą uruchamia się jawnie (panel → projekt → Dane rynkowe albo
   `wp osf-seo dataforseo:sync`), potem metryki starsze niż 30 dni odświeżają się w tle w ramach limitów.
+- Nowe frazy: wyszukiwanie uruchamia się wyłącznie jawnie (panel → projekt → Nowe frazy → „Sprawdź koszt” → „Uruchom wyszukiwanie”
+  albo `wp osf-seo discovery:run`) i liczy się do tych samych limitów kosztów co dane rynkowe. Opcjonalnie: `OSF_SEO_DISCOVERY_TTL_DAYS`
+  (cache seeda, 30 dni), `OSF_SEO_DISCOVERY_MAX_SEEDS` (20), `OSF_SEO_DISCOVERY_MAX_CANDIDATES` (1000), `OSF_SEO_DISCOVERY_MIN_VOLUME` (10).
 
-Pełna lista stałych: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md), sekcja 13.
+Pełna lista stałych: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md), sekcja 14.
 
 ## Bezpieczeństwo
 
