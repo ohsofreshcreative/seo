@@ -4,7 +4,7 @@
  * Plugin Name:       OSF SEO
  * Plugin URI:        https://github.com/ohsofreshcreative/seo
  * Description:       Logika aplikacji OSF SEO: projekty, integracja z Google Search Console, synchronizacja i analityka.
- * Version:           0.6.0
+ * Version:           0.7.0
  * Requires at least: 6.6
  * Requires PHP:      8.2
  * Author:            OhSoFresh

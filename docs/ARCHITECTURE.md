@@ -448,6 +448,42 @@ UI: `SearchConsoleController` (`show`, `selectProperty`); CLI: `gsc:properties`,
 
 ## 8. Przepływ danych GSC i reguły obliczeń
 
+### 8.1 Klient Search Console API (STEP 7)
+
+`plugins/osf-seo/src/Gsc/GscClient.php` (na `Google\ApiRequester` = `GoogleApi`: Bearer tylko do `*.googleapis.com`,
+po 401 jedno odświeżenie tokenu; timeout HTTP 60 s):
+
+- `listSites()` — `GET /webmasters/v3/sites`,
+- `query()` — `POST /webmasters/v3/sites/{rawurlencode(siteUrl)}/searchAnalytics/query` z treścią:
+  `startDate`, `endDate`, `dimensions` (dowolne z `date, query, page, country, device, searchAppearance`),
+  `type=web`, `dataState=final` (domyślnie; `all` tylko w probe), `aggregationType=auto`, `rowLimit` (1–25 000), `startRow`,
+- `pages()` — generator stron: kolejne `startRow = n × rowLimit`, koniec na stronie krótszej niż `rowLimit`
+  (także pustej). Ochrona: maks. `dni × 50 000 / rowLimit + 1` stron (Google udostępnia maks. ok. 50 000 wierszy
+  dziennie na typ wyszukiwania; twardy limit 400), wykrywanie powtórzonej strony (odcisk: liczba, pierwszy i ostatni
+  wiersz). 25 000 wierszy ≠ komplet danych — GSC pomija zapytania zanonimizowane.
+- Walidacja każdego wiersza: `keys` = liczba wymiarów (same stringi), data w żądanym zakresie, `clicks`/`impressions`
+  całkowite ≥ 0 (≤ INT UNSIGNED; JSON `5.0` akceptowane), `position` liczba ≥ 0. Naruszenie → `malformed_response`
+  (cała strona odrzucona, nic nie jest zapisywane). CTR z API jest pomijany — liczymy go z sum.
+- Błędy (`GscApiException` + `ErrorCategory`, kod trafia do `sync_runs.error_code`):
+
+  | Kategoria | Źródło | Ponowienie w żądaniu | Ponowienie zadania (kolejka) |
+  |---|---|---|---|
+  | `rate_limited` | 429; 403 z powodem `rateLimitExceeded`, `userRateLimitExceeded`, `quotaExceeded`, `dailyLimitExceeded`, `RESOURCE_EXHAUSTED` | tak | tak |
+  | `transient` | 500, 502, 503, 504 (także endpoint tokenów) | tak | tak |
+  | `network` | brak odpowiedzi HTTP (DNS, timeout, TLS) | tak | tak |
+  | `malformed_response`, `pagination` | treść niezgodna z kontraktem, niestabilna paginacja | nie | tak |
+  | `permission_denied` (403), `not_found` (404), `bad_request` (400), `unauthorized` (401 po odświeżeniu), `http_error` | — | nie | nie |
+
+  W żądaniu: maks. 2 ponowienia z przerwą 1 s i 3 s; `Retry-After` (sekundy) honorowany do 10 s, dłuższy → bez
+  czekania, decyzję podejmuje kolejka. `invalid_grant` → `ReauthorizationRequired` (połączenie `needs_reauth`, sekcja 7).
+- Logi: kategoria, status HTTP, powód Google — bez nagłówków (`Authorization`), treści żądań i odpowiedzi.
+
+**Probe** (`GscProbe`, `wp osf-seo gsc:probe --project=<public_id>`): jedno zapytanie, domyślnie `[date]`, 7 dni
+kończących się 3 dni przed „dziś” w PT, `rowLimit` 10 (maks. 1000), `dataState=final`; raport: property, uprawnienia,
+zakres dat, liczba wierszy, kliknięcia, wyświetlenia, CTR (z sum), średnia pozycja ważona wyświetleniami, typ agregacji,
+liczba żądań, próbka wierszy. **Nic nie zapisuje do bazy**, nie wypisuje tokenów. Wymaga `osf_seo_manage_connections`
+(z `--user`) albo operatora CLI.
+
 ```
 Google Search Console API  (searchAnalytics.query, sites.list)
         │  WP HTTP API, timeout 30 s, paginacja startRow/rowLimit (maks. 25 000 wierszy na żądanie)
@@ -612,7 +648,7 @@ Warianty docelowe:
 | 5 | Projekty w UI: tworzenie, edycja, archiwizacja, przypisywanie klientów | ✅ STEP 4 (bez przypisywania w UI — na razie `wp osf-seo project:assign`) |
 | 6 | Google OAuth: PKCE/state, szyfrowanie tokenów, callback, połączenia | ✅ STEP 5 (Google mockowany; prawdziwy OAuth — po konfiguracji) |
 | 7 | Wybór property GSC | ✅ STEP 6 (lista, sugestia, reset przy zmianie property, CLI) |
-| 8 | Klient GSC API: paginacja, błędy, backoff, `wp osf-seo gsc:probe` | — |
+| 8 | Klient GSC API: paginacja, błędy, backoff, `wp osf-seo gsc:probe` | ✅ STEP 7 (Google mockowany w testach; prawdziwe API — probe na stagingu) |
 | 9 | Importery `site_daily`, `query_daily`, normalizacja, zamiana zakresu w transakcji | — |
 | 10 | Orkiestracja synchronizacji (Action Scheduler), postęp, „Synchronizuj teraz”/„Ponów” | — |
 | 11 | `query_page_daily` + `visibility_daily`; pomiar skali | — |

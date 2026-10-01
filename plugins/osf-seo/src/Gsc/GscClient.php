@@ -10,6 +10,7 @@ use OsfSeo\Google\GoogleConnection;
 use OsfSeo\Google\OAuthEndpointError;
 use OsfSeo\Http\HttpResponse;
 use OsfSeo\Http\TransportException;
+use OsfSeo\Support\DateRange;
 use OsfSeo\Support\Logger;
 use OsfSeo\Support\Sleeper;
 
@@ -79,10 +80,122 @@ final class GscClient
 		return $properties;
 	}
 
+	/**
+	 * Jedna strona searchAnalytics.query (zwalidowana).
+	 *
+	 * @throws GscApiException
+	 * @throws \OsfSeo\Google\ReauthorizationRequired
+	 */
+	public function query(GoogleConnection $connection, string $siteUrl, SearchAnalyticsRequest $request): SearchAnalyticsPage
+	{
+		$json = $this->send($connection, 'POST', self::siteUrlPath($siteUrl) . '/searchAnalytics/query', $request->toApi());
+
+		return self::parsePage($json, $request);
+	}
+
+	/**
+	 * Wszystkie strony wyników (rowLimit/startRow) jako generator — wywołujący przetwarza stronę i zwalnia pamięć.
+	 *
+	 * Koniec: strona krótsza niż rowLimit (także pusta). Ochrona: limit stron wynikający z zakresu dat
+	 * (Google udostępnia maks. ok. 50 000 wierszy dziennie) i wykrywanie powtórzonej strony.
+	 * 25 000 wierszy nie oznacza kompletu danych — GSC pomija zapytania zanonimizowane.
+	 *
+	 * @return \Generator<int, SearchAnalyticsPage>
+	 * @throws GscApiException
+	 */
+	public function pages(GoogleConnection $connection, string $siteUrl, SearchAnalyticsRequest $request): \Generator
+	{
+		$maxPages = $request->maxPages();
+		$previous = null;
+
+		for ($page = 0; ; $page++) {
+			if ($page >= $maxPages) {
+				throw GscApiException::pagination(sprintf('Pagination exceeded %d pages for %s.', $maxPages, $request->range));
+			}
+
+			$result = $this->query($connection, $siteUrl, $request->withStartRow($page * $request->rowLimit));
+
+			if ($result->count() > 0 && $previous !== null && $result->fingerprint() === $previous) {
+				throw GscApiException::pagination(sprintf('Page at startRow %d repeats the previous page.', $result->startRow));
+			}
+
+			$previous = $result->fingerprint();
+
+			yield $result;
+
+			if ($result->count() < $request->rowLimit) {
+				return;
+			}
+		}
+	}
+
+	/**
+	 * @param array<string, mixed> $json
+	 * @throws GscApiException
+	 */
+	public static function parsePage(array $json, SearchAnalyticsRequest $request): SearchAnalyticsPage
+	{
+		$rows = $json['rows'] ?? [];
+
+		if (! is_array($rows) || ! array_is_list($rows)) {
+			throw GscApiException::malformed('rows is not a list.');
+		}
+
+		if (count($rows) > $request->rowLimit) {
+			throw GscApiException::malformed('More rows than rowLimit.');
+		}
+
+		$dimensions = count($request->dimensions);
+		$dateIndex = $request->dimensionIndex('date');
+		$parsed = [];
+
+		foreach ($rows as $i => $row) {
+			$keys = is_array($row) ? ($row['keys'] ?? ($dimensions === 0 ? [] : null)) : null;
+
+			if (! is_array($keys) || ! array_is_list($keys) || count($keys) !== $dimensions) {
+				throw GscApiException::malformed(sprintf('Row %d: keys do not match dimensions.', $i));
+			}
+
+			foreach ($keys as $key) {
+				if (! is_string($key)) {
+					throw GscApiException::malformed(sprintf('Row %d: non-string key.', $i));
+				}
+			}
+
+			if ($dateIndex !== null && (! DateRange::isDate($keys[$dateIndex]) || ! $request->range->contains($keys[$dateIndex]))) {
+				throw GscApiException::malformed(sprintf('Row %d: date outside of the requested range.', $i));
+			}
+
+			$clicks = self::count($row['clicks'] ?? null);
+			$impressions = self::count($row['impressions'] ?? null);
+			$position = $row['position'] ?? null;
+
+			if ($clicks === null || $impressions === null || ! (is_int($position) || is_float($position)) || ! is_finite((float) $position) || $position < 0) {
+				throw GscApiException::malformed(sprintf('Row %d: invalid metrics.', $i));
+			}
+
+			$parsed[] = ['keys' => $keys, 'clicks' => $clicks, 'impressions' => $impressions, 'position' => (float) $position];
+		}
+
+		$aggregation = $json['responseAggregationType'] ?? '';
+
+		return new SearchAnalyticsPage($parsed, $request->startRow, is_string($aggregation) ? $aggregation : '');
+	}
+
 	/** Liczba żądań HTTP do API wykonanych przez ten obiekt (z ponowieniami) — do statystyk synchronizacji. */
 	public function requestCount(): int
 	{
 		return $this->requestCount;
+	}
+
+	/** Licznik (kliknięcia, wyświetlenia): liczba całkowita ≥ 0 mieszcząca się w INT UNSIGNED; JSON może podać 5.0. */
+	private static function count(mixed $value): ?int
+	{
+		if (is_float($value) && is_finite($value) && floor($value) === $value && abs($value) <= 4294967295.0) {
+			$value = (int) $value;
+		}
+
+		return is_int($value) && $value >= 0 && $value <= 4294967295 ? $value : null;
 	}
 
 	public static function siteUrlPath(string $siteUrl): string
