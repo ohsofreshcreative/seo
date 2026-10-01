@@ -125,8 +125,12 @@ final class KeywordReport
 		$marketColumns = '';
 		$marketJoin = '';
 		$outer = [];
+		// Złączenie z danymi rynkowymi tylko, gdy są potrzebne do sortowania lub filtrowania (wtedy STRAIGHT_JOIN:
+		// agregat → słownik → rynek). Domyślna lista ma zapytanie jak przed STEP 12, a metryki strony doczytuje
+		// jedno zapytanie po identyfikatorach fraz (attachMarketMetrics) — bez kosztu złączenia na całym agregacie.
+		$joinMarket = $market !== null && (in_array($filters->sort, ['volume', 'difficulty'], true) || $filters->hasMarketFilters());
 
-		if ($market !== null) {
+		if ($joinMarket) {
 			$marketColumns = ', ' . MarketMetrics::columns('m', 'm_');
 			$marketJoin = "LEFT JOIN `{$this->db->table('market_keywords')}` m
 				ON m.provider = %s AND m.location_code = %d AND m.language_code = %s AND m.keyword_key = k.market_key";
@@ -149,7 +153,7 @@ final class KeywordReport
 		$params[] = $filters->perPage;
 		$params[] = ($filters->page - 1) * $filters->perPage;
 
-		$sql = "SELECT a.*, k.keyword{$marketColumns}, COUNT(*) OVER () AS total_rows
+		$sql = 'SELECT ' . ($joinMarket ? 'STRAIGHT_JOIN ' : '') . "a.*, k.keyword{$marketColumns}, COUNT(*) OVER () AS total_rows
 			FROM (
 				SELECT q.keyword_id, " . self::PERIOD_COLUMNS . "
 				FROM `{$this->db->table('gsc_query_daily')}` q
@@ -160,7 +164,7 @@ final class KeywordReport
 			JOIN `{$this->db->table('keywords')}` k ON k.id = a.keyword_id AND k.project_id = %d
 			{$marketJoin}
 			" . ($outer === [] ? '' : 'WHERE ' . implode(' AND ', $outer)) . '
-			ORDER BY ' . self::orderBy($filters, $market !== null) . '
+			ORDER BY ' . self::orderBy($filters, $joinMarket) . '
 			LIMIT %d OFFSET %d';
 
 		$records = $this->db->fetchAll($sql, $params);
@@ -173,9 +177,44 @@ final class KeywordReport
 		}
 
 		$this->attachPrimaryPages($projectId, $rows, $period);
+
+		if ($market !== null && ! $joinMarket) {
+			$this->attachMarketMetrics($projectId, $rows, $market);
+		}
+
 		$this->attachMarketHistory($rows);
 
 		return new KeywordPage($period, $filters, $rows, $total, $market);
+	}
+
+	/**
+	 * Metryki rynkowe fraz bieżącej strony — jedno zapytanie (słownik po PRIMARY → rynek po UNIQUE).
+	 *
+	 * @param list<KeywordRow> $rows
+	 */
+	private function attachMarketMetrics(int $projectId, array $rows, Market $market): void
+	{
+		if ($rows === []) {
+			return;
+		}
+
+		$ids = array_map(static fn (KeywordRow $row): int => $row->keywordId, $rows);
+		$metrics = [];
+
+		foreach ($this->db->fetchAll(
+			'SELECT k.id AS keyword_id, ' . MarketMetrics::columns('m', 'm_') . "
+			FROM `{$this->db->table('keywords')}` k
+			JOIN `{$this->db->table('market_keywords')}` m
+				ON m.provider = %s AND m.location_code = %d AND m.language_code = %s AND m.keyword_key = k.market_key
+			WHERE k.project_id = %d AND k.id IN (" . Connection::placeholders($ids, '%d') . ')',
+			[$market->provider, $market->locationCode, $market->languageCode, $projectId, ...$ids],
+		) as $record) {
+			$metrics[(int) $record['keyword_id']] = MarketMetrics::fromRow($record, 'm_');
+		}
+
+		foreach ($rows as $row) {
+			$row->market = $metrics[$row->keywordId] ?? null;
+		}
 	}
 
 	/**
