@@ -68,7 +68,7 @@ $timer = static function (callable $callback, int $runs = 3): array {
 	return [$times[intdiv(count($times), 2)], $result];
 };
 
-const OSF_SEO_BENCHMARK_TABLES = ['projects', 'keywords', 'pages', 'gsc_site_daily', 'gsc_query_daily', 'gsc_query_page_daily', 'opportunities', 'opportunity_detections', 'opportunity_analyses', 'market_keywords', 'market_keyword_monthly', 'market_tasks', 'market_sync_state'];
+const OSF_SEO_BENCHMARK_TABLES = ['projects', 'keywords', 'pages', 'gsc_site_daily', 'gsc_query_daily', 'gsc_query_page_daily', 'opportunities', 'opportunity_detections', 'opportunity_analyses', 'market_keywords', 'market_keyword_monthly', 'market_tasks', 'market_sync_state', 'discovery_runs', 'discovery_run_seeds', 'discovery_candidates', 'discovery_candidate_sources', 'discovery_settings'];
 
 foreach (OSF_SEO_BENCHMARK_TABLES as $table) {
 	$db->execute("TRUNCATE TABLE `{$db->table($table)}`");
@@ -226,10 +226,63 @@ $backfilled = (new OsfSeo\Market\MarketKeyBackfill($db))->fillAll(1000000);
 $backfillSeconds = microtime(true) - $backfillStart;
 $marketSeconds = microtime(true) - $marketStart;
 
+// Nowe frazy (STEP 13): 5000 kandydatów projektu (3000 to frazy GSC projektu — dopasowanie widoczności, 2000 spoza GSC),
+// ~1,3 źródła na kandydata, 30 przebiegów z seedami; 20 000 kandydatów innego projektu na rynku DE w tych samych tabelach.
+$discoveryStart = microtime(true);
+$newMarket = new BulkInsert($db, $db->table('market_keywords'), ['provider', 'location_code', 'language_code', 'keyword_key', 'keyword', 'search_volume', 'keyword_difficulty', 'cpc', 'search_intent', 'volume_fetched_at', 'volume_stale_after', 'difficulty_fetched_at', 'difficulty_stale_after', 'created_at', 'updated_at'], ['%s', '%d', '%s', 'UNHEX(%s)', '%s', '%d', '%d', '%f', '%s', '%s', '%s', '%s', '%s', '%s', '%s']);
+
+for ($i = 1; $i <= 2000; $i++) {
+	$text = 'nowa fraza ' . $i;
+	$newMarket->add(['dataforseo', 2616, 'pl', md5($text), $text, ($i * 53) % 8000, $i % 101, ($i % 300) / 100, ['informational', 'commercial', 'transactional', 'navigational'][$i % 4], $now, $stale, $now, $stale, $now, $now]);
+}
+
+$newMarket->flush();
+$plIds = array_map('intval', array_column($db->fetchAll('SELECT id FROM `' . $db->table('market_keywords') . "` WHERE location_code = 2616 AND keyword LIKE 'fraza testowa %%' ORDER BY id LIMIT 3000"), 'id'));
+$plIds = [...$plIds, ...array_map('intval', array_column($db->fetchAll('SELECT id FROM `' . $db->table('market_keywords') . "` WHERE location_code = 2616 AND keyword LIKE 'nowa fraza %%'"), 'id'))];
+$deIds = array_map('intval', array_column($db->fetchAll('SELECT id FROM `' . $db->table('market_keywords') . '` WHERE location_code = 2276 ORDER BY id LIMIT 20000'), 'id'));
+$runs = new BulkInsert($db, $db->table('discovery_runs'), ['public_id', 'project_id', 'provider', 'location_code', 'language_code', 'method', 'depth', 'status', 'trigger_type', 'seeds_count', 'max_candidates', 'seed_limit', 'min_volume', 'tasks_planned', 'tasks_done', 'estimated_cost', 'cost', 'created_at', 'started_at', 'finished_at', 'updated_at'], ['%s', '%d', '%s', '%d', '%s', '%s', '%d', '%s', '%s', '%d', '%d', '%d', '%d', '%d', '%d', '%f', '%f', '%s', '%s', '%s', '%s']);
+
+foreach ([[$projectId, 30, 2616, 'pl'], [$noiseProject, 300, 2276, 'de']] as [$owner, $count, $location, $language]) {
+	for ($i = 0; $i < $count; $i++) {
+		$runs->add([OsfSeo\Support\Ulid::generate(), $owner, 'dataforseo', $location, $language, 'related', 2, 'completed', 'manual', 10, 500, 50, 10, 10, 10, 0.2, 0.15, $now, $now, $now, $now]);
+	}
+}
+
+$runs->flush();
+$db->execute(
+	'INSERT INTO `' . $db->table('discovery_run_seeds') . '` (run_id, seed_key, seed, source, position, status, pages_done, next_offset, items, candidates_new, cost, finished_at)
+	SELECT r.id, UNHEX(MD5(CONCAT(\'seed \', r.id, \' \', n.n))), CONCAT(\'seed \', r.id, \' \', n.n), \'manual\', n.n, \'done\', 1, 50, 50, 5, 0.015, %s
+	FROM `' . $db->table('discovery_runs') . '` r JOIN (SELECT 0 AS n UNION ALL SELECT 1 UNION ALL SELECT 2 UNION ALL SELECT 3 UNION ALL SELECT 4 UNION ALL SELECT 5 UNION ALL SELECT 6 UNION ALL SELECT 7 UNION ALL SELECT 8 UNION ALL SELECT 9) n',
+	[$now],
+);
+$firstRun = (int) $db->fetchValue('SELECT MIN(id) FROM `' . $db->table('discovery_runs') . '` WHERE project_id = %d', [$projectId]);
+$candidates = new BulkInsert($db, $db->table('discovery_candidates'), ['public_id', 'project_id', 'market_keyword_id', 'status', 'seeds_count', 'best_relation', 'visibility', 'first_run_id', 'last_run_id', 'discovered_at', 'last_seen_at', 'created_at', 'updated_at'], ['%s', '%d', '%d', '%s', '%d', '%d', '%s', '%d', '%d', '%s', '%s', '%s', '%s']);
+
+foreach ([[$projectId, $plIds], [$noiseProject, $deIds]] as [$owner, $ids]) {
+	foreach ($ids as $n => $marketId) {
+		$candidates->add([OsfSeo\Support\Ulid::generate(), $owner, $marketId, ['new', 'review', 'accepted', 'dismissed', 'new'][$n % 5], 1, 60, 'unknown', $firstRun, $firstRun, $now, $now, $now, $now]);
+	}
+}
+
+$candidates->flush();
+
+foreach ([[0, 60, 2], [3, 80, 1]] as [$every, $relation, $depth]) {
+	$db->execute(
+		'INSERT INTO `' . $db->table('discovery_candidate_sources') . '` (candidate_id, seed_key, method, seed, run_id, relation, depth, result_position, first_seen_at, last_seen_at)
+		SELECT c.id, UNHEX(MD5(CONCAT(\'seed \', c.id % 10, \' \', %d))), \'related\', CONCAT(\'seed \', c.id % 10, \' \', %d), c.first_run_id, %d, %d, c.id % 72, %s, %s
+		FROM `' . $db->table('discovery_candidates') . '` c' . ($every > 0 ? ' WHERE c.id % ' . $every . ' = 0' : ''),
+		[$every, $every, $relation, $depth, $now, $now],
+	);
+}
+
+$db->insert($db->table('discovery_settings'), ['project_id' => $projectId, 'excluded_terms' => "praca\ndarmow*\ntorrent", 'updated_at' => $now]);
+$discoverySeconds = microtime(true) - $discoveryStart;
+
 $generation = microtime(true) - $generationStart;
-$db->execute('ANALYZE TABLE `' . $db->table('gsc_query_daily') . '`, `' . $db->table('gsc_query_page_daily') . '`, `' . $db->table('keywords') . '`, `' . $db->table('pages') . '`, `' . $db->table('opportunities') . '`, `' . $db->table('opportunity_detections') . '`, `' . $db->table('market_keywords') . '`, `' . $db->table('market_keyword_monthly') . '`');
+$db->execute('ANALYZE TABLE `' . $db->table('gsc_query_daily') . '`, `' . $db->table('gsc_query_page_daily') . '`, `' . $db->table('keywords') . '`, `' . $db->table('pages') . '`, `' . $db->table('opportunities') . '`, `' . $db->table('opportunity_detections') . '`, `' . $db->table('market_keywords') . '`, `' . $db->table('market_keyword_monthly') . '`, `' . $db->table('discovery_candidates') . '`, `' . $db->table('discovery_candidate_sources') . '`, `' . $db->table('discovery_runs') . '`, `' . $db->table('discovery_run_seeds') . '`');
 $out(sprintf('Wygenerowano %s wierszy query_daily (+%s szumu), %s query_page_daily, słowniki i 30 000 szans innego projektu (200 000 fraz, 20 000 adresów, 90 000 wykryć) w %.1f s.', number_format($rows), number_format($noiseRows), number_format($pageRows), $generation));
 $out(sprintf('Dane rynkowe: %s metryk (PL: 70%% fraz projektu, DE: 200 000), %s wierszy historii; klucze rynkowe %s fraz wyliczone w %.1f s (generowanie danych rynkowych łącznie %.1f s).', number_format((int) $db->fetchValue('SELECT COUNT(*) FROM `' . $db->table('market_keywords') . '`')), number_format((int) $db->fetchValue('SELECT COUNT(*) FROM `' . $db->table('market_keyword_monthly') . '`')), number_format($backfilled), $backfillSeconds, $marketSeconds));
+$out(sprintf('Nowe frazy: %s kandydatów (projekt: 5000, w tym 3000 fraz GSC; inny projekt/rynek: 20 000), %s źródeł, %s przebiegów z %s seedami (%.1f s).', number_format((int) $db->fetchValue('SELECT COUNT(*) FROM `' . $db->table('discovery_candidates') . '`')), number_format((int) $db->fetchValue('SELECT COUNT(*) FROM `' . $db->table('discovery_candidate_sources') . '`')), number_format((int) $db->fetchValue('SELECT COUNT(*) FROM `' . $db->table('discovery_runs') . '`')), number_format((int) $db->fetchValue('SELECT COUNT(*) FROM `' . $db->table('discovery_run_seeds') . '`')), $discoverySeconds));
 $out();
 
 $context = osf_seo()->get(ProjectGuard::class)->authorizeSystem((string) $db->fetchValue('SELECT public_id FROM `' . $db->table('projects') . '` WHERE id = %d', [$projectId]));
@@ -240,6 +293,10 @@ $marketSync = osf_seo()->get(OsfSeo\Market\MarketSyncService::class);
 $marketRepository = osf_seo()->get(OsfSeo\Market\MarketMetricsRepository::class);
 $plMarket = OsfSeo\DataForSeo\DataForSeoMarkets::resolve('pl', 'pl');
 $lookupKeys = array_map(static fn (int $i): string => OsfSeo\Market\MarketKeyword::key('fraza testowa ' . $i), range(1, 25));
+$discovery = osf_seo()->get(OsfSeo\Discovery\DiscoveryService::class);
+$discovery->refresh($context);
+$candidateId = (string) $db->fetchValue('SELECT public_id FROM `' . $db->table('discovery_candidates') . '` WHERE project_id = %d ORDER BY priority DESC, id LIMIT 1', [$projectId]);
+$discoveryRequest = $discovery->request(['seeds' => implode("\n", array_map(static fn (int $i): string => 'seed ' . ($firstRun + $i) . ' ' . $i, range(0, 9))), 'max_candidates' => '500']);
 $overviewReport = new OverviewReport($db, $keywordsReport);
 $cachedOverview = new OverviewReport($db, $keywordsReport, new OsfSeo\Analytics\ReportCache());
 
@@ -284,6 +341,15 @@ $cases = [
 	'Frazy: filtr min. wolumen 1000 + maks. trudność 30' => static fn () => $keywordsReport->keywords($context, KeywordFilters::fromInput(['min_volume' => 1000, 'max_kd' => 30])),
 	'Dane rynkowe: plan synchronizacji (wybór kandydatów, bez API)' => static fn () => $marketSync->plan($context),
 	'Dane rynkowe: odczyt 25 fraz po kluczach (dowody szansy)' => static fn () => $marketRepository->findByKeys($plMarket, $lookupKeys),
+	'Nowe frazy: lista domyślna (do decyzji, luka widoczności, wg priorytetu)' => static fn () => $discovery->list($context, OsfSeo\Discovery\CandidateFilters::fromInput([])),
+	'Nowe frazy: wszystkie, wg wolumenu, min. wolumen 1000 + maks. trudność 40' => static fn () => $discovery->list($context, OsfSeo\Discovery\CandidateFilters::fromInput(['status' => 'all', 'visibility' => 'all', 'sort' => 'volume', 'min_volume' => '1000', 'max_kd' => '40'])),
+	'Nowe frazy: wyszukiwanie „nowa fraza 12”, intencja komercyjna' => static fn () => $discovery->list($context, OsfSeo\Discovery\CandidateFilters::fromInput(['status' => 'all', 'visibility' => 'all', 'q' => 'nowa fraza 12', 'intent' => 'commercial'])),
+	'Nowe frazy: wg średniej pozycji GSC, strona 20' => static fn () => $discovery->list($context, OsfSeo\Discovery\CandidateFilters::fromInput(['status' => 'all', 'visibility' => 'all', 'sort' => 'position', 'page' => '20'])),
+	'Nowe frazy: szczegóły frazy (źródła, historia)' => static fn () => $discovery->candidate($context, $candidateId),
+	'Nowe frazy: przeliczenie widoczności GSC i priorytetu (5000 kandydatów)' => static fn () => $discovery->refresh($context, true),
+	'Nowe frazy: plan 10 seedów (cache seedów, bez API)' => static fn () => $discovery->plan($context, $discoveryRequest),
+	'Nowe frazy: podpowiedzi seedów (GSC + szanse)' => static fn () => $discovery->suggestions($context),
+	'Nowe frazy: stan modułu (liczby, aktywny przebieg)' => static fn () => $discovery->status($context),
 	'Dashboard: przegląd 28 dni (KPI, TOP N, wzrosty/spadki, seria)' => static fn () => $overviewReport->overview($context, 28),
 	'Dashboard: przegląd 90 dni' => static fn () => $overviewReport->overview($context, 90),
 	'Dashboard: przegląd 90 dni z cache (transient, kolejne wejście)' => static fn () => $cachedOverview->overview($context, 90),
@@ -304,6 +370,12 @@ foreach ($cases as $label => $case) {
 		$result instanceof OsfSeo\Opportunities\AnalysisResult => sprintf('%s: %d szans%s', $result->status, $result->opportunities, $result->reason !== null ? ' (' . $result->reason . ')' : ''),
 		$result instanceof OsfSeo\Opportunities\OpportunityPage => sprintf('%d na stronie, łącznie %d', count($result->rows) + count($result->groups), $result->total),
 		$result instanceof OsfSeo\Market\SyncPlan => sprintf('%d fraz do wzbogacenia, %d zadań (dozwolone %d)', $result->keywordCount(), count($result->tasks), count($result->allowedTasks())),
+		$result instanceof OsfSeo\Discovery\CandidatePage => sprintf('%d na stronie, łącznie %s', count($result->rows), number_format($result->total)),
+		$result instanceof OsfSeo\Discovery\CandidateRow => sprintf('%d źródeł, %d miesięcy historii', count($result->sources), count($result->market->monthly)),
+		$result instanceof OsfSeo\Discovery\DiscoveryPlan => sprintf('%d żądań, z cache %d seedów, maks. %.4f USD', $result->requests(), $result->cachedSeeds(), $result->estimatedCost()),
+		is_int($result) => sprintf('%d zmienionych kandydatów', $result),
+		is_array($result) && isset($result['gsc']) => sprintf('%d podpowiedzi GSC, %d z szans', count($result['gsc']), count($result['opportunity'])),
+		is_array($result) && isset($result['summary']) => sprintf('%d kandydatów, %d wykluczonych', $result['summary']['total'] ?? 0, $result['summary']['excluded'] ?? 0),
 		is_array($result) => sprintf('%d metryk', count($result)),
 		default => sprintf('TOP10 %d, wzrosty %d, spadki %d', $result->visibility->current[10], count($result->gains), count($result->losses)),
 	};
