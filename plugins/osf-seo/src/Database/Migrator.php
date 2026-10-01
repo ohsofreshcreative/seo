@@ -10,6 +10,7 @@ use OsfSeo\Database\Migrations\M0002AddGscDataProperty;
 use OsfSeo\Database\Migrations\M0003CreateImportStaging;
 use OsfSeo\Database\Migrations\M0004ExtendSyncQueue;
 use OsfSeo\Database\Migrations\M0005CreateOpportunities;
+use OsfSeo\Database\Migrations\M0006CreateMarketData;
 use OsfSeo\Support\Logger;
 
 /**
@@ -51,6 +52,7 @@ final class Migrator
 			new M0003CreateImportStaging(),
 			new M0004ExtendSyncQueue(),
 			new M0005CreateOpportunities(),
+			new M0006CreateMarketData(),
 		];
 	}
 
