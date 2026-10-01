@@ -36,13 +36,18 @@ final class AnalysisResult
 	/** Polski opis powodu pominięcia (UI). */
 	public function reasonLabel(): string
 	{
-		return match ($this->reason) {
+		return self::describeReason($this->reason);
+	}
+
+	public static function describeReason(?string $reason): string
+	{
+		return match ($reason) {
 			'property_not_ready' => 'projekt nie ma wybranej property GSC z zaimportowanymi danymi',
 			'no_data' => 'brak zaimportowanych danych GSC (frazy i strony)',
 			'insufficient_history' => 'okres nie jest jeszcze w pełni zaimportowany (trwa pobieranie historii)',
 			'property_changed', 'project_missing' => 'property projektu zmieniła się w trakcie analizy',
 			'internal_error' => 'błąd analizy (szczegóły w logu)',
-			default => (string) $this->reason,
+			default => (string) $reason,
 		};
 	}
 

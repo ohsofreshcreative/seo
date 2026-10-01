@@ -132,6 +132,26 @@ final class OpportunityDetectorTest extends DetectorTestCase
 		self::assertSame(['position' => 5.0], $byKeyword['spadek pozycji']->evidence['keywords'][0]['signals']);
 	}
 
+	public function test_small_click_base_does_not_inflate_decline_priority(): void
+	{
+		// Spadek wykryty po pozycji (9,1 → 11,8 przy 140 → 151 wyświetleniach); kliknięcia 2 → 0 to za mała baza na „−100%”.
+		$decline = self::ofType(self::detector()->detect(self::input([self::keyword(1, 'mała baza', [0, 151, 11.8], [2, 140, 9.1])])), OpportunityType::Decline)[0];
+
+		self::assertSame(['position' => 2.7], $decline->evidence['keywords'][0]['signals']);
+		self::assertSame(0.0, $decline->evidence['score']['inputs']['relative_loss'], 'Wyświetlenia wzrosły, baza kliknięć < 10 — bez punktów za względną stratę.');
+		self::assertLessThan(40, $decline->priority);
+	}
+
+	public function test_small_previous_sample_gives_no_trend_points(): void
+	{
+		// 20 → 400 wyświetleń: „wzrost o 1900%” przy 20 wyświetleniach bazy to szum — trend 0.
+		$nearTop = self::ofType(self::detector()->detect(self::input([self::keyword(1, 'nowa', [8, 400, 6.0], [0, 20, 9.0])])), OpportunityType::NearTop)[0];
+
+		self::assertNull($nearTop->evidence['score']['inputs']['impressions_growth']);
+		self::assertNull($nearTop->evidence['score']['inputs']['position_improvement']);
+		self::assertSame(0.0, $nearTop->evidence['score']['trend']);
+	}
+
 	public function test_declining_keyword_is_not_also_reported_as_near_top(): void
 	{
 		$candidates = self::detector()->detect(self::input([self::keyword(1, 'spada', [20, 900, 4.5], [50, 1000, 3.0])]));

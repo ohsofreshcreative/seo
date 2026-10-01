@@ -287,7 +287,8 @@ final class OpportunityDetector
 				$ctrDrop = 0.0;
 				$previousCtr = $previous->ctr();
 
-				if ($input->previousCovered && $previousCtr !== null && $previousCtr > 0) {
+				// Trend tylko przy wystarczającej próbie w poprzednim okresie (spadek CTR z 2 wyświetleń to szum).
+				if ($input->previousCovered && $previousCtr !== null && $previousCtr > 0 && $previous->impressions >= $this->config->volume('low_ctr_min_impressions', $days)) {
 					$ctrDrop = max(0.0, ($previousCtr - (float) $current->ctr()) / $previousCtr);
 				}
 
@@ -339,8 +340,10 @@ final class OpportunityDetector
 				}
 
 				$proximity = $current->impressions > 0 ? $proximity / $current->impressions : 0.0;
-				$growth = $comparison === 'ok' ? ($current->impressions - $previous->impressions) / $previous->impressions : null;
-				$improvement = $comparison === 'ok' && $improvementPrevious->hasData()
+				// Trend tylko przy wystarczającej próbie w poprzednim okresie (wzrost 20 → 50 wyświetleń to szum).
+				$trendBase = $this->config->volume($type === OpportunityType::NearTop ? 'near_top_min_impressions' : 'weak_position_min_impressions', $days);
+				$growth = $comparison === 'ok' && $previous->impressions >= $trendBase ? ($current->impressions - $previous->impressions) / $previous->impressions : null;
+				$improvement = $comparison === 'ok' && $improvementPrevious->impressions >= $trendBase
 					? (float) $improvementPrevious->position() - (float) $improvementCurrent->position()
 					: null;
 				$consistent = $comparison === 'ok' && $current->impressions > 0 && $inBand / $current->impressions >= 0.5;
@@ -414,14 +417,18 @@ final class OpportunityDetector
 
 				$previousCtr = $baseImpressions > 0 ? $baseClicks / $baseImpressions : 0.0;
 				$lost = max((float) $clicksLost, $impressionsLost * $previousCtr);
-				$relativeLoss = $baseClicks > 0 ? $lost / $baseClicks : ($baseImpressions > 0 ? $impressionsLost / $baseImpressions : 0.0);
+				// Względna strata kliknięć tylko przy istotnej bazie kliknięć (2 → 0 to nie „−100%” do priorytetu);
+				// inaczej względna strata wyświetleń.
+				$relativeLoss = $baseClicks >= $this->config->volume('decline_min_previous_clicks', $days)
+					? $lost / $baseClicks
+					: ($baseImpressions > 0 ? (float) max(0, $impressionsLost) / $baseImpressions : 0.0);
 				$worsening = $worsePrevious->hasData() ? (float) $worseCurrent->position() - (float) $worsePrevious->position() : null;
 				$consistent = count($kinds) >= 2 || count($group['items']) >= 2;
 				$comparison = 'ok';
 				$inputs = [
 					'impressions' => $baseImpressions,
 					'clicks_lost' => $lost,
-					'relative_loss' => min(1.0, $relativeLoss),
+					'relative_loss' => min(1.0, (float) $relativeLoss),
 					'position_worsening' => $worsening,
 				];
 				$details = [

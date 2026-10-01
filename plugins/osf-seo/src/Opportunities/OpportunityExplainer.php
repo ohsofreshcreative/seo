@@ -45,9 +45,11 @@ final class OpportunityExplainer
 				Text::number((float) ($details['click_gap'] ?? 0)),
 			),
 			OpportunityType::NearTop => sprintf(
-				'%s blisko TOP 3 i %s blisko TOP 10 (średnia pozycja (GSC)), łącznie %s wyświetleń. Szacunkowy potencjał przy pozycji docelowej: ok. %s kliknięć w okresie — bez gwarancji osiągnięcia.',
-				Text::keywords((int) ($details['top3'] ?? 0)),
-				Text::keywords((int) ($details['top10'] ?? 0)),
+				'%s (średnia pozycja (GSC)), łącznie %s wyświetleń. Szacunkowy potencjał przy pozycji docelowej: ok. %s kliknięć w okresie — bez gwarancji osiągnięcia.',
+				implode(' i ', array_filter([
+					(int) ($details['top3'] ?? 0) > 0 ? Text::keywords((int) $details['top3']) . ' blisko TOP 3' : null,
+					(int) ($details['top10'] ?? 0) > 0 ? Text::keywords((int) $details['top10']) . ' blisko TOP 10' : null,
+				])),
 				Text::number($current->impressions),
 				Text::number((float) ($details['potential_clicks'] ?? 0)),
 			),
