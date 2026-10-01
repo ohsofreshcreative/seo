@@ -28,6 +28,10 @@ final class DataForSeoConfig
 
 	public const PRICE_DIFFICULTY_ITEM = 'OSF_SEO_DATAFORSEO_PRICE_DIFFICULTY_ITEM';
 
+	public const PRICE_DISCOVERY_REQUEST = 'OSF_SEO_DATAFORSEO_PRICE_DISCOVERY_REQUEST';
+
+	public const PRICE_DISCOVERY_ITEM = 'OSF_SEO_DATAFORSEO_PRICE_DISCOVERY_ITEM';
+
 	/** Google Ads Search Volume, kolejka Standard: cena zadania (do 1000 fraz). */
 	public const DEFAULT_PRICE_VOLUME_TASK = 0.06;
 
@@ -36,6 +40,12 @@ final class DataForSeoConfig
 
 	/** DataForSEO Labs: cena za każdy zwrócony element. */
 	public const DEFAULT_PRICE_DIFFICULTY_ITEM = 0.00012;
+
+	/** DataForSEO Labs Related Keywords / Keyword Suggestions (Live): cena żądania. */
+	public const DEFAULT_PRICE_DISCOVERY_REQUEST = 0.012;
+
+	/** DataForSEO Labs: cena za każdy zwrócony element wyszukiwania. */
+	public const DEFAULT_PRICE_DISCOVERY_ITEM = 0.00012;
 
 	public function __construct(private readonly Config $config = new Config())
 	{
@@ -89,6 +99,16 @@ final class DataForSeoConfig
 	public function priceDifficultyItem(): float
 	{
 		return $this->price(self::PRICE_DIFFICULTY_ITEM, self::DEFAULT_PRICE_DIFFICULTY_ITEM);
+	}
+
+	public function priceDiscoveryRequest(): float
+	{
+		return $this->price(self::PRICE_DISCOVERY_REQUEST, self::DEFAULT_PRICE_DISCOVERY_REQUEST);
+	}
+
+	public function priceDiscoveryItem(): float
+	{
+		return $this->price(self::PRICE_DISCOVERY_ITEM, self::DEFAULT_PRICE_DISCOVERY_ITEM);
 	}
 
 	/**

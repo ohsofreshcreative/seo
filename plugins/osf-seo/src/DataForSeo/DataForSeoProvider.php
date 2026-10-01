@@ -109,14 +109,14 @@ final class DataForSeoProvider implements KeywordMetricsProvider
 	public function submitVolume(Market $market, array $keywords): VolumeSubmission
 	{
 		$this->assertBatch($keywords);
-		$task = self::singleTask($this->client->post(self::VOLUME_POST, [[
+		$task = DataForSeoResponse::singleTask($this->client->post(self::VOLUME_POST, [[
 			'keywords' => array_values($keywords),
 			'location_code' => $market->locationCode,
 			'language_code' => $market->languageCode,
 		]]));
 
 		if ($task['status_code'] !== DataForSeoStatus::TASK_CREATED && $task['status_code'] !== DataForSeoStatus::OK) {
-			throw self::taskError($task);
+			throw DataForSeoResponse::taskError($task);
 		}
 
 		$id = $task['id'] ?? null;
@@ -125,7 +125,7 @@ final class DataForSeoProvider implements KeywordMetricsProvider
 			throw new ProviderException(ProviderErrorCategory::MalformedResponse, 'DataForSEO did not return a task id.', $task['status_code']);
 		}
 
-		return new VolumeSubmission($id, self::cost($task));
+		return new VolumeSubmission($id, DataForSeoResponse::cost($task));
 	}
 
 	public function fetchVolume(string $taskId): ?VolumeBatch
@@ -134,7 +134,7 @@ final class DataForSeoProvider implements KeywordMetricsProvider
 			throw new InvalidArgumentException('Invalid DataForSEO task id.');
 		}
 
-		$task = self::singleTask($this->client->get(self::VOLUME_GET . '/' . $taskId));
+		$task = DataForSeoResponse::singleTask($this->client->get(self::VOLUME_GET . '/' . $taskId));
 		$code = $task['status_code'];
 
 		if (DataForSeoStatus::isPending($code)) {
@@ -142,20 +142,20 @@ final class DataForSeoProvider implements KeywordMetricsProvider
 		}
 
 		if ($code === DataForSeoStatus::NO_RESULTS) {
-			return new VolumeBatch([], self::cost($task));
+			return new VolumeBatch([], DataForSeoResponse::cost($task));
 		}
 
 		if ($code !== DataForSeoStatus::OK) {
-			throw self::taskError($task);
+			throw DataForSeoResponse::taskError($task);
 		}
 
-		return new VolumeBatch(self::parseVolume($task['result'] ?? null), self::cost($task));
+		return new VolumeBatch(self::parseVolume($task['result'] ?? null), DataForSeoResponse::cost($task));
 	}
 
 	public function difficulty(Market $market, array $keywords): DifficultyBatch
 	{
 		$this->assertBatch($keywords);
-		$task = self::singleTask($this->client->post(self::DIFFICULTY_LIVE, [[
+		$task = DataForSeoResponse::singleTask($this->client->post(self::DIFFICULTY_LIVE, [[
 			'keywords' => array_values($keywords),
 			'location_code' => $market->locationCode,
 			'language_code' => $market->languageCode,
@@ -163,14 +163,14 @@ final class DataForSeoProvider implements KeywordMetricsProvider
 		$code = $task['status_code'];
 
 		if ($code === DataForSeoStatus::NO_RESULTS) {
-			return new DifficultyBatch([], self::cost($task));
+			return new DifficultyBatch([], DataForSeoResponse::cost($task));
 		}
 
 		if ($code !== DataForSeoStatus::OK) {
-			throw self::taskError($task);
+			throw DataForSeoResponse::taskError($task);
 		}
 
-		return new DifficultyBatch(self::parseDifficulty($task['result'] ?? null), self::cost($task));
+		return new DifficultyBatch(self::parseDifficulty($task['result'] ?? null), DataForSeoResponse::cost($task));
 	}
 
 	/**
@@ -180,10 +180,10 @@ final class DataForSeoProvider implements KeywordMetricsProvider
 	 */
 	public function locations(): array
 	{
-		$task = self::singleTask($this->client->get(self::LOCATIONS));
+		$task = DataForSeoResponse::singleTask($this->client->get(self::LOCATIONS));
 
 		if ($task['status_code'] !== DataForSeoStatus::OK) {
-			throw self::taskError($task);
+			throw DataForSeoResponse::taskError($task);
 		}
 
 		$locations = [];
@@ -238,13 +238,13 @@ final class DataForSeoProvider implements KeywordMetricsProvider
 
 			$items[] = new VolumeMetrics(
 				keyword: $row['keyword'],
-				searchVolume: self::nonNegativeInt($row['search_volume'] ?? null),
-				cpc: self::nonNegativeFloat($row['cpc'] ?? null),
+				searchVolume: DataForSeoResponse::nonNegativeInt($row['search_volume'] ?? null),
+				cpc: DataForSeoResponse::nonNegativeFloat($row['cpc'] ?? null),
 				competitionLevel: in_array($level, self::COMPETITION_LEVELS, true) ? $level : null,
-				competitionIndex: self::bounded($row['competition_index'] ?? null, 0, 100),
-				lowTopOfPageBid: self::nonNegativeFloat($row['low_top_of_page_bid'] ?? null),
-				highTopOfPageBid: self::nonNegativeFloat($row['high_top_of_page_bid'] ?? null),
-				monthly: self::parseMonthly($row['monthly_searches'] ?? null),
+				competitionIndex: DataForSeoResponse::bounded($row['competition_index'] ?? null, 0, 100),
+				lowTopOfPageBid: DataForSeoResponse::nonNegativeFloat($row['low_top_of_page_bid'] ?? null),
+				highTopOfPageBid: DataForSeoResponse::nonNegativeFloat($row['high_top_of_page_bid'] ?? null),
+				monthly: DataForSeoResponse::monthly($row['monthly_searches'] ?? null),
 			);
 		}
 
@@ -273,77 +273,12 @@ final class DataForSeoProvider implements KeywordMetricsProvider
 
 			foreach (is_array($block['items'] ?? null) ? $block['items'] : [] as $row) {
 				if (is_array($row) && is_string($row['keyword'] ?? null) && $row['keyword'] !== '') {
-					$items[] = ['keyword' => $row['keyword'], 'difficulty' => self::bounded($row['keyword_difficulty'] ?? null, 0, 100)];
+					$items[] = ['keyword' => $row['keyword'], 'difficulty' => DataForSeoResponse::bounded($row['keyword_difficulty'] ?? null, 0, 100)];
 				}
 			}
 		}
 
 		return $items;
-	}
-
-	/**
-	 * @return list<array{month: string, search_volume: ?int}>
-	 */
-	private static function parseMonthly(mixed $monthly): array
-	{
-		if (! is_array($monthly)) {
-			return [];
-		}
-
-		$months = [];
-
-		foreach ($monthly as $row) {
-			$year = is_array($row) ? self::bounded($row['year'] ?? null, 2000, 2100) : null;
-			$month = is_array($row) ? self::bounded($row['month'] ?? null, 1, 12) : null;
-
-			if ($year !== null && $month !== null) {
-				$months[sprintf('%04d-%02d-01', $year, $month)] = self::nonNegativeInt($row['search_volume'] ?? null);
-			}
-		}
-
-		ksort($months);
-
-		return array_map(
-			static fn (string $date, ?int $volume): array => ['month' => $date, 'search_volume' => $volume],
-			array_keys($months),
-			array_values($months),
-		);
-	}
-
-	/**
-	 * Wysyłamy jedno zadanie na żądanie — odpowiedź musi zawierać dokładnie jedno zadanie ze statusem.
-	 *
-	 * @param array<string, mixed> $envelope
-	 * @return array<string, mixed> zadanie z całkowitym `status_code`
-	 */
-	private static function singleTask(array $envelope): array
-	{
-		$tasks = $envelope['tasks'];
-		$task = is_array($tasks) && count($tasks) === 1 ? reset($tasks) : null;
-
-		if (! is_array($task) || ! is_int($task['status_code'] ?? null)) {
-			throw new ProviderException(ProviderErrorCategory::MalformedResponse, 'DataForSEO response does not contain exactly one task.');
-		}
-
-		return $task;
-	}
-
-	/**
-	 * @param array<string, mixed> $task
-	 */
-	private static function taskError(array $task): ProviderException
-	{
-		$code = (int) $task['status_code'];
-
-		return new ProviderException(DataForSeoStatus::category($code, true), DataForSeoClient::message($code, $task['status_message'] ?? null), $code);
-	}
-
-	/**
-	 * @param array<string, mixed> $task
-	 */
-	private static function cost(array $task): ?float
-	{
-		return self::nonNegativeFloat($task['cost'] ?? null);
 	}
 
 	/**
@@ -359,28 +294,5 @@ final class DataForSeoProvider implements KeywordMetricsProvider
 	private static function validTaskId(string $id): bool
 	{
 		return preg_match('/^[A-Za-z0-9\-]{8,64}$/', $id) === 1;
-	}
-
-	private static function nonNegativeInt(mixed $value): ?int
-	{
-		if (is_float($value) && floor($value) === $value) {
-			$value = (int) $value;
-		}
-
-		return is_int($value) && $value >= 0 && $value <= 4294967295 ? $value : null;
-	}
-
-	private static function nonNegativeFloat(mixed $value): ?float
-	{
-		return (is_int($value) || is_float($value)) && is_finite((float) $value) && $value >= 0 && $value < 100000000 ? (float) $value : null;
-	}
-
-	private static function bounded(mixed $value, int $min, int $max): ?int
-	{
-		if (is_float($value) && is_finite($value)) {
-			$value = (int) round($value);
-		}
-
-		return is_int($value) && $value >= $min && $value <= $max ? $value : null;
 	}
 }
