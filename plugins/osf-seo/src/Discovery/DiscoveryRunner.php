@@ -105,6 +105,13 @@ final class DiscoveryRunner
 				}
 
 				$run = $this->runs->findById($run->id) ?? $run;
+
+				if (! $run->isActive()) {
+					// Anulowany w trakcie żądania: bez kolejnych stron, niedokończone seedy też anulowane.
+					$this->runs->cancelPendingSeeds($run->id);
+
+					break;
+				}
 			}
 
 			$status = $this->runs->finishIfDone($run->id);

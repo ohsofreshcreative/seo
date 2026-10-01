@@ -183,11 +183,13 @@ final class DiscoveryRunRepository
 	 */
 	public function nextSeed(int $runId): ?array
 	{
+		// Tylko seed aktywnego przebiegu — anulowanie w trakcie żądania nie może dopuścić kolejnej płatnej strony.
 		return $this->db->fetchRow(
-			"SELECT LOWER(HEX(seed_key)) AS seed_hex, seed, source, position, status, pages_done, next_offset, items, candidates_new, cost, attempts
-			FROM `{$this->seedsTable()}`
-			WHERE run_id = %d AND status = 'pending' AND (next_attempt_at IS NULL OR next_attempt_at <= %s)
-			ORDER BY position LIMIT 1",
+			"SELECT LOWER(HEX(s.seed_key)) AS seed_hex, s.seed, s.source, s.position, s.status, s.pages_done, s.next_offset, s.items, s.candidates_new, s.cost, s.attempts
+			FROM `{$this->seedsTable()}` s
+			JOIN `{$this->table()}` r ON r.id = s.run_id AND r.status IN ('queued', 'running')
+			WHERE s.run_id = %d AND s.status = 'pending' AND (s.next_attempt_at IS NULL OR s.next_attempt_at <= %s)
+			ORDER BY s.position LIMIT 1",
 			[$runId, $this->now()],
 		);
 	}
@@ -320,11 +322,17 @@ final class DiscoveryRunRepository
 			);
 
 			if ($updated > 0) {
-				$this->db->execute("UPDATE `{$this->seedsTable()}` SET status = 'cancelled', finished_at = %s WHERE run_id = %d AND status = 'pending'", [$this->now(), $runId]);
+				$this->cancelPendingSeeds($runId);
 			}
 
 			return $updated > 0;
 		});
+	}
+
+	/** Seedy oczekujące przebiegu (także te, które wróciły do kolejki po żądaniu trwającym w chwili anulowania). */
+	public function cancelPendingSeeds(int $runId): void
+	{
+		$this->db->execute("UPDATE `{$this->seedsTable()}` SET status = 'cancelled', finished_at = %s WHERE run_id = %d AND status = 'pending'", [$this->now(), $runId]);
 	}
 
 	/**

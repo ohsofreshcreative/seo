@@ -199,6 +199,43 @@ final class DiscoveryCostControlsTest extends DiscoveryTestCase
 		self::assertSame(DiscoveryRun::FAILED, $this->runs->findById($interrupted->run->id)->status);
 	}
 
+	public function test_run_cancelled_during_a_request_sends_no_further_page(): void
+	{
+		putenv(DiscoveryConfig::MAX_CANDIDATES . '=5000');
+		$context = $this->projectWithKeywords();
+		$this->mockSuggestions('woocommerce', array_map(static fn (int $i): array => DataForSeoFakes::labsKeyword("woocommerce {$i}", 2000 - $i), range(1, 1000)), 1300);
+		$this->mockSuggestions('woocommerce', array_map(static fn (int $i): array => DataForSeoFakes::labsKeyword("woocommerce {$i}", 2000 - $i), range(1001, 1300)), 1300, 0.0, 1000);
+		$result = $this->discovery->start($context, $this->request('woocommerce', ['method' => 'suggestions', 'max_candidates' => '2500']), DiscoveryService::TRIGGER_CLI);
+		self::assertSame(3, $result->plan->requests(), 'Limit 2500 = do 3 stron po 1000.');
+
+		// Anulowanie w panelu, gdy pierwsza strona seeda jest właśnie pobierana.
+		$cancelled = false;
+		$cancel = function (mixed $pre) use ($context, $result, &$cancelled): mixed {
+			if (! $cancelled) {
+				$cancelled = $this->discovery->cancel($context, $result->run->publicId);
+			}
+
+			return $pre;
+		};
+		add_filter('pre_http_request', $cancel, 1);
+
+		try {
+			$this->discovery->execute($context, $result->run);
+		} finally {
+			remove_filter('pre_http_request', $cancel, 1);
+		}
+
+		self::assertTrue($cancelled);
+		self::assertCount(1, $this->discoveryBodies(), 'Opłacona strona zostaje zapisana, ale kolejna nie jest wysyłana.');
+		$run = $this->runs->findById($result->run->id);
+		self::assertSame([DiscoveryRun::CANCELLED, 1, 1000], [$run->status, $run->tasksDone, $run->candidatesNew]);
+		self::assertSame(['cancelled'], array_column($this->runs->seeds($run->id), 'status'));
+
+		add_filter('wp_doing_cron', '__return_true');
+		$this->discovery->runBackground(20.0, true);
+		self::assertCount(1, $this->discoveryBodies(), 'Tło też nie wznawia anulowanego przebiegu.');
+	}
+
 	public function test_market_data_status_shows_discovery_costs_within_shared_usage(): void
 	{
 		$context = $this->projectWithKeywords();
