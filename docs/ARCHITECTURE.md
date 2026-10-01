@@ -303,6 +303,10 @@ Wymiar `country` w API GSC ma kody 3-literowe (`pol`) — mapowanie w kliencie G
 
 `osf_gsc_page_daily` (`[date, page]`, landing pages) powstanie w MVP 2 nową migracją.
 
+**`osf_gsc_import_staging`** (od schematu 3) — tabela pośrednia importu: `run_id` BIGINT (= `sync_runs.id`), `date`,
+`keyword_id`, `page_id` (0 = brak wymiaru), metryki; PK (`run_id`, `date`, `keyword_id`, `page_id`). Pusta poza
+trwającymi importami (sekcja 8.2).
+
 **`osf_sync_state`** — PK(`project_id`, `dataset` VARCHAR(32) ascii); `status` ENUM(idle, queued, running, failed);
 `newest_date`; `oldest_date` (kursor backfillu); `consecutive_failures`; `last_success_at`;
 `last_attempt_at`; `last_error`; `updated_at`.
@@ -478,6 +482,47 @@ po 401 jedno odświeżenie tokenu; timeout HTTP 60 s):
   czekania, decyzję podejmuje kolejka. `invalid_grant` → `ReauthorizationRequired` (połączenie `needs_reauth`, sekcja 7).
 - Logi: kategoria, status HTTP, powód Google — bez nagłówków (`Authorization`), treści żądań i odpowiedzi.
 
+### 8.2 Import (STEP 8)
+
+`plugins/osf-seo/src/Gsc/GscImporter.php` — jeden import = projekt × dataset × okno dat:
+
+| Dataset | Wymiary | Tabela | Uwagi |
+|---|---|---|---|
+| `site` | `[date]` | `gsc_site_daily` (`device = 0` = wszystkie urządzenia) | prawdziwe sumy property, z zapytaniami zanonimizowanymi |
+| `query` | `[date, query]` | `gsc_query_daily` | frazy widoczne w GSC |
+| `query_page` | `[date, query, page]` | `gsc_query_page_daily` | agregacja Google per strona (`byPage`) |
+
+`gsc_page_daily` (`[date, page]`) — MVP 2 (schemat jej nie ma).
+
+1. **Pobranie**: `GscClient::pages()` (rowLimit 25 000, `startRow`), każda strona po walidacji → słownik
+   fraz/URL-i → wsadowy INSERT do `osf_gsc_import_staging` (klucz `run_id`; PHP trzyma najwyżej jedną stronę).
+   Zduplikowany klucz (data, fraza, strona) w odpowiedziach = niestabilna paginacja → błąd `pagination` (ponawiany).
+2. **Zatwierdzenie** — jedna transakcja: `SELECT … FOR UPDATE` wiersza projektu; kontrola, że property zadania =
+   `projects.gsc_property` = `projects.gsc_data_property` (inaczej `ImportAborted`, zadanie anulowane);
+   `DELETE` zakresu dat projektu w tabeli faktów; `INSERT … SELECT` ze stagingu; `first_seen`/`last_seen` słowników
+   z zatwierdzonych danych. Błąd Google/sieci/walidacji/bazy przed `COMMIT` zostawia poprzednie dane (test z triggerem
+   `SIGNAL` w trakcie `INSERT` potwierdza wycofanie `DELETE`).
+3. **Sprzątanie**: wiersze stagingu usuwane po sukcesie i po błędzie (osierocone — zadanie w STEP 9).
+
+Import jest idempotentny: ten sam zakres zaimportowany ponownie daje identyczne wiersze (zamiana zakresu),
+dane poza zakresem i innych projektów są nietknięte.
+
+**Normalizacja** (`Gsc\Dictionary`):
+- fraza = dokładny ciąg z GSC (bez zmiany wielkości liter, przycinania, normalizacji Unicode); tożsamość =
+  MD5 dokładnych bajtów UTF-8 w `keyword_hash` (UNIQUE z `project_id`) — `Buty` i `buty` to dwie frazy, jak w GSC,
+- URL = dokładny adres z GSC (`url_hash`), `path` (ścieżka + zapytanie) tylko do wyświetlania,
+- tekst dłuższy niż kolumna (500 / 2048 znaków) jest skracany w kolumnie, skrót liczony z pełnej wartości,
+- najpierw `SELECT` istniejących (paczki po 1000), `INSERT` tylko brakujących — `INSERT … ON DUPLICATE KEY` dla
+  istniejących rezerwowałby przy każdym imporcie wartości AUTO_INCREMENT (ryzyko wyczerpania INT UNSIGNED).
+
+**Pozycja**: `position_sum = position × impressions`; wiersz z 0 wyświetleń → `position_sum = 0` (nie wpływa na
+średnie; GSC w praktyce nie zwraca takich wierszy). Średnia = `SUM(position_sum) / SUM(impressions)`.
+
+**Wsady**: `Database\BulkInsert` — 1000 wierszy i maks. 512 KB SQL na zapytanie (wartości przez `$wpdb->prepare`).
+Pomiar na MariaDB 10.11 (50 000 wierszy stagingu): 100 → ~79 tys. wierszy/s, 500 → ~112 tys., **1000 → ~123 tys.**
+(ok. 48 KB/zapytanie), 5000 → ~129 tys. — powyżej 1000 zysk znikomy, a rośnie rozmiar pakietu (typowy
+`max_allowed_packet` na hostingu 16 MB, minimalny spotykany 1–4 MB). Słownik: 25 000 nowych fraz ~0,6 s, istniejących ~0,2 s.
+
 **Probe** (`GscProbe`, `wp osf-seo gsc:probe --project=<public_id>`): jedno zapytanie, domyślnie `[date]`, 7 dni
 kończących się 3 dni przed „dziś” w PT, `rowLimit` 10 (maks. 1000), `dataState=final`; raport: property, uprawnienia,
 zakres dat, liczba wierszy, kliknięcia, wyświetlenia, CTR (z sum), średnia pozycja ważona wyświetleniami, typ agregacji,
@@ -649,7 +694,7 @@ Warianty docelowe:
 | 6 | Google OAuth: PKCE/state, szyfrowanie tokenów, callback, połączenia | ✅ STEP 5 (Google mockowany; prawdziwy OAuth — po konfiguracji) |
 | 7 | Wybór property GSC | ✅ STEP 6 (lista, sugestia, reset przy zmianie property, CLI) |
 | 8 | Klient GSC API: paginacja, błędy, backoff, `wp osf-seo gsc:probe` | ✅ STEP 7 (Google mockowany w testach; prawdziwe API — probe na stagingu) |
-| 9 | Importery `site_daily`, `query_daily`, normalizacja, zamiana zakresu w transakcji | — |
+| 9 | Importery `site_daily`, `query_daily`, normalizacja, zamiana zakresu w transakcji | ✅ STEP 8 (+ `query_page_daily`; staging, atomowa zamiana zakresu) |
 | 10 | Orkiestracja synchronizacji (Action Scheduler), postęp, „Synchronizuj teraz”/„Ponów” | — |
 | 11 | `query_page_daily` + `visibility_daily`; pomiar skali | — |
 | 12 | `AnalyticsService` (porównania, tabela fraz, TOP N, serie) + seeder danych testowych | — |

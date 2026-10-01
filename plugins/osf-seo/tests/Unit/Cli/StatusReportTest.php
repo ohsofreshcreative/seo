@@ -63,7 +63,7 @@ final class StatusReportTest extends TestCase
 			array_column($report['rows'], 'check'),
 		);
 		self::assertSame('1 (latest 1)', self::row($report, 'db_schema_version')['value']);
-		self::assertSame('11/11 tables match the schema', self::row($report, 'db_tables')['value']);
+		self::assertSame(sprintf('%1$d/%1$d tables match the schema', count(\OsfSeo\Database\Schema::tables())), self::row($report, 'db_tables')['value']);
 		self::assertSame('yes', self::row($report, 'plugin_active')['value']);
 		self::assertSame('8.2.20 (min ' . Plugin::MIN_PHP . ')', self::row($report, 'php_version')['value']);
 	}

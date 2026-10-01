@@ -79,6 +79,47 @@ abstract class GscTestCase extends GoogleTestCase
 		$db->insert($db->table('gsc_query_daily'), ['project_id' => $projectId, 'date' => $date, 'keyword_id' => $keywordId, 'clicks' => 5, 'impressions' => 50, 'position_sum' => 150.0]);
 	}
 
+	protected static function queryUrl(string $siteUrl = 'sc-domain:example.pl'): string
+	{
+		return 'https://www.googleapis.com/webmasters/v3/sites/' . rawurlencode($siteUrl) . '/searchAnalytics/query';
+	}
+
+	/**
+	 * Atrapa searchAnalytics.query: $rows(body) zwraca pełną listę wierszy dla żądania,
+	 * atrapa tnie ją według startRow/rowLimit (jak Google). Zwraca licznik żądań.
+	 *
+	 * @param \Closure(array<string, mixed>): list<array<string, mixed>> $rows
+	 */
+	protected function mockSearchAnalytics(\Closure $rows, string $siteUrl = 'sc-domain:example.pl'): void
+	{
+		$this->google->always(self::queryUrl($siteUrl), static function (array $request) use ($rows): array {
+			$body = json_decode($request['body'], true);
+			$page = array_slice($rows($body), (int) $body['startRow'], (int) $body['rowLimit']);
+
+			return ['status' => 200, 'json' => $page === [] ? ['responseAggregationType' => 'byProperty'] : ['rows' => $page, 'responseAggregationType' => 'byProperty']];
+		});
+	}
+
+	/**
+	 * Wiersz API: klucze + metryki.
+	 *
+	 * @param list<string> $keys
+	 * @return array<string, mixed>
+	 */
+	protected static function apiRow(array $keys, int $clicks, int $impressions, float $position): array
+	{
+		return ['keys' => $keys, 'clicks' => $clicks, 'impressions' => $impressions, 'ctr' => $impressions > 0 ? $clicks / $impressions : 0, 'position' => $position];
+	}
+
+	/** Projekt gotowy do importu: połączenie + wybrana property sc-domain:example.pl. */
+	protected function readyProject(string $domain = 'example.pl'): ProjectContext
+	{
+		$context = $this->connectedProject($domain);
+		$this->mockSites([['sc-domain:' . $domain, 'siteOwner']]);
+
+		return $this->properties->select($context, 'sc-domain:' . $domain);
+	}
+
 	protected static function rowCount(string $table, int $projectId): int
 	{
 		$db = self::db();

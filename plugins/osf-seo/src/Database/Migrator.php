@@ -7,6 +7,7 @@ namespace OsfSeo\Database;
 use InvalidArgumentException;
 use OsfSeo\Database\Migrations\M0001CreateCoreTables;
 use OsfSeo\Database\Migrations\M0002AddGscDataProperty;
+use OsfSeo\Database\Migrations\M0003CreateImportStaging;
 use OsfSeo\Support\Logger;
 
 /**
@@ -45,6 +46,7 @@ final class Migrator
 		return [
 			new M0001CreateCoreTables(),
 			new M0002AddGscDataProperty(),
+			new M0003CreateImportStaging(),
 		];
 	}
 

@@ -27,7 +27,9 @@ use OsfSeo\Google\OAuthStateStore;
 use OsfSeo\Google\TokenVault;
 use OsfSeo\Gsc\GscCalendar;
 use OsfSeo\Gsc\GscClient;
+use OsfSeo\Gsc\Dictionary;
 use OsfSeo\Gsc\GscDataStore;
+use OsfSeo\Gsc\GscImporter;
 use OsfSeo\Gsc\GscProbe;
 use OsfSeo\Gsc\PropertyService;
 use OsfSeo\Http\HttpTransport;
@@ -45,7 +47,7 @@ use OsfSeo\Support\SystemSleeper;
 final class Plugin
 {
 	/** Musi być zgodna z nagłówkiem `Version` w osf-seo.php (pilnuje tego test). */
-	public const VERSION = '0.7.0';
+	public const VERSION = '0.8.0';
 
 	public const MIN_PHP = '8.2';
 
@@ -158,6 +160,14 @@ final class Plugin
 			$c->get(GscCalendar::class),
 		));
 		$container->singleton(GscDataStore::class, static fn (Container $c): GscDataStore => new GscDataStore($c->get(Connection::class)));
+		$container->singleton(Dictionary::class, static fn (Container $c): Dictionary => new Dictionary($c->get(Connection::class), $c->get(Clock::class)));
+		$container->singleton(GscImporter::class, static fn (Container $c): GscImporter => new GscImporter(
+			$c->get(GscClient::class),
+			$c->get(Connection::class),
+			$c->get(ProjectRepository::class),
+			$c->get(Dictionary::class),
+			$c->get(Logger::class),
+		));
 		$container->singleton(PropertyService::class, static fn (Container $c): PropertyService => new PropertyService(
 			$c->get(GscClient::class),
 			$c->get(ConnectionRepository::class),

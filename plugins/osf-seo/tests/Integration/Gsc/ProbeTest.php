@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace OsfSeo\Tests\Integration\Gsc;
 
 use OsfSeo\Auth\AccessDenied;
-use OsfSeo\Auth\ProjectContext;
 use OsfSeo\Gsc\GscApiException;
 use OsfSeo\Gsc\GscCalendar;
 use OsfSeo\Gsc\GscNotReady;
@@ -23,14 +22,6 @@ final class ProbeTest extends GscTestCase
 		parent::setUp();
 
 		$this->probe = new GscProbe($this->gsc, $this->connections, $this->projects, new GscCalendar($this->clock));
-	}
-
-	private function readyProject(): ProjectContext
-	{
-		$context = $this->connectedProject('example.pl');
-		$this->mockSites([['sc-domain:example.pl', 'siteOwner']]);
-
-		return $this->properties->select($context, 'sc-domain:example.pl');
 	}
 
 	public function test_probe_fetches_small_sample_and_aggregates_correctly_without_writing(): void

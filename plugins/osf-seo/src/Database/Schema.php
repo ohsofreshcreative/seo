@@ -140,6 +140,17 @@ final class Schema
 					'project_page_date_keyword' => ['project_id', 'page_id', 'date', 'keyword_id'],
 				],
 			],
+			'gsc_import_staging' => [
+				'columns' => [
+					'run_id' => 'bigint unsigned',
+					'date' => 'date',
+					'keyword_id' => 'int unsigned',
+					'page_id' => 'int unsigned',
+				] + $metrics,
+				'primary' => ['run_id', 'date', 'keyword_id', 'page_id'],
+				'unique' => [],
+				'indexes' => [],
+			],
 			'visibility_daily' => [
 				'columns' => [
 					'project_id' => 'int unsigned',
