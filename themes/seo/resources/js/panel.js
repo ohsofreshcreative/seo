@@ -44,5 +44,23 @@ Alpine.data('syncStatus', (url, initial) => ({
   },
 }));
 
+// Wykres dashboardu — Chart.js ładowany osobnym plikiem tylko tam, gdzie jest wykres.
+Alpine.data('trafficChart', () => ({
+  metric: 'clicks',
+  chart: null,
+
+  async init() {
+    const { renderChart } = await import('./panel/chart.js');
+    this.chart = renderChart(this.$refs.canvas, this.metric);
+  },
+
+  async show(metric) {
+    this.metric = metric;
+    this.chart?.destroy();
+    const { renderChart } = await import('./panel/chart.js');
+    this.chart = renderChart(this.$refs.canvas, metric);
+  },
+}));
+
 window.Alpine = Alpine;
 Alpine.start();

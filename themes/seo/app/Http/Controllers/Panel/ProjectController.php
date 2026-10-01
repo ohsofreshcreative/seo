@@ -7,11 +7,14 @@ use App\Panel\Flash;
 use App\Panel\PanelResponse;
 use App\Panel\PanelUrl;
 use Illuminate\Http\Request;
+use OsfSeo\Analytics\OverviewReport;
+use OsfSeo\Analytics\Period;
 use OsfSeo\Auth\AccessDenied;
 use OsfSeo\Auth\ProjectContext;
 use OsfSeo\Projects\ProjectService;
 use OsfSeo\Projects\ProjectStatus;
 use OsfSeo\Support\ValidationException;
+use OsfSeo\Sync\SyncService;
 use Symfony\Component\HttpFoundation\Response;
 
 /**
@@ -60,13 +63,21 @@ final class ProjectController
 		return redirect()->to(PanelUrl::project($context->publicId()));
 	}
 
+	/**
+	 * Przegląd projektu: dashboard z danych GSC (plugin: OverviewReport), a bez danych — stan połączenia/synchronizacji.
+	 */
 	public function show(Request $request): Response
 	{
 		$context = $this->context($request);
+		$project = $context->project();
+		$days = Period::days($request->query('days'));
 
 		return response()->view('panel.projects.show', [
-			'project' => $context->project(),
+			'project' => $project,
 			'canManageProjects' => $context->can('osf_seo_manage_projects'),
+			'overview' => $project->gscProperty !== null ? osf_seo()->get(OverviewReport::class)->overview($context, $days) : null,
+			'sync' => $project->gscProperty !== null ? osf_seo()->get(SyncService::class)->status($context) : null,
+			'days' => $days,
 		]);
 	}
 

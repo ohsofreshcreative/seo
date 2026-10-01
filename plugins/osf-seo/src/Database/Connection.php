@@ -184,6 +184,12 @@ final class Connection
 		return 'osf_seo_' . $name . '_' . substr(md5($this->databaseName() . '|' . $this->prefix()), 0, 12);
 	}
 
+	/** Escapowanie `%` i `_` w wartości LIKE (wildcardy dokleja wywołujący). */
+	public function escapeLike(string $value): string
+	{
+		return $this->wpdb->esc_like($value);
+	}
+
 	/**
 	 * Placeholdery `%s` dla listy wartości, np. do `IN (...)`.
 	 *

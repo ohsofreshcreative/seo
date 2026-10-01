@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace OsfSeo;
 
+use OsfSeo\Analytics\KeywordReport;
+use OsfSeo\Analytics\OverviewReport;
+use OsfSeo\Analytics\ReportCache;
 use OsfSeo\Auth\LoginThrottle;
 use OsfSeo\Auth\ProjectContext;
 use OsfSeo\Auth\ProjectGuard;
@@ -57,7 +60,7 @@ use OsfSeo\Support\SystemSleeper;
 final class Plugin
 {
 	/** Musi być zgodna z nagłówkiem `Version` w osf-seo.php (pilnuje tego test). */
-	public const VERSION = '0.9.0';
+	public const VERSION = '0.10.0';
 
 	public const MIN_PHP = '8.2';
 
@@ -193,6 +196,9 @@ final class Plugin
 
 			return $service;
 		});
+
+		$container->singleton(KeywordReport::class, static fn (Container $c): KeywordReport => new KeywordReport($c->get(Connection::class), $c->get(Config::class)));
+		$container->singleton(OverviewReport::class, static fn (Container $c): OverviewReport => new OverviewReport($c->get(Connection::class), $c->get(KeywordReport::class), new ReportCache()));
 
 		$container->singleton(SyncConfig::class, static fn (Container $c): SyncConfig => new SyncConfig($c->get(Config::class)));
 		$container->singleton(SyncStateRepository::class, static fn (Container $c): SyncStateRepository => new SyncStateRepository($c->get(Connection::class), $c->get(Clock::class)));
