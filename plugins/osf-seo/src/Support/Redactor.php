@@ -28,6 +28,8 @@ final class Redactor
 		'api_key',
 		'apikey',
 		'authorization',
+		'basic_auth',
+		'credentials',
 		'code',
 		'code_verifier',
 		'cookie',
@@ -52,6 +54,8 @@ final class Redactor
 		'/(?<![A-Za-z0-9\/])1\/\/[A-Za-z0-9._\-]{16,}/',
 		'/\bGOCSPX-[A-Za-z0-9_\-]+/',
 		'/\bBearer\s+[A-Za-z0-9._~+\/\-]+=*/i',
+		// Basic Auth (DataForSEO: Base64 z login:hasło).
+		'/\bBasic\s+[A-Za-z0-9+\/]{6,}=*/i',
 		'/\beyJ[A-Za-z0-9_\-]{8,}\.[A-Za-z0-9_\-]{8,}\.[A-Za-z0-9_\-]{8,}/',
 	];
 
