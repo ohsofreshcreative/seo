@@ -16,6 +16,8 @@ final class KeywordPage
 		public readonly array $rows,
 		/** Liczba fraz spełniających filtry (wszystkie strony). */
 		public readonly int $total,
+		/** Rynek danych rynkowych projektu (null — rynek nieobsługiwany lub brak dostawcy). */
+		public readonly ?\OsfSeo\Market\Market $market = null,
 	) {
 	}
 

@@ -6,6 +6,10 @@ namespace OsfSeo\Analytics;
 
 use OsfSeo\Auth\ProjectContext;
 use OsfSeo\Database\Connection;
+use OsfSeo\Market\KeywordMetricsProvider;
+use OsfSeo\Market\Market;
+use OsfSeo\Market\MarketMetrics;
+use OsfSeo\Market\MarketMetricsRepository;
 use OsfSeo\Support\Config;
 
 /**
@@ -17,6 +21,10 @@ use OsfSeo\Support\Config;
  * Metryki: CTR = SUM(clicks) / SUM(impressions), średnia pozycja (GSC) = SUM(position_sum) / SUM(impressions),
  * zmiana pozycji = poprzednia − obecna (dodatnia = wzrost). Wzrosty/spadki tylko dla fraz z co najmniej
  * MIN_IMPRESSIONS wyświetleń w obu okresach (bez szumu fraz z 1–2 wyświetleniami).
+ *
+ * Dane rynkowe (wolumen, trudność SEO — STEP 12) są dołączane po agregacji: LEFT JOIN `market_keywords` po kluczu
+ * rynkowym frazy (`keywords.market_key`) i rynku projektu (eq_ref po UNIQUE) — bez N+1 i bez zmiany metryk GSC.
+ * Brak danych rynkowych = NULL (UI: „—”), nigdy 0.
  */
 final class KeywordReport
 {
@@ -34,7 +42,17 @@ final class KeywordReport
 	public function __construct(
 		private readonly Connection $db,
 		private readonly Config $config = new Config(),
+		private readonly ?KeywordMetricsProvider $markets = null,
+		private readonly ?MarketMetricsRepository $marketMetrics = null,
 	) {
+	}
+
+	/** Rynek danych rynkowych projektu (null — brak dostawcy albo rynek nieobsługiwany). */
+	public function market(ProjectContext $context): ?Market
+	{
+		$project = $context->project();
+
+		return $this->markets?->resolveMarket($project->country, $project->language);
 	}
 
 	public function moversMinImpressions(): int
@@ -66,6 +84,7 @@ final class KeywordReport
 		}
 
 		$projectId = $context->projectId();
+		$market = $this->market($context);
 		$curStart = $period->current->start;
 		$params = [$curStart, $curStart, $curStart, $curStart, $curStart, $curStart, $projectId, $period->previous->start, $period->current->end];
 		$where = '';
@@ -103,10 +122,34 @@ final class KeywordReport
 		}
 
 		$params[] = $projectId;
+		$marketColumns = '';
+		$marketJoin = '';
+		$outer = [];
+
+		if ($market !== null) {
+			$marketColumns = ', ' . MarketMetrics::columns('m', 'm_');
+			$marketJoin = "LEFT JOIN `{$this->db->table('market_keywords')}` m
+				ON m.provider = %s AND m.location_code = %d AND m.language_code = %s AND m.keyword_key = k.market_key";
+			array_push($params, $market->provider, $market->locationCode, $market->languageCode);
+
+			if ($filters->minVolume !== null) {
+				$outer[] = 'm.search_volume >= %d';
+				$params[] = $filters->minVolume;
+			}
+
+			if ($filters->maxDifficulty !== null) {
+				$outer[] = 'm.keyword_difficulty <= %d';
+				$params[] = $filters->maxDifficulty;
+			}
+		} elseif ($filters->hasMarketFilters()) {
+			// Filtr wymaga znanej wartości — bez danych rynkowych żadna fraza go nie spełnia.
+			$outer[] = '1 = 0';
+		}
+
 		$params[] = $filters->perPage;
 		$params[] = ($filters->page - 1) * $filters->perPage;
 
-		$sql = "SELECT a.*, k.keyword, COUNT(*) OVER () AS total_rows
+		$sql = "SELECT a.*, k.keyword{$marketColumns}, COUNT(*) OVER () AS total_rows
 			FROM (
 				SELECT q.keyword_id, " . self::PERIOD_COLUMNS . "
 				FROM `{$this->db->table('gsc_query_daily')}` q
@@ -115,7 +158,9 @@ final class KeywordReport
 				HAVING " . implode(' AND ', $having) . "
 			) a
 			JOIN `{$this->db->table('keywords')}` k ON k.id = a.keyword_id AND k.project_id = %d
-			ORDER BY " . self::orderBy($filters) . '
+			{$marketJoin}
+			" . ($outer === [] ? '' : 'WHERE ' . implode(' AND ', $outer)) . '
+			ORDER BY ' . self::orderBy($filters, $market !== null) . '
 			LIMIT %d OFFSET %d';
 
 		$records = $this->db->fetchAll($sql, $params);
@@ -128,8 +173,35 @@ final class KeywordReport
 		}
 
 		$this->attachPrimaryPages($projectId, $rows, $period);
+		$this->attachMarketHistory($rows);
 
-		return new KeywordPage($period, $filters, $rows, $total);
+		return new KeywordPage($period, $filters, $rows, $total, $market);
+	}
+
+	/**
+	 * Historia miesięczna wolumenu dla fraz bieżącej strony (jedno zapytanie).
+	 *
+	 * @param list<KeywordRow> $rows
+	 */
+	private function attachMarketHistory(array $rows): void
+	{
+		if ($this->marketMetrics === null) {
+			return;
+		}
+
+		$ids = array_values(array_filter(array_map(static fn (KeywordRow $row): ?int => $row->market?->id, $rows)));
+
+		if ($ids === []) {
+			return;
+		}
+
+		$history = $this->marketMetrics->history($ids);
+
+		foreach ($rows as $row) {
+			if ($row->market !== null) {
+				$row->market->monthly = $history[$row->market->id] ?? [];
+			}
+		}
 	}
 
 	/**
@@ -217,10 +289,12 @@ final class KeywordReport
 	}
 
 	/** ORDER BY wyłącznie z białej listy; NULL (brak porównania) zawsze na końcu; stabilny tie-break. */
-	private static function orderBy(KeywordFilters $filters): string
+	private static function orderBy(KeywordFilters $filters, bool $withMarket = false): string
 	{
 		$direction = $filters->direction === 'asc' ? 'ASC' : 'DESC';
 		$expression = match ($filters->sort) {
+			'volume' => $withMarket ? 'm.search_volume' : 'NULL',
+			'difficulty' => $withMarket ? 'm.keyword_difficulty' : 'NULL',
 			'impressions' => 'a.cur_impr',
 			'impressions_change' => '(CAST(a.cur_impr AS SIGNED) - CAST(a.prev_impr AS SIGNED))',
 			'clicks_change' => '(CAST(a.cur_clicks AS SIGNED) - CAST(a.prev_clicks AS SIGNED))',

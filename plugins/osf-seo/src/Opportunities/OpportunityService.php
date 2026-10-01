@@ -7,6 +7,10 @@ namespace OsfSeo\Opportunities;
 use OsfSeo\Analytics\ReportCache;
 use OsfSeo\Auth\Capabilities;
 use OsfSeo\Auth\ProjectContext;
+use OsfSeo\Market\KeywordMetricsProvider;
+use OsfSeo\Market\MarketKeyword;
+use OsfSeo\Market\MarketMetrics;
+use OsfSeo\Market\MarketMetricsRepository;
 use OsfSeo\Support\DateRange;
 use OsfSeo\Support\Logger;
 use OsfSeo\Support\ValidationException;
@@ -31,7 +35,56 @@ final class OpportunityService
 		private readonly OpportunityDataSource $data,
 		private readonly Logger $logger,
 		private readonly ?ReportCache $cache = null,
+		private readonly ?KeywordMetricsProvider $markets = null,
+		private readonly ?MarketMetricsRepository $marketMetrics = null,
 	) {
+	}
+
+	/**
+	 * Dane rynkowe fraz z dowodów szansy (wolumen, trudność SEO) — wyłącznie do wyświetlenia jako dodatkowy kontekst.
+	 * Wykrywanie, priorytet i pewność szans nie zależą od danych rynkowych (brak, nieaktualne albo awaria dostawcy
+	 * nie zmieniają szansy). Jedno zapytanie po kluczach rynkowych; brak danych — fraza nie występuje w wyniku.
+	 *
+	 * @return array<string, MarketMetrics> fraza z dowodów → metryki
+	 */
+	public function marketMetrics(ProjectContext $context, Opportunity $opportunity): array
+	{
+		$project = $context->project();
+		$market = $this->markets?->resolveMarket($project->country, $project->language);
+
+		if ($market === null || $this->marketMetrics === null) {
+			return [];
+		}
+
+		$keywords = [];
+
+		foreach ((array) ($opportunity->evidence['keywords'] ?? []) as $item) {
+			if (is_array($item) && is_string($item['keyword'] ?? null)) {
+				$keywords[$item['keyword']] = MarketKeyword::key($item['keyword']);
+			}
+		}
+
+		if ($keywords === []) {
+			return [];
+		}
+
+		try {
+			$found = $this->marketMetrics->findByKeys($market, array_values($keywords));
+		} catch (\Throwable $exception) {
+			$this->logger->warning('Market data for opportunity {opportunity} unavailable: {message}', ['opportunity' => $opportunity->publicId, 'message' => $exception->getMessage()]);
+
+			return [];
+		}
+
+		$result = [];
+
+		foreach ($keywords as $keyword => $key) {
+			if (isset($found[bin2hex($key)])) {
+				$result[$keyword] = $found[bin2hex($key)];
+			}
+		}
+
+		return $result;
 	}
 
 	public function list(ProjectContext $context, OpportunityFilters $filters): OpportunityPage
