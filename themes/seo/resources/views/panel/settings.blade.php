@@ -97,6 +97,13 @@
         <dt class="text-slate-500">Wybór fraz</dt>
         <dd class="text-right font-medium text-slate-900">≥ {{ $market['settings']['min_impressions'] }} wyświetleń w {{ $market['settings']['window_days'] }} dni, maks. {{ $market['settings']['sync_limit'] }} fraz na synchronizację</dd>
       </div>
+      <div class="flex justify-between gap-4 py-3">
+        <dt class="text-slate-500">Wyszukiwanie nowych fraz</dt>
+        <dd class="text-right font-medium text-slate-900">
+          maks. {{ $discovery['max_seeds'] }} seedów i {{ \App\Panel\Format::number($discovery['max_candidates']) }} fraz na wyszukiwanie; seed sprawdzony w ciągu {{ $discovery['ttl_days'] }} dni nie jest pobierany ponownie
+          <span class="block text-xs font-normal text-slate-500">widoczność GSC: ostatnie {{ $discovery['window_days'] }} dni, „już widoczna” = średnia pozycja (GSC) ≤ {{ \App\Panel\Format::number($discovery['visible_position']) }}; koszty wliczane do tych samych limitów</span>
+        </dd>
+      </div>
     </dl>
   </x-panel.card>
 @endsection

@@ -11,6 +11,7 @@
 
 use App\Http\Controllers\Panel\AuthController;
 use App\Http\Controllers\Panel\DashboardController;
+use App\Http\Controllers\Panel\DiscoveryController;
 use App\Http\Controllers\Panel\KeywordsController;
 use App\Http\Controllers\Panel\MarketDataController;
 use App\Http\Controllers\Panel\OpportunitiesController;
@@ -64,8 +65,29 @@ Route::middleware([Authenticate::class, VerifyNonce::class])->group(function () 
 		Route::post('/projects/{project}/market-data/sync', [MarketDataController::class, 'sync']);
 	});
 
+	// Nowe frazy (wyszukiwanie fraz, płatne API): podgląd kosztu, uruchomienie, praca nad frazami i wykluczenia tylko
+	// z uprawnieniem, nonce i Origin; identyfikatory przebiegu i frazy = public_id (ULID).
+	Route::middleware(ResolveProject::class . ':osf_seo_manage_keyword_discovery')->group(function () {
+		Route::get('/projects/{project}/discovery/new', [DiscoveryController::class, 'create']);
+		Route::post('/projects/{project}/discovery/preview', [DiscoveryController::class, 'preview']);
+		Route::post('/projects/{project}/discovery/runs', [DiscoveryController::class, 'start']);
+		Route::post('/projects/{project}/discovery/runs/{run}/cancel', [DiscoveryController::class, 'cancel'])
+			->where('run', '[0-9A-Za-z]{26}');
+		Route::post('/projects/{project}/discovery/bulk', [DiscoveryController::class, 'bulk']);
+		Route::post('/projects/{project}/discovery/exclusions', [DiscoveryController::class, 'exclusions']);
+		Route::post('/projects/{project}/discovery/keywords/{candidate}', [DiscoveryController::class, 'update'])
+			->where('candidate', '[0-9A-Za-z]{26}');
+	});
+
 	Route::middleware(ResolveProject::class)->group(function () {
 		Route::get('/projects/{project}', [ProjectController::class, 'show']);
+		Route::get('/projects/{project}/discovery', [DiscoveryController::class, 'index']);
+		Route::get('/projects/{project}/discovery/runs/{run}', [DiscoveryController::class, 'run'])
+			->where('run', '[0-9A-Za-z]{26}');
+		Route::get('/projects/{project}/discovery/runs/{run}/status', [DiscoveryController::class, 'runStatus'])
+			->where('run', '[0-9A-Za-z]{26}');
+		Route::get('/projects/{project}/discovery/keywords/{candidate}', [DiscoveryController::class, 'show'])
+			->where('candidate', '[0-9A-Za-z]{26}');
 		Route::get('/projects/{project}/market-data', [MarketDataController::class, 'show']);
 		Route::get('/projects/{project}/opportunities', [OpportunitiesController::class, 'index']);
 		Route::get('/projects/{project}/opportunities/{opportunity}', [OpportunitiesController::class, 'show'])

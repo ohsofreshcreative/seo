@@ -44,6 +44,42 @@ Alpine.data('syncStatus', (url, initial) => ({
   },
 }));
 
+// Postęp wyszukiwania nowych fraz: odpytywanie co 5 s tylko, gdy przebieg trwa (wykonuje go tło, nie przeglądarka).
+Alpine.data('discoveryProgress', (url, initial) => ({
+  ...initial,
+  timer: null,
+
+  init() {
+    if (this.active) {
+      this.timer = setInterval(() => this.refresh(), 5000);
+    }
+  },
+
+  async refresh() {
+    try {
+      const response = await fetch(url, { headers: { Accept: 'application/json' }, credentials: 'same-origin' });
+
+      if (!response.ok) {
+        return;
+      }
+
+      Object.assign(this, await response.json());
+
+      // Koniec przebiegu — przeładowanie pokazuje nowe frazy i podsumowanie.
+      if (!this.active) {
+        clearInterval(this.timer);
+        window.location.reload();
+      }
+    } catch {
+      // Chwilowy brak sieci — kolejna próba przy następnym odświeżeniu.
+    }
+  },
+
+  destroy() {
+    clearInterval(this.timer);
+  },
+}));
+
 // Wykres dashboardu — Chart.js ładowany osobnym plikiem tylko tam, gdzie jest wykres.
 Alpine.data('trafficChart', () => ({
   metric: 'clicks',
