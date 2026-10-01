@@ -67,15 +67,16 @@ final class ProjectGuard
 	}
 
 	/**
-	 * Dostęp systemowy (bez użytkownika) — wyłącznie z WP-CLI, gdzie operator ma dostęp do serwera.
+	 * Dostęp systemowy (bez użytkownika) — wyłącznie z WP-CLI (operator serwera) i z WP-Cron
+	 * (kolejka synchronizacji). Nigdy w żądaniach panelu/REST.
 	 *
 	 * @throws ProjectNotFound
-	 * @throws AccessDenied poza WP-CLI
+	 * @throws AccessDenied poza WP-CLI i WP-Cron
 	 */
 	public function authorizeSystem(string $publicId): ProjectContext
 	{
-		if (! (defined('WP_CLI') && WP_CLI)) {
-			throw new AccessDenied('System access is only available from WP-CLI.');
+		if (! self::isSystemProcess()) {
+			throw new AccessDenied('System access is only available from WP-CLI or WP-Cron.');
 		}
 
 		$normalized = Ulid::normalize($publicId);
@@ -86,6 +87,11 @@ final class ProjectGuard
 		}
 
 		return self::issue($record['project'], 0, null, true);
+	}
+
+	public static function isSystemProcess(): bool
+	{
+		return (defined('WP_CLI') && WP_CLI) || wp_doing_cron();
 	}
 
 	/**

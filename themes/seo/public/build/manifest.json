@@ -67,7 +67,7 @@
     ]
   },
   "resources/css/panel.css": {
-    "file": "assets/panel-BLbaVnrU.css",
+    "file": "assets/panel-WJxyCNH5.css",
     "name": "panel",
     "names": [
       "panel.css"
@@ -248,7 +248,7 @@
     "isEntry": true
   },
   "resources/js/panel.js": {
-    "file": "assets/panel-BrL_6FQw.js",
+    "file": "assets/panel-BB4VHeGO.js",
     "name": "panel",
     "src": "resources/js/panel.js",
     "isEntry": true,

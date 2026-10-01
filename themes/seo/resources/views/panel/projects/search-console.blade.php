@@ -101,6 +101,10 @@
       @endif
     </x-panel.card>
 
+    @if ($sync)
+      @include('panel.projects.partials.sync-status', ['sync' => $sync, 'project' => $project, 'canManage' => $canManage])
+    @endif
+
     @if ($choosing)
       <x-panel.card>
         <h2 class="text-base font-semibold text-slate-900">Wybierz property Search Console</h2>

@@ -8,6 +8,7 @@ use InvalidArgumentException;
 use OsfSeo\Database\Migrations\M0001CreateCoreTables;
 use OsfSeo\Database\Migrations\M0002AddGscDataProperty;
 use OsfSeo\Database\Migrations\M0003CreateImportStaging;
+use OsfSeo\Database\Migrations\M0004ExtendSyncQueue;
 use OsfSeo\Support\Logger;
 
 /**
@@ -47,6 +48,7 @@ final class Migrator
 			new M0001CreateCoreTables(),
 			new M0002AddGscDataProperty(),
 			new M0003CreateImportStaging(),
+			new M0004ExtendSyncQueue(),
 		];
 	}
 

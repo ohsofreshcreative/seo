@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Panel;
 
 use App\Http\Middleware\Panel\ResolveProject;
 use App\Panel\Flash;
+use App\Panel\Format;
 use App\Panel\PanelResponse;
 use App\Panel\PanelUrl;
 use Illuminate\Http\Request;
@@ -14,8 +15,11 @@ use OsfSeo\Google\ConnectionRepository;
 use OsfSeo\Google\GoogleConfig;
 use OsfSeo\Google\OAuthFlow;
 use OsfSeo\Google\OAuthFlowException;
+use OsfSeo\Gsc\GscNotReady;
 use OsfSeo\Gsc\PropertySelectionException;
 use OsfSeo\Gsc\PropertyService;
+use OsfSeo\Sync\SyncRequestResult;
+use OsfSeo\Sync\SyncService;
 use Symfony\Component\HttpFoundation\Response;
 
 /**
@@ -55,7 +59,44 @@ final class SearchConsoleController
 			'choosing' => $choosing,
 			'properties' => $properties,
 			'propertiesError' => $propertiesError,
+			'sync' => $project->gscProperty !== null ? osf_seo()->get(SyncService::class)->status($context) : null,
 		]);
+	}
+
+	/**
+	 * „Synchronizuj teraz” — plugin chroni przed duplikatami i zbyt częstym zlecaniem.
+	 */
+	public function sync(Request $request): Response
+	{
+		$context = $this->context($request);
+
+		try {
+			$result = osf_seo()->get(SyncService::class)->requestSync($context);
+		} catch (AccessDenied) {
+			return PanelResponse::forbidden();
+		} catch (GscNotReady $exception) {
+			Flash::error($exception->userMessage());
+
+			return redirect()->to(PanelUrl::project($context->publicId(), 'search-console'));
+		}
+
+		$result->outcome === SyncRequestResult::QUEUED ? Flash::success($result->userMessage()) : Flash::info($result->userMessage());
+
+		return redirect()->to(PanelUrl::project($context->publicId(), 'search-console'));
+	}
+
+	/**
+	 * Stan synchronizacji (JSON) do odświeżania postępu na stronie.
+	 */
+	public function status(Request $request): Response
+	{
+		$status = osf_seo()->get(SyncService::class)->status($this->context($request));
+		$data = $status->toArray();
+		$data['active'] = $status->isActive();
+		$data['last_success_label'] = Format::datetime($status->lastSuccessAt);
+		$data['latest_data_label'] = Format::date($status->latestDataDate);
+
+		return response()->json($data);
 	}
 
 	public function selectProperty(Request $request): Response

@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace OsfSeo\Setup;
 
+use OsfSeo\Sync\SyncScheduler;
+
 /**
  * Hooki aktywacji i dezaktywacji.
  *
@@ -19,6 +21,8 @@ final class Lifecycle
 
 	public static function deactivate(): void
 	{
+		// Zatrzymanie harmonogramu synchronizacji (zadania w kolejce zostają i wznowią się po aktywacji).
+		SyncScheduler::unschedule();
 		osf_seo()->logger()->info('OSF SEO deactivated; roles, options and data were preserved.');
 	}
 }

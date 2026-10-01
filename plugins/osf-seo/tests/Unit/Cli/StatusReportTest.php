@@ -32,7 +32,15 @@ final class StatusReportTest extends TestCase
 			'google_errors' => [],
 			'google_redirect_uri' => 'https://seo.example.test/oauth/google/callback',
 			'google_connections' => ['active' => 2, 'needs_reauth' => 1, 'revoked' => 0],
+			'sync_heartbeat' => '2026-10-01 05:00:00',
+			'sync_pending' => 3,
 		]);
+	}
+
+	public function test_sync_queue_heartbeat_is_reported(): void
+	{
+		self::assertSame(['check' => 'sync_queue', 'value' => 'last run 2026-10-01 05:00:00 UTC, 3 pending job(s)', 'status' => 'info'], self::row(self::report(), 'sync_queue'));
+		self::assertStringStartsWith('never ran', self::row(self::report(['sync_heartbeat' => null, 'sync_pending' => null]), 'sync_queue')['value']);
 	}
 
 	/**
@@ -58,7 +66,7 @@ final class StatusReportTest extends TestCase
 		self::assertSame(
 			[
 				'plugin_active', 'plugin_version', 'installed_version', 'php_version', 'wordpress_version', 'db_schema_version',
-				'db_tables', 'roles_and_capabilities', 'google_oauth', 'google_redirect_uri', 'google_connections', 'environment', 'log_level',
+				'db_tables', 'roles_and_capabilities', 'google_oauth', 'google_redirect_uri', 'google_connections', 'sync_queue', 'environment', 'log_level',
 			],
 			array_column($report['rows'], 'check'),
 		);
