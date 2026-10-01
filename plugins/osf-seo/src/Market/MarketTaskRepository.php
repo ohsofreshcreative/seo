@@ -223,10 +223,21 @@ final class MarketTaskRepository
 			: $this->db->fetchAll("SELECT {$columns} FROM `{$this->table()}` WHERE project_id = %d ORDER BY id DESC LIMIT %d", [$projectId, max(1, $limit)]);
 	}
 
-	/** Utrzymanie: lista fraz zakończonych zadań jest potrzebna tylko do odbioru wyniku — po 30 dniach ją usuwamy. */
+	/**
+	 * Utrzymanie:
+	 * - zadanie bez identyfikatora dostawcy starsze niż godzina (proces przerwany między wysłaniem a zapisem odpowiedzi)
+	 *   → `failed` (`interrupted`); koszt szacowany zostaje w limicie, bo nie wiadomo, czy dostawca je opłacił,
+	 * - lista fraz zakończonych zadań jest potrzebna tylko do odbioru wyniku — po 30 dniach ją usuwamy.
+	 */
 	public function maintenance(): int
 	{
-		return $this->db->execute(
+		$interrupted = $this->db->execute(
+			"UPDATE `{$this->table()}` SET status = 'failed', error_code = 'interrupted', completed_at = %s, updated_at = %s
+			WHERE status = 'pending' AND provider_task_id IS NULL AND created_at < %s",
+			[$this->now(), $this->now(), $this->clock->now()->modify('-1 hour')->format('Y-m-d H:i:s')],
+		);
+
+		return $interrupted + $this->db->execute(
 			"UPDATE `{$this->table()}` SET keywords = NULL WHERE status <> 'pending' AND keywords IS NOT NULL AND created_at < %s LIMIT 1000",
 			[$this->clock->now()->modify('-' . self::KEYWORDS_RETENTION_DAYS . ' days')->format('Y-m-d H:i:s')],
 		);

@@ -198,7 +198,14 @@ final class MarketSyncService
 			try {
 				$batch = $this->provider->fetchVolume((string) $task['provider_task_id']);
 			} catch (ProviderException $exception) {
-				if ($exception->isRetryable() || $exception->category()->isAccountLevel()) {
+				$expired = (string) $task['created_at'] <= $this->offset(-MarketDataConfig::PENDING_HOURS * 3600);
+
+				if ($expired) {
+					// Odbiór wciąż się nie udaje, a okno oczekiwania minęło — frazy wracają do kolejki (bez pętli prób).
+					$this->tasks->markExpired($id);
+					$this->metrics->releaseVolumePending($market, $keywords, $id);
+					$report['expired']++;
+				} elseif ($exception->isRetryable() || $exception->category()->isAccountLevel()) {
 					$this->tasks->reschedule($id, $this->offset(1800), $exception->category()->value);
 					$report['pending']++;
 

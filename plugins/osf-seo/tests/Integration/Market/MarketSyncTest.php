@@ -157,6 +157,34 @@ final class MarketSyncTest extends MarketTestCase
 		self::assertSame(PlannedTask::VOLUME, $this->market->plan($context)->tasks[0]->type);
 	}
 
+	public function test_collect_failing_until_the_pending_window_ends_expires_the_task(): void
+	{
+		$context = $this->projectWithKeywords();
+		$taskId = DataForSeoFakes::taskId();
+		$this->mockVolumePost($taskId);
+		$this->mockDifficulty([]);
+		$this->market->sync($context, MarketSyncService::TRIGGER_CLI);
+		$this->clock->advance(49 * 3600);
+		$this->google->always(self::VOLUME_GET . $taskId, ['status' => 503, 'json' => ['status_code' => 50000, 'status_message' => 'Internal Error.']]);
+
+		self::assertSame(1, $this->market->collect()['expired'], 'Bez nieskończonego ponawiania odbioru.');
+		self::assertNull($this->marketRow('buty damskie')['volume_pending_until']);
+		self::assertSame(0, $this->tasks->pendingCount());
+	}
+
+	public function test_maintenance_closes_tasks_interrupted_before_the_provider_answer_was_saved(): void
+	{
+		$context = $this->projectWithKeywords();
+		$market = $this->market->market($context);
+		$id = $this->tasks->create('dataforseo', $this->provider->volumeEndpoint(), 'cli', $context->projectId(), $market, ['buty damskie'], 0.06);
+		$this->clock->advance(3601);
+
+		$this->tasks->maintenance();
+
+		self::assertSame(['status' => 'failed', 'error_code' => 'interrupted', 'estimated_cost' => '0.060000'], self::db()->fetchRow('SELECT status, error_code, estimated_cost FROM `' . self::db()->table('market_tasks') . '` WHERE id = %d', [$id]));
+		self::assertEqualsWithDelta(0.06, $this->market->budget()->spentMonth(), 1e-9, 'Niepewny koszt zostaje w limicie.');
+	}
+
 	public function test_cost_and_usage_are_logged_per_task(): void
 	{
 		$context = $this->projectWithKeywords();
