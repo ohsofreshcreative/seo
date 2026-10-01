@@ -7,6 +7,7 @@
   use App\Panel\PanelUrl;
 
   $base = PanelUrl::project($project->publicId, 'keywords');
+  $positionsUrl = PanelUrl::project($project->publicId, 'positions');
   $url = fn (array $changes = []) => $base . (($query = http_build_query($filters->with($changes)->toQuery())) !== '' ? '?' . $query : '');
   $sortUrl = function (string $sort) use ($filters, $url) {
     $direction = $filters->sort === $sort
@@ -26,6 +27,7 @@
     [null, 'Δ CTR', 'text-right'],
     ['position', 'Średnia pozycja (GSC)', 'text-right'],
     ['position_change', 'Zmiana pozycji', 'text-right'],
+    [null, 'Pozycja SERP', 'text-right'],
   ];
   // Dane rynkowe (DataForSEO) — dodatkowe kolumny, gdy rynek projektu jest obsługiwany. Brak danych = „—”, nie 0.
   $market = $page->market;
@@ -123,10 +125,17 @@
     @if ($page->rows === [])
       <x-panel.empty-state title="Brak fraz dla wybranych filtrów" description="Zmień filtry albo okres." />
     @else
+      <form method="post" action="{{ $positionsUrl }}/keywords" x-data="{ selected: [] }">
+        <x-panel.nonce />
+        <input type="hidden" name="source" value="gsc">
+        <input type="hidden" name="back" value="{{ $url() }}">
       <div class="overflow-x-auto rounded-lg border border-slate-200 bg-white shadow-sm">
         <table class="min-w-full divide-y divide-slate-200 text-sm">
           <thead class="bg-slate-50">
             <tr>
+              @if ($canTrack)
+                <th scope="col" class="w-8 px-3 py-2.5"><span class="sr-only">Zaznacz do monitorowania pozycji</span></th>
+              @endif
               @foreach ($columns as [$sort, $title, $align])
                 <th scope="col" class="{{ $align }} whitespace-nowrap px-3 py-2.5 text-xs font-semibold uppercase tracking-wide text-slate-600">
                   @if ($sort)
@@ -140,7 +149,15 @@
           </thead>
           <tbody class="divide-y divide-slate-100">
             @foreach ($page->rows as $row)
+              @php($serp = $serpRanks[$row->keyword] ?? null)
               <tr class="hover:bg-slate-50">
+                @if ($canTrack)
+                  <td class="px-3 py-2">
+                    @if ($serp === null)
+                      <input type="checkbox" name="keywords[]" value="{{ $row->keyword }}" x-model="selected" aria-label="Monitoruj pozycję: {{ $row->keyword }}" class="rounded border-slate-300 text-brand-600 focus:ring-brand-500">
+                    @endif
+                  </td>
+                @endif
                 <td class="min-w-48 max-w-xs px-3 py-2 text-slate-900">
                   <span class="break-words">{{ $row->keyword }}</span>
                   @if ($row->isNew())
@@ -189,6 +206,17 @@
                     <span class="block text-xs text-slate-400">{{ Format::position($row->previousPosition()) }} → {{ Format::position($row->position()) }}</span>
                   @endif
                 </td>
+                <td class="whitespace-nowrap px-3 py-2 text-right">
+                  @if ($serp !== null)
+                    <a href="{{ \App\Http\Controllers\Panel\PositionsController::keywordUrl($project->publicId, $serp['public_id']) }}" class="hover:underline" title="Pozycja SERP z ostatniego pomiaru ({{ Format::datetime($serp['checked_at']) }}) — inna metryka niż średnia pozycja GSC">
+                      <x-panel.serp-rank :rank="$serp['rank']" :found="$serp['found']" :depth="$serp['depth']" />
+                    </a>
+                  @elseif ($canTrack)
+                    <button type="submit" name="single" value="{{ $row->keyword }}" class="text-xs font-medium text-brand-600 hover:underline" title="Dodaj do monitorowania pozycji (bez kosztów)">Monitoruj</button>
+                  @else
+                    <span class="text-slate-400" title="Fraza nie jest monitorowana">—</span>
+                  @endif
+                </td>
                 @if ($market !== null)
                   <td class="px-3 py-2 text-right tabular-nums">
                     @if ($row->market?->searchVolume !== null)
@@ -218,6 +246,15 @@
         </table>
       </div>
 
+        @if ($canTrack)
+          <div class="mt-3 flex flex-wrap items-center gap-2 text-sm" x-show="selected.length > 0" x-cloak>
+            <span class="text-slate-600">Zaznaczone: <span class="font-medium" x-text="selected.length"></span></span>
+            <x-panel.button type="submit" variant="secondary">Monitoruj pozycję</x-panel.button>
+            <span class="text-xs text-slate-500">Dodanie do monitorowania nic nie kosztuje — pomiar uruchamiasz osobno, po podglądzie kosztu.</span>
+          </div>
+        @endif
+      </form>
+
       @if ($page->pages() > 1)
         @php($current = $filters->page)
         <nav class="mt-4 flex items-center justify-between text-sm" aria-label="Strony">
@@ -236,6 +273,7 @@
 
     <div class="mt-6 space-y-1 text-xs text-slate-500">
       <p><strong class="font-medium text-slate-600">Średnia pozycja (GSC)</strong> to średnia pozycja z wyświetleń w okresie (ważona wyświetleniami) — nie jest to dokładna pozycja w wynikach Google.</p>
+      <p><strong class="font-medium text-slate-600">Pozycja SERP</strong> — miejsce w wynikach organicznych Google z ostatniego pomiaru, tylko dla fraz monitorowanych w module <a href="{{ $positionsUrl }}" class="text-brand-600 hover:underline">Pozycje</a>; to inna metryka niż średnia pozycja (GSC).</p>
       <p><strong class="font-medium text-slate-600">Zmiana pozycji</strong> = pozycja poprzednia − obecna: wartość dodatnia (↑) oznacza poprawę, np. 15 → 7 = +8. CTR = kliknięcia / wyświetlenia w okresie.</p>
       <p>Google nie pokazuje zapytań zanonimizowanych, dlatego suma kliknięć fraz bywa mniejsza niż suma kliknięć projektu — to oczekiwane. Daty GSC są w czasie pacyficznym.</p>
       @if ($market !== null)

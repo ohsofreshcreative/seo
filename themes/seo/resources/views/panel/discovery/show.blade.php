@@ -69,6 +69,25 @@
         @if ($candidate->visibility === Visibility::Unknown) Brak danych GSC projektu (np. przed importem) — widoczność zostanie oceniona po imporcie. @endif
         Strona docelowa pochodzi wyłącznie z GSC — bez zgadywania.
       </p>
+      <div class="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 pt-3 text-sm">
+        <span class="text-slate-500">Pozycja SERP (pomiar Google)</span>
+        @if ($serp !== null)
+          <a href="{{ \App\Http\Controllers\Panel\PositionsController::keywordUrl($project->publicId, $serp['public_id']) }}" class="hover:underline">
+            <x-panel.serp-rank :rank="$serp['rank']" :found="$serp['found']" :depth="$serp['depth']" />
+            <span class="text-xs text-slate-500">· monitorowana</span>
+          </a>
+        @elseif ($canTrack)
+          <form method="post" action="{{ PanelUrl::project($project->publicId, 'positions/keywords') }}">
+            <x-panel.nonce />
+            <input type="hidden" name="source" value="discovery">
+            <input type="hidden" name="single" value="{{ $candidate->publicId }}">
+            <input type="hidden" name="back" value="{{ DiscoveryController::candidateUrl($project->publicId, $candidate->publicId) }}">
+            <x-panel.button type="submit" variant="secondary">Monitoruj pozycję</x-panel.button>
+          </form>
+        @else
+          <span class="text-slate-400">nie monitorowana</span>
+        @endif
+      </div>
     </x-panel.card>
 
     <x-panel.card>

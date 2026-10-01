@@ -148,7 +148,7 @@
           <table class="min-w-full divide-y divide-slate-200 text-sm">
             <thead class="bg-slate-50 text-left text-xs font-medium uppercase tracking-wide text-slate-500">
               <tr>
-                @if ($canManage)
+                @if ($canManage || $canTrack)
                   <th class="w-8 px-3 py-2"><span class="sr-only">Zaznacz</span></th>
                 @endif
                 @foreach ([
@@ -174,7 +174,7 @@
             <tbody class="divide-y divide-slate-100">
               @foreach ($page->rows as $row)
                 <tr class="hover:bg-slate-50">
-                  @if ($canManage)
+                  @if ($canManage || $canTrack)
                     <td class="px-3 py-2"><input type="checkbox" name="ids[]" value="{{ $row->publicId }}" x-model="selected" aria-label="Zaznacz {{ $row->keyword }}" class="rounded border-slate-300 text-brand-600 focus:ring-brand-500"></td>
                   @endif
                   <td class="min-w-48 max-w-xs px-3 py-2">
@@ -205,16 +205,24 @@
           </table>
         </div>
 
-        @if ($canManage)
+        @if ($canManage || $canTrack)
           <div class="mt-3 flex flex-wrap items-center gap-2 text-sm" x-show="selected.length > 0" x-cloak>
             <span class="text-slate-600">Zaznaczone: <span class="font-medium" x-text="selected.length"></span></span>
-            <label for="bulk-status" class="sr-only">Nowy status</label>
-            <select id="bulk-status" name="status" class="rounded-md border-slate-300 text-sm shadow-sm focus:border-brand-500 focus:ring-brand-500">
-              @foreach (CandidateStatus::cases() as $option)
-                <option value="{{ $option->value }}">{{ $option->label() }}</option>
-              @endforeach
-            </select>
-            <x-panel.button type="submit" variant="secondary">Zmień status</x-panel.button>
+            @if ($canManage)
+              <label for="bulk-status" class="sr-only">Nowy status</label>
+              <select id="bulk-status" name="status" class="rounded-md border-slate-300 text-sm shadow-sm focus:border-brand-500 focus:ring-brand-500">
+                @foreach (CandidateStatus::cases() as $option)
+                  <option value="{{ $option->value }}">{{ $option->label() }}</option>
+                @endforeach
+              </select>
+              <x-panel.button type="submit" variant="secondary">Zmień status</x-panel.button>
+            @endif
+            @if ($canTrack)
+              {{-- Ten sam wybór trafia do modułu Pozycje (dodanie do monitorowania — bez kosztów i bez żądań do API). --}}
+              <input type="hidden" name="source" value="discovery">
+              <input type="hidden" name="back" value="{{ $pageUrl($filters->page) }}">
+              <x-panel.button type="submit" variant="secondary" :formaction="PanelUrl::project($project->publicId, 'positions/keywords')">Monitoruj pozycję</x-panel.button>
+            @endif
           </div>
         @endif
       </form>

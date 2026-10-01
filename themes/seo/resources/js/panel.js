@@ -44,8 +44,9 @@ Alpine.data('syncStatus', (url, initial) => ({
   },
 }));
 
-// Postęp wyszukiwania nowych fraz: odpytywanie co 5 s tylko, gdy przebieg trwa (wykonuje go tło, nie przeglądarka).
-Alpine.data('discoveryProgress', (url, initial) => ({
+// Postęp przebiegu w tle (wyszukiwanie nowych fraz, pomiar pozycji): odpytywanie co 5 s tylko, gdy przebieg trwa
+// (wykonuje go tło, nie przeglądarka).
+const runProgress = (url, initial) => ({
   ...initial,
   timer: null,
 
@@ -77,6 +78,23 @@ Alpine.data('discoveryProgress', (url, initial) => ({
 
   destroy() {
     clearInterval(this.timer);
+  },
+});
+
+Alpine.data('discoveryProgress', runProgress);
+Alpine.data('runProgress', runProgress);
+
+// Historia Pozycji SERP — Chart.js ładowany osobnym plikiem tylko na stronie frazy.
+Alpine.data('rankChart', () => ({
+  chart: null,
+
+  async init() {
+    const { renderRankChart } = await import('./panel/rank-chart.js');
+    this.chart = renderRankChart(this.$refs.canvas);
+  },
+
+  destroy() {
+    this.chart?.destroy();
   },
 }));
 

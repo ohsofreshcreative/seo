@@ -10,11 +10,13 @@
  */
 
 use App\Http\Controllers\Panel\AuthController;
+use App\Http\Controllers\Panel\CompetitorsController;
 use App\Http\Controllers\Panel\DashboardController;
 use App\Http\Controllers\Panel\DiscoveryController;
 use App\Http\Controllers\Panel\KeywordsController;
 use App\Http\Controllers\Panel\MarketDataController;
 use App\Http\Controllers\Panel\OpportunitiesController;
+use App\Http\Controllers\Panel\PositionsController;
 use App\Http\Controllers\Panel\ProjectController;
 use App\Http\Controllers\Panel\ProjectSectionController;
 use App\Http\Controllers\Panel\SearchConsoleController;
@@ -79,8 +81,36 @@ Route::middleware([Authenticate::class, VerifyNonce::class])->group(function () 
 			->where('candidate', '[0-9A-Za-z]{26}');
 	});
 
+	// Pozycje SERP i konkurenci (pomiary płatne): ustawienia, podgląd kosztu i uruchomienie pomiaru, monitorowane frazy
+	// i konkurenci tylko z uprawnieniem, nonce i Origin; identyfikatory = public_id (ULID). Kontroler nigdy nie wywołuje API.
+	Route::middleware(ResolveProject::class . ':osf_seo_manage_serp_tracking')->group(function () {
+		Route::get('/projects/{project}/positions/check', [PositionsController::class, 'check']);
+		Route::post('/projects/{project}/positions/check', [PositionsController::class, 'start']);
+		Route::post('/projects/{project}/positions/runs/{run}/cancel', [PositionsController::class, 'cancel'])
+			->where('run', '[0-9A-Za-z]{26}');
+		Route::get('/projects/{project}/positions/add', [PositionsController::class, 'create']);
+		Route::post('/projects/{project}/positions/keywords', [PositionsController::class, 'store']);
+		Route::post('/projects/{project}/positions/remove', [PositionsController::class, 'remove']);
+		Route::get('/projects/{project}/positions/settings', [PositionsController::class, 'settings']);
+		Route::post('/projects/{project}/positions/settings', [PositionsController::class, 'saveSettings']);
+		Route::post('/projects/{project}/competitors', [CompetitorsController::class, 'store']);
+		Route::post('/projects/{project}/competitors/{competitor}', [CompetitorsController::class, 'update'])
+			->where('competitor', '[0-9A-Za-z]{26}');
+	});
+
 	Route::middleware(ResolveProject::class)->group(function () {
 		Route::get('/projects/{project}', [ProjectController::class, 'show']);
+		Route::get('/projects/{project}/positions', [PositionsController::class, 'index']);
+		Route::get('/projects/{project}/positions/keywords/{keyword}', [PositionsController::class, 'show'])
+			->where('keyword', '[0-9A-Za-z]{26}');
+		Route::get('/projects/{project}/positions/runs/{run}', [PositionsController::class, 'run'])
+			->where('run', '[0-9A-Za-z]{26}');
+		Route::get('/projects/{project}/positions/runs/{run}/status', [PositionsController::class, 'runStatus'])
+			->where('run', '[0-9A-Za-z]{26}');
+		Route::get('/projects/{project}/competitors', [CompetitorsController::class, 'index']);
+		Route::get('/projects/{project}/competitors/organic', [CompetitorsController::class, 'organic']);
+		Route::get('/projects/{project}/competitors/{competitor}', [CompetitorsController::class, 'show'])
+			->where('competitor', '[0-9A-Za-z]{26}');
 		Route::get('/projects/{project}/discovery', [DiscoveryController::class, 'index']);
 		Route::get('/projects/{project}/discovery/runs/{run}', [DiscoveryController::class, 'run'])
 			->where('run', '[0-9A-Za-z]{26}');
