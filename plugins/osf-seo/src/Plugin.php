@@ -11,6 +11,7 @@ use OsfSeo\Auth\WpAdminAccess;
 use OsfSeo\Auth\WpRoleStore;
 use OsfSeo\Cli\DbCommand;
 use OsfSeo\Cli\GoogleCommand;
+use OsfSeo\Cli\GscCommand;
 use OsfSeo\Cli\ProjectCommand;
 use OsfSeo\Cli\StatusCommand;
 use OsfSeo\Database\Connection;
@@ -24,6 +25,9 @@ use OsfSeo\Google\OAuthClient;
 use OsfSeo\Google\OAuthFlow;
 use OsfSeo\Google\OAuthStateStore;
 use OsfSeo\Google\TokenVault;
+use OsfSeo\Gsc\GscClient;
+use OsfSeo\Gsc\GscDataStore;
+use OsfSeo\Gsc\PropertyService;
 use OsfSeo\Http\HttpTransport;
 use OsfSeo\Http\WpHttpTransport;
 use OsfSeo\Projects\ProjectRepository;
@@ -32,12 +36,14 @@ use OsfSeo\Setup\Installer;
 use OsfSeo\Support\Clock;
 use OsfSeo\Support\Config;
 use OsfSeo\Support\Logger;
+use OsfSeo\Support\Sleeper;
 use OsfSeo\Support\SystemClock;
+use OsfSeo\Support\SystemSleeper;
 
 final class Plugin
 {
 	/** Musi być zgodna z nagłówkiem `Version` w osf-seo.php (pilnuje tego test). */
-	public const VERSION = '0.5.0';
+	public const VERSION = '0.6.0';
 
 	public const MIN_PHP = '8.2';
 
@@ -68,6 +74,7 @@ final class Plugin
 
 		$container->singleton(Config::class, static fn (): Config => new Config());
 		$container->singleton(Clock::class, static fn (): Clock => new SystemClock());
+		$container->singleton(Sleeper::class, static fn (): Sleeper => new SystemSleeper());
 		$container->singleton(Logger::class, static fn (Container $c): Logger => Logger::fromConfig($c->get(Config::class)));
 		$container->singleton(Connection::class, static fn (): Connection => Connection::fromGlobals());
 		$container->singleton(Migrator::class, static fn (Container $c): Migrator => new Migrator(
@@ -135,6 +142,22 @@ final class Plugin
 			$c->get(Logger::class),
 		));
 
+		// Search Console: odpowiedzi do 25 000 wierszy (kilka MB) — dłuższy timeout niż dla endpointów OAuth.
+		$container->singleton(GscClient::class, static fn (Container $c): GscClient => new GscClient(
+			new GoogleApi($c->get(AccessTokenProvider::class), new WpHttpTransport(GscClient::HTTP_TIMEOUT)),
+			$c->get(Sleeper::class),
+			$c->get(Logger::class),
+		));
+		$container->singleton(GscDataStore::class, static fn (Container $c): GscDataStore => new GscDataStore($c->get(Connection::class)));
+		$container->singleton(PropertyService::class, static fn (Container $c): PropertyService => new PropertyService(
+			$c->get(GscClient::class),
+			$c->get(ConnectionRepository::class),
+			$c->get(ProjectRepository::class),
+			$c->get(GscDataStore::class),
+			$c->get(Connection::class),
+			$c->get(Logger::class),
+		));
+
 		return $container;
 	}
 
@@ -159,6 +182,7 @@ final class Plugin
 			DbCommand::register($this);
 			ProjectCommand::register($this);
 			GoogleCommand::register($this);
+			GscCommand::register($this);
 		}
 	}
 

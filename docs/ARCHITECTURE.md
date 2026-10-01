@@ -56,6 +56,7 @@ Przyszłe integracje płatne wyłącznie za interfejsem (`SerpProvider`), bez im
 | D15 | Opportunity Score dopiero w MVP 2 | Sekcja 10 (tylko specyfikacja) |
 | D16 | `public_id` (ULID) w URL + `ProjectGuard` | ULID tylko utrudnia enumerację; zabezpieczeniem jest autoryzacja |
 | D17 | Repozytorium publiczne: sekrety wyłącznie w `wp-config.php` / zmiennych środowiskowych | Sekcja 12 |
+| D18 | Zmiana property GSC przy istniejących danych = jawny reset (usunięcie danych projektu i ponowny import); bez izolacji danych per property | Prostszy model (klucze faktów bez property), zero ryzyka mieszania danych. Sekcja 7.1 |
 
 ## 3. Repozytorium i środowiska
 
@@ -130,10 +131,17 @@ POST /projects/{project}/search-console/connect | /disconnect           (osf_seo
 GET  /oauth/google/callback                  (stały redirect URI; zalogowany użytkownik + state)
 ```
 
+Zaimplementowane w STEP 6:
+
+```
+POST /projects/{project}/search-console/property  (osf_seo_manage_connections; wybór z listy sites.list, opcjonalnie reset_data=1)
+GET  /projects/{project}/search-console?change=1  (lista properties dla zarządzających)
+```
+
 Kolejne etapy:
 
 ```
-POST /projects/{project}/search-console/property | …/sync
+POST /projects/{project}/search-console/sync
 GET  /projects/{project}/keywords/{keyword}
 GET  /projects/{project}/pages[/{page}]      (MVP 2)
 ```
@@ -262,7 +270,8 @@ Czasy (`*_at`) w UTC; kolumny `date` faktów GSC to daty GSC (czas pacyficzny).
 **`osf_projects`** — `id` INT UNSIGNED AI; `public_id` CHAR(26) ascii_bin (ULID); `name` VARCHAR(190);
 `domain` VARCHAR(190); `country` CHAR(2) (domyślnie `pl`); `language` VARCHAR(10); `status`
 ENUM(active, paused, archived); `connection_id` INT UNSIGNED NULL; `gsc_property` VARCHAR(255) NULL;
-`gsc_permission` VARCHAR(32) NULL; `settings` LONGTEXT NULL (JSON); `last_synced_at` DATETIME NULL;
+`gsc_permission` VARCHAR(32) NULL; `gsc_data_property` VARCHAR(255) NULL (od schematu 2 — property, z której
+pochodzą zapisane dane; sekcja 7.1); `settings` LONGTEXT NULL (JSON); `last_synced_at` DATETIME NULL;
 `created_by` BIGINT UNSIGNED; `created_at`; `updated_at`.
 PK(`id`), UNIQUE(`public_id`), indeksy (`status`), (`domain`), (`connection_id`).
 Wymiar `country` w API GSC ma kody 3-literowe (`pol`) — mapowanie w kliencie GSC.
@@ -407,6 +416,35 @@ OAuthFlow::complete:
 - **Konfiguracja**: `wp osf-seo google:status`, panel → Ustawienia (tylko nazwy brakujących stałych).
 - Tryb Testing (External): refresh token wygasa po 7 dniach, maks. 100 test users — przed produkcją
   publikacja aplikacji OAuth (weryfikacja wymagań Google w konsoli).
+
+### 7.1 Property Search Console (STEP 6)
+
+Zaimplementowane w `plugins/osf-seo/src/Gsc` (`GscClient::listSites`, `PropertyService`, `GscDataStore`);
+UI: `SearchConsoleController` (`show`, `selectProperty`); CLI: `gsc:properties`, `gsc:select-property`.
+
+- Lista properties pochodzi zawsze z `sites.list` połączonego konta (`GET https://www.googleapis.com/webmasters/v3/sites`),
+  także przy zapisie — wartość z formularza nie jest zaufana (musi wystąpić na liście konta).
+- Identyfikator Google (`sc-domain:example.pl`, `https://www.example.pl/`) jest zapisywany i wysyłany **bez zmian**
+  (bez zmiany wielkości liter, ukośników itp.); w URL-u API jako jeden zakodowany segment (`rawurlencode`).
+- Uprawnienia (`permissionLevel`): `siteOwner`, `siteFullUser`, `siteRestrictedUser` — dane Search Analytics dostępne;
+  `siteUnverifiedUser` (i nieznane wartości) — odrzucane przy wyborze, widoczne na liście jako niedostępne.
+  Poziom zapisujemy w `projects.gsc_permission`.
+- Sugestia z domeny projektu (`DomainNormalizer`): property domenowa (100) > prefiks `https://` katalogu głównego (90)
+  > `http://` (80) > prefiks z podścieżką (50/40); subdomeny i obce domeny nie są sugerowane. Sugestia jest tylko
+  zaznaczona w formularzu — **zapis wymaga kliknięcia „Zapisz property”** (żadnego automatycznego wyboru).
+- Listę widzą i property zmieniają wyłącznie użytkownicy z `osf_seo_manage_connections` (klient widzi tylko wybraną property).
+- **Zmiana property (D18)**: `projects.gsc_data_property` = property, z której pochodzą zapisane dane
+  (`gsc_property` jest czyszczona przy odłączeniu/zmianie połączenia, dane zostają).
+  - brak danych → zapis property, nowe dane będą z niej pochodzić,
+  - dane z tej samej property (np. po ponownym połączeniu konta) → zapis bez resetu, dane zostają,
+  - dane z innej albo nieustalonej property → `reset_required`; po jawnym potwierdzeniu (`reset_data=1`,
+    CLI `--reset-data`): (1) w transakcji z blokadą wiersza projektu odpięcie property i znacznika danych,
+    (2) usunięcie partiami (`DELETE … LIMIT 5000`) faktów, słowników fraz/URL-i i stanu synchronizacji projektu,
+    (3) zapis nowej property. Przerwany reset zostawia dane o nieustalonym pochodzeniu → kolejny wybór znów wymaga resetu.
+  - Kontrola danych i zapis property odbywają się pod blokadą wiersza projektu (`SELECT … FOR UPDATE`) — tą samą,
+    którą importer bierze przy zatwierdzaniu danych (sekcja 8), więc dane dwóch properties nie mogą się wymieszać.
+- Błędy: brak połączenia, połączenie `needs_reauth` (także `invalid_grant` przy odświeżeniu tokenu), błąd API
+  (z ponowieniami jak w sekcji 8), błąd klucza szyfrowania — komunikat w panelu, projekt bez zmian.
 
 ## 8. Przepływ danych GSC i reguły obliczeń
 
@@ -573,7 +611,7 @@ Warianty docelowe:
 | 4 | Powłoka panelu w Sage: routing, layout, osobne wejście Vite, logowanie, nagłówki, lista projektów | ✅ STEP 4 |
 | 5 | Projekty w UI: tworzenie, edycja, archiwizacja, przypisywanie klientów | ✅ STEP 4 (bez przypisywania w UI — na razie `wp osf-seo project:assign`) |
 | 6 | Google OAuth: PKCE/state, szyfrowanie tokenów, callback, połączenia | ✅ STEP 5 (Google mockowany; prawdziwy OAuth — po konfiguracji) |
-| 7 | Wybór property GSC | — |
+| 7 | Wybór property GSC | ✅ STEP 6 (lista, sugestia, reset przy zmianie property, CLI) |
 | 8 | Klient GSC API: paginacja, błędy, backoff, `wp osf-seo gsc:probe` | — |
 | 9 | Importery `site_daily`, `query_daily`, normalizacja, zamiana zakresu w transakcji | — |
 | 10 | Orkiestracja synchronizacji (Action Scheduler), postęp, „Synchronizuj teraz”/„Ponów” | — |

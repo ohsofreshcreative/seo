@@ -14,11 +14,13 @@ use OsfSeo\Google\ConnectionRepository;
 use OsfSeo\Google\GoogleConfig;
 use OsfSeo\Google\OAuthFlow;
 use OsfSeo\Google\OAuthFlowException;
+use OsfSeo\Gsc\PropertySelectionException;
+use OsfSeo\Gsc\PropertyService;
 use Symfony\Component\HttpFoundation\Response;
 
 /**
- * Połączenie projektu z Google Search Console (OAuth). Logika i tokeny — plugin (OAuthFlow);
- * tutaj tylko przekierowania i komunikaty.
+ * Połączenie projektu z Google Search Console (OAuth) i wybór property. Logika i tokeny — plugin
+ * (OAuthFlow, PropertyService); tutaj tylko przekierowania i komunikaty.
  */
 final class SearchConsoleController
 {
@@ -28,15 +30,51 @@ final class SearchConsoleController
 		$project = $context->project();
 		$config = osf_seo()->get(GoogleConfig::class);
 		$canManage = $context->can('osf_seo_manage_connections');
+		$connection = $project->connectionId === null ? null : osf_seo()->get(ConnectionRepository::class)->find($project->connectionId);
+
+		// Lista properties z Google tylko dla zarządzających i tylko gdy jest potrzebna (brak wyboru albo zmiana).
+		$properties = null;
+		$propertiesError = null;
+		$choosing = $canManage && $connection?->isActive() && ($project->gscProperty === null || $request->query('change') === '1');
+
+		if ($choosing) {
+			try {
+				$properties = osf_seo()->get(PropertyService::class)->properties($context);
+			} catch (PropertySelectionException $exception) {
+				$propertiesError = $exception->userMessage();
+			}
+		}
 
 		return response()->view('panel.projects.search-console', [
 			'project' => $project,
-			'connection' => $project->connectionId === null ? null : osf_seo()->get(ConnectionRepository::class)->find($project->connectionId),
+			'connection' => $connection,
 			'configured' => $config->isConfigured(),
 			'configProblems' => $canManage ? $config->problems() : [],
 			'redirectUri' => $config->redirectUri(),
 			'canManage' => $canManage,
+			'choosing' => $choosing,
+			'properties' => $properties,
+			'propertiesError' => $propertiesError,
 		]);
+	}
+
+	public function selectProperty(Request $request): Response
+	{
+		$context = $this->context($request);
+
+		try {
+			$context = osf_seo()->get(PropertyService::class)->select($context, (string) $request->input('property', ''), $request->input('reset_data') === '1');
+		} catch (AccessDenied) {
+			return PanelResponse::forbidden();
+		} catch (PropertySelectionException $exception) {
+			Flash::error($exception->userMessage());
+
+			return redirect()->to(PanelUrl::project($context->publicId(), 'search-console') . '?change=1');
+		}
+
+		Flash::success(sprintf('Wybrano property %s.', $context->project()->gscProperty));
+
+		return redirect()->to(PanelUrl::project($context->publicId(), 'search-console'));
 	}
 
 	public function connect(Request $request): Response
@@ -95,7 +133,7 @@ final class SearchConsoleController
 			return PanelResponse::forbidden();
 		}
 
-		Flash::success('Połączono projekt z Google Search Console. Wybór property pojawi się w kolejnym etapie.');
+		Flash::success('Połączono projekt z Google Search Console. Wybierz property, z której mają być pobierane dane.');
 
 		return redirect()->to(PanelUrl::project($context->publicId(), 'search-console'));
 	}

@@ -68,7 +68,10 @@ final class SchemaTest extends TestCase
 	{
 		Migrator::assertOrdered(Migrator::defaultMigrations());
 
-		self::assertSame(1, Migrator::defaultMigrations()[0]->version());
+		self::assertSame(range(1, count(Migrator::defaultMigrations())), array_map(
+			static fn (Migration $migration): int => $migration->version(),
+			Migrator::defaultMigrations(),
+		), 'Wersje migracji produkcyjnych są kolejne (bez luk).');
 	}
 
 	public function test_duplicate_or_descending_migration_versions_are_rejected(): void

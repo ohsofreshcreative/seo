@@ -193,6 +193,53 @@ final class ProjectRepository
 		);
 	}
 
+	/**
+	 * Blokuje wiersz projektu do końca bieżącej transakcji (SELECT … FOR UPDATE) — serializuje
+	 * zmiany property, planowanie i zatwierdzanie importu tego projektu między procesami.
+	 * Zwraca aktualny stan projektu (z pominięciem cache) albo null, gdy projekt zniknął.
+	 */
+	public function lockForUpdate(int $projectId): ?Project
+	{
+		$row = $this->db->fetchRow("SELECT * FROM `{$this->db->table('projects')}` WHERE id = %d FOR UPDATE", [$projectId]);
+
+		return $row === null ? null : Project::fromRow($row);
+	}
+
+	/**
+	 * Zapisuje wybraną property GSC, poziom uprawnień i źródło danych (null = bez zmian).
+	 */
+	public function setProperty(int $projectId, string $property, string $permission, ?string $dataProperty): void
+	{
+		$data = ['gsc_property' => $property, 'gsc_permission' => $permission, 'updated_at' => $this->now()];
+
+		if ($dataProperty !== null) {
+			$data['gsc_data_property'] = $dataProperty;
+		}
+
+		$this->db->update($this->db->table('projects'), $data, ['id' => $projectId]);
+	}
+
+	/**
+	 * Odpina property i znacznik pochodzenia danych — pierwszy krok jawnego resetu danych GSC.
+	 * Od tej chwili żaden import starej property nie przejdzie kontroli przy zatwierdzaniu.
+	 */
+	public function detachProperty(int $projectId): void
+	{
+		$this->db->execute(
+			"UPDATE `{$this->db->table('projects')}` SET gsc_property = NULL, gsc_permission = NULL, gsc_data_property = NULL, updated_at = %s WHERE id = %d",
+			[$this->now(), $projectId],
+		);
+	}
+
+	/** Czas ostatniej udanej synchronizacji (dowolny dataset). */
+	public function touchLastSynced(int $projectId): void
+	{
+		$this->db->execute(
+			"UPDATE `{$this->db->table('projects')}` SET last_synced_at = %s WHERE id = %d",
+			[$this->now(), $projectId],
+		);
+	}
+
 	public function countByConnection(int $connectionId): int
 	{
 		return (int) $this->db->fetchValue(

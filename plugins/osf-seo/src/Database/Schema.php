@@ -44,6 +44,7 @@ final class Schema
 					'connection_id' => 'int unsigned',
 					'gsc_property' => 'varchar(255)',
 					'gsc_permission' => 'varchar(32)',
+					'gsc_data_property' => 'varchar(255)',
 					'settings' => 'longtext',
 					'last_synced_at' => 'datetime',
 					'created_by' => 'bigint unsigned',

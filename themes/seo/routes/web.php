@@ -45,6 +45,7 @@ Route::middleware([Authenticate::class, VerifyNonce::class])->group(function () 
 	Route::middleware(ResolveProject::class . ':osf_seo_manage_connections')->group(function () {
 		Route::post('/projects/{project}/search-console/connect', [SearchConsoleController::class, 'connect']);
 		Route::post('/projects/{project}/search-console/disconnect', [SearchConsoleController::class, 'disconnect']);
+		Route::post('/projects/{project}/search-console/property', [SearchConsoleController::class, 'selectProperty']);
 	});
 
 	Route::middleware(ResolveProject::class)->group(function () {

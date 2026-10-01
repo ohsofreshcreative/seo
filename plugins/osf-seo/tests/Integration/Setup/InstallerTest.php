@@ -67,7 +67,7 @@ final class InstallerTest extends IntegrationTestCase
 
 		$installer->maybeUpgrade();
 
-		self::assertSame(1, (int) get_option(Migrator::OPTION_VERSION));
+		self::assertSame(count(Migrator::defaultMigrations()), (int) get_option(Migrator::OPTION_VERSION));
 	}
 
 	public function test_failed_boot_upgrade_is_logged_backed_off_and_does_not_throw(): void
