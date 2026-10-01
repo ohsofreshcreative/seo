@@ -23,6 +23,9 @@ final class SyncScheduler
 
 	private const PLANNED_TRANSIENT = 'osf_seo_sync_planned';
 
+	/** @var list<\Closure(): mixed> */
+	private array $followUps = [];
+
 	public function __construct(
 		private readonly SyncPlanner $planner,
 		private readonly SyncRunner $runner,
@@ -67,7 +70,32 @@ final class SyncScheduler
 			$this->planAll();
 		}
 
-		return $this->runner->run($this->config->timeBudget(), SyncConfig::MAX_JOBS_PER_RUN);
+		$report = $this->runner->run($this->config->timeBudget(), SyncConfig::MAX_JOBS_PER_RUN);
+		$this->runFollowUps();
+
+		return $report;
+	}
+
+	/**
+	 * Kroki wykonywane po przebiegu kolejki (np. przeliczenie szans SEO po imporcie) — niezależne od importu:
+	 * błąd kroku jest logowany i nie wpływa na kolejkę ani na pozostałe kroki.
+	 *
+	 * @param \Closure(): mixed $step
+	 */
+	public function onAfterRun(\Closure $step): void
+	{
+		$this->followUps[] = $step;
+	}
+
+	public function runFollowUps(): void
+	{
+		foreach ($this->followUps as $step) {
+			try {
+				$step();
+			} catch (Throwable $exception) {
+				$this->logger->error('Post-sync step failed: {message}', ['message' => $exception->getMessage()]);
+			}
+		}
 	}
 
 	/** Planowanie wszystkich kwalifikujących się projektów (codzienne odświeżanie, wznowienie łańcuchów). */

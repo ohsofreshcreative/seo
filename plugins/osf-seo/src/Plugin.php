@@ -16,6 +16,7 @@ use OsfSeo\Auth\WpRoleStore;
 use OsfSeo\Cli\DbCommand;
 use OsfSeo\Cli\GoogleCommand;
 use OsfSeo\Cli\GscCommand;
+use OsfSeo\Cli\OpportunityCommand;
 use OsfSeo\Cli\ProjectCommand;
 use OsfSeo\Cli\StatusCommand;
 use OsfSeo\Cli\SyncCommand;
@@ -39,6 +40,12 @@ use OsfSeo\Gsc\GscProbe;
 use OsfSeo\Gsc\PropertyService;
 use OsfSeo\Http\HttpTransport;
 use OsfSeo\Http\WpHttpTransport;
+use OsfSeo\Opportunities\OpportunityAnalyzer;
+use OsfSeo\Opportunities\OpportunityConfig;
+use OsfSeo\Opportunities\OpportunityDataSource;
+use OsfSeo\Opportunities\OpportunityRepository;
+use OsfSeo\Opportunities\OpportunityScheduler;
+use OsfSeo\Opportunities\OpportunityService;
 use OsfSeo\Projects\ProjectRepository;
 use OsfSeo\Projects\ProjectService;
 use OsfSeo\Setup\Installer;
@@ -190,8 +197,10 @@ final class Plugin
 				$c->get(Connection::class),
 				$c->get(Logger::class),
 			);
-			// Reset danych anuluje oczekujące zadania starej property; wybór property planuje pierwszy import.
+			// Reset danych anuluje oczekujące zadania starej property i archiwizuje jej szanse SEO;
+			// wybór property planuje pierwszy import.
 			$service->onDetach(static fn (ProjectContext $context) => $c->get(SyncRunRepository::class)->cancelPending($context->projectId(), 'property_reset'));
+			$service->onDetach(static fn (ProjectContext $context) => $c->get(OpportunityRepository::class)->archiveProject($context->projectId()));
 			$service->onSelected(static fn (ProjectContext $context) => $c->get(SyncPlanner::class)->plan($context, TriggerType::Connect));
 
 			return $service;
@@ -235,12 +244,52 @@ final class Plugin
 			$c->get(GscCalendar::class),
 			$c->get(SyncConfig::class),
 		));
-		$container->singleton(SyncScheduler::class, static fn (Container $c): SyncScheduler => new SyncScheduler(
-			$c->get(SyncPlanner::class),
-			$c->get(SyncRunner::class),
+		$container->singleton(SyncScheduler::class, static function (Container $c): SyncScheduler {
+			$scheduler = new SyncScheduler(
+				$c->get(SyncPlanner::class),
+				$c->get(SyncRunner::class),
+				$c->get(ProjectGuard::class),
+				$c->get(Installer::class),
+				$c->get(SyncConfig::class),
+				$c->get(Logger::class),
+			);
+			// Szanse SEO przeliczane po imporcie — osobny krok po kolejce, nie część importera.
+			$scheduler->onAfterRun(static fn (): array => $c->get(OpportunityScheduler::class)->run((float) $c->get(SyncConfig::class)->timeBudget()));
+
+			return $scheduler;
+		});
+
+		$container->singleton(OpportunityConfig::class, static fn (Container $c): OpportunityConfig => new OpportunityConfig($c->get(Config::class)));
+		$container->singleton(OpportunityRepository::class, static fn (Container $c): OpportunityRepository => new OpportunityRepository(
+			$c->get(Connection::class),
+			$c->get(ProjectRepository::class),
+			$c->get(Clock::class),
+		));
+		$container->singleton(OpportunityDataSource::class, static fn (Container $c): OpportunityDataSource => new OpportunityDataSource(
+			$c->get(Connection::class),
+			$c->get(KeywordReport::class),
+			$c->get(OverviewReport::class),
+		));
+		$container->singleton(OpportunityAnalyzer::class, static fn (Container $c): OpportunityAnalyzer => new OpportunityAnalyzer(
+			$c->get(Connection::class),
+			$c->get(OpportunityDataSource::class),
+			$c->get(OpportunityRepository::class),
+			$c->get(ProjectRepository::class),
+			$c->get(OpportunityConfig::class),
+			$c->get(Logger::class),
+		));
+		$container->singleton(OpportunityService::class, static fn (Container $c): OpportunityService => new OpportunityService(
+			$c->get(OpportunityRepository::class),
+			$c->get(OpportunityAnalyzer::class),
+			$c->get(OpportunityDataSource::class),
+			$c->get(Logger::class),
+			new ReportCache(),
+		));
+		$container->singleton(OpportunityScheduler::class, static fn (Container $c): OpportunityScheduler => new OpportunityScheduler(
+			$c->get(OpportunityAnalyzer::class),
+			$c->get(OpportunityRepository::class),
+			$c->get(SyncRunRepository::class),
 			$c->get(ProjectGuard::class),
-			$c->get(Installer::class),
-			$c->get(SyncConfig::class),
 			$c->get(Logger::class),
 		));
 
@@ -270,6 +319,7 @@ final class Plugin
 			ProjectCommand::register($this);
 			GoogleCommand::register($this);
 			GscCommand::register($this);
+			OpportunityCommand::register($this);
 			SyncCommand::register($this);
 		}
 	}
