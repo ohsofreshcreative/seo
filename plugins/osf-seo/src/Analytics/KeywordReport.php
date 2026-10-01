@@ -135,7 +135,8 @@ final class KeywordReport
 	/**
 	 * Wszystkie frazy okresu z porównaniem — bez paginacji, z progiem szumu: fraza musi mieć co najmniej
 	 * $minImpressions wyświetleń w bieżącym albo poprzednim okresie. Ten sam skan co lista fraz
-	 * (zakres PK project_id, date); do PHP trafiają wyłącznie sumy per fraza (analiza szans).
+	 * (zakres PK project_id, date); do PHP trafiają wyłącznie sumy per fraza (analiza szans). Bez ORDER BY
+	 * (kolejność nie ma znaczenia dla analizy).
 	 *
 	 * @return list<KeywordRow>
 	 */
@@ -145,8 +146,10 @@ final class KeywordReport
 		$projectId = $context->projectId();
 		$min = max(1, $minImpressions);
 
+		// STRAIGHT_JOIN: najpierw agregat projektu, potem słownik po PRIMARY (eq_ref) — bez tego planista potrafi
+		// skanować cały słownik fraz wszystkich projektów i dopiero dopasowywać agregat.
 		$records = $this->db->fetchAll(
-			"SELECT a.*, k.keyword
+			"SELECT STRAIGHT_JOIN a.*, k.keyword
 			FROM (
 				SELECT q.keyword_id, " . self::PERIOD_COLUMNS . "
 				FROM `{$this->db->table('gsc_query_daily')}` q
@@ -154,8 +157,7 @@ final class KeywordReport
 				GROUP BY q.keyword_id
 				HAVING cur_impr >= %d OR prev_impr >= %d
 			) a
-			JOIN `{$this->db->table('keywords')}` k ON k.id = a.keyword_id AND k.project_id = %d
-			ORDER BY a.keyword_id",
+			JOIN `{$this->db->table('keywords')}` k ON k.id = a.keyword_id AND k.project_id = %d",
 			[$curStart, $curStart, $curStart, $curStart, $curStart, $curStart, $projectId, $period->previous->start, $period->current->end, $min, $min, $projectId],
 		);
 

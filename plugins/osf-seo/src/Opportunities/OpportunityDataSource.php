@@ -25,7 +25,8 @@ use OsfSeo\Gsc\Dictionary;
  */
 final class OpportunityDataSource
 {
-	private const BATCH = 1000;
+	/** Listy IN poniżej 1000 elementów — MariaDB zamienia dłuższe na podzapytanie i skanuje całą tabelę (in_predicate_conversion_threshold). */
+	private const BATCH = 500;
 
 	private const PAIR_COLUMNS = 'SUM(CASE WHEN qp.date >= %s THEN qp.clicks ELSE 0 END) AS cur_clicks,
 		SUM(CASE WHEN qp.date >= %s THEN qp.impressions ELSE 0 END) AS cur_impr,

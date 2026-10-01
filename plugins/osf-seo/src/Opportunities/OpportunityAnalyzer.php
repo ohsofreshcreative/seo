@@ -54,6 +54,11 @@ final class OpportunityAnalyzer
 			return array_map(static fn (int $days): AnalysisResult => new AnalysisResult($days, AnalysisResult::LOCKED), $periods);
 		}
 
+		// Agregaty dużych projektów (setki tysięcy par fraza × podstrona) — jak przy imporcie, wyższy limit pamięci.
+		if (function_exists('wp_raise_memory_limit')) {
+			wp_raise_memory_limit('osf_seo_opportunities');
+		}
+
 		try {
 			$results = [];
 

@@ -418,8 +418,10 @@ final class OpportunityRepository
 
 		if ($filters->state === 'active') {
 			$from = "`{$this->db->table('opportunity_detections')}` d JOIN `{$this->table()}` o ON o.id = d.opportunity_id";
-			$where = ['d.project_id = %d', 'd.period_days = %d'];
-			array_push($params, $projectId, $filters->days);
+			// Warunek projektu po obu stronach złączenia: planista może zacząć od indeksu wykryć (lista)
+			// albo od indeksu project_page szans (członkowie grup podstron).
+			$where = ['d.project_id = %d', 'd.period_days = %d', 'o.project_id = %d'];
+			array_push($params, $projectId, $filters->days, $projectId);
 			$priority = 'd.priority';
 			$confidence = 'd.confidence';
 			$order = 'd.priority DESC, d.impressions DESC, o.id ASC';
@@ -484,7 +486,7 @@ final class OpportunityRepository
 	{
 		$ids = [];
 
-		foreach (array_chunk(array_values(array_unique($hexes)), 1000) as $chunk) {
+		foreach (array_chunk(array_values(array_unique($hexes)), 500) as $chunk) {
 			foreach ($this->db->fetchAll(
 				"SELECT id, LOWER(HEX(fingerprint)) AS h FROM `{$this->table()}` WHERE project_id = %d AND fingerprint IN (" . Connection::placeholders($chunk, 'UNHEX(%s)') . ')',
 				[$projectId, ...$chunk],
