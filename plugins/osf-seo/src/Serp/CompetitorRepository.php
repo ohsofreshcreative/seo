@@ -79,6 +79,18 @@ final class CompetitorRepository
 		return $this->find($competitor->projectId, $competitor->publicId) ?? $competitor;
 	}
 
+	/** Warianty marki (tekst użytkownika — wyłącznie przez update()). */
+	public function updateBrandTerms(Competitor $competitor, string $brandTerms, ?int $userId): Competitor
+	{
+		$this->db->update($this->table(), [
+			'brand_terms' => $brandTerms === '' ? null : $brandTerms,
+			'updated_by' => $userId,
+			'updated_at' => $this->now(),
+		], ['id' => $competitor->id, 'project_id' => $competitor->projectId]);
+
+		return $this->find($competitor->projectId, $competitor->publicId) ?? $competitor;
+	}
+
 	private function table(): string
 	{
 		return $this->db->table('serp_competitors');

@@ -27,6 +27,8 @@ final class Competitor
 		public readonly string $status,
 		public readonly string $createdAt,
 		public readonly string $updatedAt,
+		/** Warianty marki konkurenta (Luki SEO: frazy markowe nie są lukami) — składnia wykluczeń. */
+		public readonly string $brandTerms = '',
 	) {
 	}
 
@@ -44,6 +46,7 @@ final class Competitor
 			(string) $row['status'],
 			(string) $row['created_at'],
 			(string) $row['updated_at'],
+			(string) ($row['brand_terms'] ?? ''),
 		);
 	}
 
@@ -72,6 +75,7 @@ final class Competitor
 			'name' => $this->name,
 			'domain' => $this->domain,
 			'status' => $this->status,
+			'brand_terms' => $this->brandTerms,
 			'created_at' => $this->createdAt,
 			'updated_at' => $this->updatedAt,
 		];
