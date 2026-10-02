@@ -2047,9 +2047,19 @@ słaba, nieznana; porównywalne i silniejsze są widoczne po zmianie filtra.
 `listed = 0` z powodem (filtr „Odfiltrowane”), w kolejności: **marka projektu** i **marka konkurenta** (`BrandMatcher`: warianty podane przez
 użytkownika pasują zawsze; warianty automatyczne z domeny i nazwy — gdy wariant wielowyrazowy występuje jako jeden wyraz albo fraza zawiera
 wariant i dostawca oznaczył intencję nawigacyjną — dzięki temu domena-fraza nie ukrywa fraz branżowych), **wykluczenia projektu** (wspólne
-z Nowymi frazami), **słowa tematyczne** (jeśli podane — tylko frazy z nimi), **inny język** (według dostawcy), **minimalny wolumen**,
-**maksymalna trudność SEO**. Frazy, na które żaden aktywny konkurent już nie rankuje w progu, są **nieaktualne** (`active = 0`) — status
-pracy i notatka zostają, a fraza wraca z tym samym identyfikatorem, gdy dowód się pojawi.
+z Nowymi frazami), **słowa tematyczne** (jeśli podane — tylko frazy z nimi), **minimalny wolumen**, **maksymalna trudność SEO**. Frazy, na
+które żaden aktywny konkurent już nie rankuje w progu, są **nieaktualne** (`active = 0`) — status pracy i notatka zostają, a fraza wraca
+z tym samym identyfikatorem, gdy dowód się pojawi.
+
+**Inny język nie jest filtrem** (poprawka po pierwszym smoke teście): DataForSEO Labs oznacza `is_another_language` każdą frazę w innym języku
+niż język rynku, a polscy użytkownicy wpisują też frazy angielskie („wordpress developer”, „heatmap”, „uxui designer”). Informacja zostaje
+w `market_keywords.other_language` i jest pokazywana przy frazie jako „inny język” (lista luk, szczegóły, CLI `other_language`). Ustawienia
+wykluczającego inne języki nie ma — do pomijania pojedynczych fraz służą wykluczenia projektu. Zmiana reguły podniosła wersję przeliczenia
+(`GapRefresher::VERSION`), więc po wdrożeniu luki przeliczają się lokalnie w tle z zapisanych zbiorów — bez żadnego żądania do DataForSEO.
+
+Fraza zbioru konkurenta, na którą konkurent rankuje poniżej progu **znaczącej pozycji** (ustawienia, domyślnie TOP20; import pobiera domyślnie
+TOP30), nie jest luką i nie trafia do „Odfiltrowanych” — liczba fraz zbioru może więc być większa niż suma luk i odfiltrowanych. Zmiana progu
+w ustawieniach to wyłącznie lokalne przeliczenie.
 
 ### 14.9 Priorytet luki (D48)
 

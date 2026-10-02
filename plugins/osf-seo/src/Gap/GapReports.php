@@ -48,7 +48,7 @@ final class GapReports
 		$keywordJoin = $filters->q !== '' || $filters->sort === 'keyword' ? "JOIN `{$this->db->table('market_keywords')}` m ON m.id = g.market_keyword_id " : '';
 		// Najpierw identyfikatory strony (indeks project_list pokrywa filtry domyślnej listy), potem szczegóły tylko 50 wierszy.
 		$rows = $this->db->fetchAll(
-			"SELECT STRAIGHT_JOIN g.*, m.keyword, c.name AS competitor_name, c.public_id AS competitor_public_id, u.url AS best_url,
+			"SELECT STRAIGHT_JOIN g.*, m.keyword, m.other_language, c.name AS competitor_name, c.public_id AS competitor_public_id, u.url AS best_url,
 				t.url AS target_url, cl.public_id AS cluster_public_id, cl.label AS cluster_label
 			FROM (SELECT g.id FROM `{$this->table()}` g {$keywordJoin}WHERE {$where} ORDER BY {$order} LIMIT %d OFFSET %d) page
 			JOIN `{$this->table()}` g ON g.id = page.id
@@ -129,7 +129,7 @@ final class GapReports
 	public function keyword(int $projectId, string $publicId): ?array
 	{
 		return $this->db->fetchRow(
-			"SELECT g.*, m.keyword, LOWER(HEX(m.keyword_key)) AS keyword_hex, m.competition_index, m.competition_level, m.volume_fetched_at,
+			"SELECT g.*, m.keyword, m.other_language, LOWER(HEX(m.keyword_key)) AS keyword_hex, m.competition_index, m.competition_level, m.volume_fetched_at,
 				m.difficulty_fetched_at, c.name AS competitor_name, c.public_id AS competitor_public_id, u.url AS best_url, t.url AS target_url,
 				cl.public_id AS cluster_public_id, cl.label AS cluster_label, cl.content_reason, cl.confidence
 			FROM `{$this->table()}` g

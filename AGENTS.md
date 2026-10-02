@@ -205,7 +205,8 @@ Motyw powstał z marketingowego motywu `h2otwock` i wciąż zawiera jego kod: bl
   tylko w spójnym zbiorze pełnego TOP100 i z wolumenem z zapasem nad granicą (`GapDomain::provesNoVisibility()`). Wynik 0–100 to „Priorytet luki” (sygnał do sprawdzenia),
   formuła w `GapScorer` (sekcja 14.9). Luka treści to heurystyka z powodem i pewnością — etykiety wyłącznie „Potencjalna luka treści”,
   „Istniejąca strona — do wzmocnienia”, „Bez luki treści”, „Niejasne”; nigdy „projekt potrzebuje nowej strony”. Frazy markowe, wykluczone,
-  w innym języku, poniżej progów — `listed = 0` z powodem (nie usuwamy); status pracy przetrwa przeliczenie. Bez AI, stemmingu i crawla konkurencji.
+  poniżej progów — `listed = 0` z powodem (nie usuwamy); status pracy przetrwa przeliczenie. Inny język według dostawcy
+  (`is_another_language`) to tylko informacja przy frazie („inny język”), nigdy filtr luk — na rynku PL frazy angielskie są normalnymi zapytaniami. Bez AI, stemmingu i crawla konkurencji.
 
 ⸻
 

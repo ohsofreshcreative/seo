@@ -27,7 +27,9 @@ use OsfSeo\Support\Ulid;
  * 1. frazy, na które aktywni konkurenci projektu rankują w progu znaczącej pozycji (zbiory domen, Labs),
  * 2. widoczność projektu: pomiar SERP → GSC → punkt odniesienia Labs (`VisibilityResolver`), typ luki, priorytet,
  * 3. filtry: marka projektu i konkurentów, wykluczenia projektu (wspólne z Nowymi frazami), słowa tematyczne,
- *    minimalny wolumen, maksymalna KD, inny język — wiersze zostają (`listed = 0`, powód),
+ *    minimalny wolumen, maksymalna KD — wiersze zostają (`listed = 0`, powód). Inny język według dostawcy
+ *    (`is_another_language`) nie jest filtrem — tylko informacją przy frazie: polscy użytkownicy wpisują też frazy
+ *    angielskie („wordpress developer”, „heatmap”),
  * 4. grupy fraz (lider grupy, stabilne identyfikatory), luka treści grupy, strony konkurencji.
  *
  * Wiersze luk nie są usuwane: fraza bez aktualnych dowodów jest „Nieaktualna” (status pracy zostaje).
@@ -35,7 +37,8 @@ use OsfSeo\Support\Ulid;
  */
 final class GapRefresher
 {
-	private const VERSION = 1;
+	// Zmiana reguł przeliczenia unieważnia klucz danych — luki przeliczą się lokalnie w tle, bez żadnego żądania.
+	private const VERSION = 2;
 
 	private const CHUNK = 1000;
 
@@ -263,7 +266,7 @@ final class GapRefresher
 			$intent = $market['search_intent'];
 			$hex = (string) $market['hex'];
 			$keyword = (string) $market['keyword'];
-			$reason = $this->filterReason($context, $keyword, $intent, $volume, $difficulty, $market['other_language']);
+			$reason = $this->filterReason($context, $keyword, $intent, $volume, $difficulty);
 			$tracked = $serp[$id] ?? null;
 			$labsRow = $baseline[$id] ?? null;
 			$gscRow = $gsc[$hex] ?? ['impressions' => 0, 'clicks' => 0, 'position_sum' => 0.0];
@@ -340,7 +343,7 @@ final class GapRefresher
 		return $keep;
 	}
 
-	private function filterReason(RefreshContext $context, string $keyword, ?string $intent, ?int $volume, ?int $difficulty, ?string $otherLanguage): ?string
+	private function filterReason(RefreshContext $context, string $keyword, ?string $intent, ?int $volume, ?int $difficulty): ?string
 	{
 		if ($context->ownBrand->match($keyword, $intent) !== null) {
 			return 'brand_own';
@@ -355,7 +358,6 @@ final class GapRefresher
 		return match (true) {
 			$context->exclusions->match($keyword) !== null => 'excluded',
 			! $context->includes->isEmpty() && $context->includes->match($keyword) === null => 'not_included',
-			$otherLanguage === '1' => 'foreign_language',
 			$context->settings->minVolume > 0 && ($volume === null || $volume < $context->settings->minVolume) => 'low_volume',
 			$context->settings->maxDifficulty !== null && $difficulty !== null && $difficulty > $context->settings->maxDifficulty => 'high_difficulty',
 			default => null,
