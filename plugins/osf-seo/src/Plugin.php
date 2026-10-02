@@ -122,7 +122,7 @@ use OsfSeo\Support\SystemSleeper;
 final class Plugin
 {
 	/** Musi być zgodna z nagłówkiem `Version` w osf-seo.php (pilnuje tego test). */
-	public const VERSION = '0.15.0';
+	public const VERSION = '0.16.0';
 
 	public const MIN_PHP = '8.2';
 
