@@ -453,7 +453,7 @@ final class MigratorTest extends IntegrationTestCase
 			self::assertSame($data, $rows($table), "{$table} bez zmian.");
 		}
 
-		self::assertSame(array_map(static fn (array $row): array => $row + ['core_key' => null], $market), $rows('market_keywords'), 'Metryki bez zmian — nowa kolumna pusta.');
+		self::assertSame(array_map(static fn (array $row): array => $row + ['core_key' => null, 'other_language' => null], $market), $rows('market_keywords'), 'Metryki bez zmian — nowa kolumna pusta.');
 		self::assertSame(array_map(static fn (array $row): array => $row + ['brand_terms' => null], $competitors), $rows('serp_competitors'), 'Konkurenci bez zmian — warianty marki puste.');
 		self::assertSame('discovery', $db->fetchValue("SELECT source FROM `{$db->table('serp_tracked_keywords')}` LIMIT 1"));
 		$db->insert($db->table('serp_tracked_keywords'), [
@@ -487,7 +487,7 @@ final class MigratorTest extends IntegrationTestCase
 	{
 		return array_map(
 			static fn (string $table): string => "table {$table} is missing",
-			['gap_domains', 'gap_domain_keywords', 'gap_domain_events', 'gap_runs', 'gap_run_targets', 'gap_settings', 'gap_keywords', 'gap_clusters', 'gap_competitor_pages'],
+			['gap_domains', 'gap_domain_keywords', 'gap_domain_pages', 'gap_domain_events', 'gap_runs', 'gap_run_targets', 'gap_settings', 'gap_keywords', 'gap_clusters', 'gap_competitor_pages'],
 		);
 	}
 
@@ -504,6 +504,7 @@ final class MigratorTest extends IntegrationTestCase
 			$schema7[0],
 			$schema7[1],
 			'column market_keywords.core_key is missing',
+			'column market_keywords.other_language is missing',
 			...array_slice($schema7, 2),
 			...self::schema8Objects(),
 			...self::schema9Tables(),
@@ -515,7 +516,7 @@ final class MigratorTest extends IntegrationTestCase
 	 */
 	private static function schema7Problems(): array
 	{
-		return ['column market_keywords.core_key is missing', ...self::schema8Objects(), ...self::schema9Tables()];
+		return ['column market_keywords.core_key is missing', 'column market_keywords.other_language is missing', ...self::schema8Objects(), ...self::schema9Tables()];
 	}
 
 	/**
@@ -527,6 +528,7 @@ final class MigratorTest extends IntegrationTestCase
 	{
 		return [
 			'column market_keywords.core_key is missing',
+			'column market_keywords.other_language is missing',
 			'column serp_competitors.brand_terms is missing',
 			"column serp_tracked_keywords.source has type enum('manual','gsc','discovery') instead of enum('manual','gsc','discovery','gap')",
 			...self::schema9Tables(),

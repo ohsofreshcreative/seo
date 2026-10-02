@@ -315,6 +315,7 @@ final class Schema
 					'search_intent' => 'varchar(16)',
 					'intent_fetched_at' => 'datetime',
 					'core_key' => 'binary(16)',
+					'other_language' => 'tinyint unsigned',
 				],
 				'primary' => ['id'],
 				'unique' => ['market_keyword' => ['provider', 'location_code', 'language_code', 'keyword_key']],
@@ -781,6 +782,17 @@ final class Schema
 				'primary' => ['domain_id', 'market_keyword_id'],
 				'unique' => [],
 				'indexes' => ['domain_url' => ['domain_id', 'url_id', 'rank_group']],
+			],
+			'gap_domain_pages' => [
+				'columns' => [
+					'domain_id' => 'int unsigned',
+					'url_id' => 'int unsigned',
+					'title' => 'varchar(512)',
+					'last_seen' => 'date',
+				],
+				'primary' => ['domain_id', 'url_id'],
+				'unique' => [],
+				'indexes' => [],
 			],
 			'gap_domain_events' => [
 				'columns' => [

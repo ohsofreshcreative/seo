@@ -13,6 +13,7 @@ use OsfSeo\Database\Migration;
  * - `gap_domains` — zbiór fraz domeny na rynku (dostawca × lokalizacja × język × domena), WSPÓLNY dla projektów:
  *   zakres ostatniego importu, kompletność i świeżość; projekt widzi go wyłącznie przez swoich konkurentów lub domenę,
  * - `gap_domain_keywords` — bieżący stan: pozycja domeny (Labs) dla frazy rynkowej, URL (słownik `serp_urls`), daty,
+ * - `gap_domain_pages` — strony domeny w zbiorze (URL ze słownika `serp_urls`, tytuł z wyniku dostawcy),
  * - `gap_domain_events` — historia wyłącznie zmian (nowa, utracona, powrót, zmiana URL, istotna zmiana pozycji),
  * - `gap_runs` / `gap_run_targets` — przebieg potwierdzony przez użytkownika i stronicowany import każdej domeny
  *   (także historia importów domeny: liczby, koszt, rozkład pozycji),
@@ -22,6 +23,7 @@ use OsfSeo\Database\Migration;
  * - `gap_competitor_pages` — agregaty stron konkurencji w projekcie.
  *
  * Zmiany istniejących tabel są wyłącznie addytywne: `market_keywords.core_key` (grupa synonimów dostawcy),
+ * `market_keywords.other_language` (dostawca rozpoznał inny język frazy niż język rynku),
  * `serp_competitors.brand_terms` (warianty marki), wartość `gap` w `serp_tracked_keywords.source`. Idempotentna.
  */
 final class M0009CreateKeywordGap implements Migration
@@ -46,6 +48,10 @@ final class M0009CreateKeywordGap implements Migration
 
 		if (! MigrationHelpers::columnExists($db, 'market_keywords', 'core_key')) {
 			$db->execute("ALTER TABLE `{$db->table('market_keywords')}` ADD COLUMN `core_key` BINARY(16) NULL DEFAULT NULL");
+		}
+
+		if (! MigrationHelpers::columnExists($db, 'market_keywords', 'other_language')) {
+			$db->execute("ALTER TABLE `{$db->table('market_keywords')}` ADD COLUMN `other_language` TINYINT UNSIGNED NULL DEFAULT NULL");
 		}
 
 		if (! MigrationHelpers::columnExists($db, 'serp_competitors', 'brand_terms')) {
@@ -98,6 +104,14 @@ final class M0009CreateKeywordGap implements Migration
 			`present` TINYINT UNSIGNED NOT NULL DEFAULT 1,
 			PRIMARY KEY (`domain_id`, `market_keyword_id`),
 			KEY `domain_url` (`domain_id`, `url_id`, `rank_group`)
+		) {$options}");
+
+		$db->execute("CREATE TABLE IF NOT EXISTS `{$db->table('gap_domain_pages')}` (
+			`domain_id` INT UNSIGNED NOT NULL,
+			`url_id` INT UNSIGNED NOT NULL,
+			`title` VARCHAR(512) NULL DEFAULT NULL,
+			`last_seen` DATE NOT NULL,
+			PRIMARY KEY (`domain_id`, `url_id`)
 		) {$options}");
 
 		$db->execute("CREATE TABLE IF NOT EXISTS `{$db->table('gap_domain_events')}` (
@@ -206,7 +220,8 @@ final class M0009CreateKeywordGap implements Migration
 			PRIMARY KEY (`project_id`)
 		) {$options}");
 
-		// `public_id` w utf8mb4_bin (nie ascii_bin) — lista jest filtrowana tekstem frazy (patrz wyżej, $wpdb).
+		// Wszystkie kolumny tekstowe w utf8mb4 (`public_id` w utf8mb4_bin, bez ascii) — lista jest filtrowana tekstem frazy,
+		// a tabela mieszająca kolumny ascii i utf8mb4 bez kolumny binarnej jest dla $wpdb tabelą ASCII (patrz wyżej).
 		$db->execute("CREATE TABLE IF NOT EXISTS `{$db->table('gap_keywords')}` (
 			`id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
 			`public_id` CHAR(26) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL,
@@ -218,7 +233,7 @@ final class M0009CreateKeywordGap implements Migration
 			`status_changed_by` BIGINT UNSIGNED NULL DEFAULT NULL,
 			`active` TINYINT UNSIGNED NOT NULL DEFAULT 1,
 			`listed` TINYINT UNSIGNED NOT NULL DEFAULT 1,
-			`filter_reason` VARCHAR(24) CHARACTER SET ascii COLLATE ascii_bin NULL DEFAULT NULL,
+			`filter_reason` VARCHAR(24) NULL DEFAULT NULL,
 			`gap_type` ENUM('missing','weak','competitive','stronger','unknown') NOT NULL DEFAULT 'unknown',
 			`visibility` ENUM('unknown','none','low','visible') NOT NULL DEFAULT 'unknown',
 			`visibility_source` ENUM('serp','gsc','labs') NULL DEFAULT NULL,
@@ -238,7 +253,7 @@ final class M0009CreateKeywordGap implements Migration
 			`search_volume` INT UNSIGNED NULL DEFAULT NULL,
 			`keyword_difficulty` TINYINT UNSIGNED NULL DEFAULT NULL,
 			`cpc` DECIMAL(12,4) NULL DEFAULT NULL,
-			`intent` VARCHAR(16) CHARACTER SET ascii COLLATE ascii_bin NULL DEFAULT NULL,
+			`intent` VARCHAR(16) NULL DEFAULT NULL,
 			`content_gap` ENUM('improve','new_page','unclear','covered') NULL DEFAULT NULL,
 			`cluster_id` INT UNSIGNED NULL DEFAULT NULL,
 			`target_url_id` INT UNSIGNED NULL DEFAULT NULL,

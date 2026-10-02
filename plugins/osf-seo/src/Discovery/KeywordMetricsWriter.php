@@ -11,8 +11,9 @@ use OsfSeo\Market\MarketMetricsRepository;
 
 /**
  * Zapis metryk fraz z odpowiedzi DataForSEO Labs (Nowe frazy, Luki SEO) do wspólnych `market_keywords`: wolumen i trudność
- * tylko tam, gdzie brakuje danych albo minął TTL (świeży wolumen Google Ads ze STEP 12 nie jest nadpisywany), intencja
- * i grupa synonimów dostawcy (`core_key`) zawsze, gdy dostawca je podał. Brak wartości u dostawcy niczego nie zmienia.
+ * tylko tam, gdzie brakuje danych albo minął TTL (świeży wolumen Google Ads ze STEP 12 nie jest nadpisywany); intencja,
+ * grupa synonimów dostawcy (`core_key`) i flaga innego języka — zawsze, gdy dostawca je podał. Brak wartości u dostawcy
+ * niczego nie zmienia.
  */
 final class KeywordMetricsWriter
 {
@@ -41,6 +42,7 @@ final class KeywordMetricsWriter
 		$difficulty = [];
 		$intents = [];
 		$cores = [];
+		$languages = [];
 
 		foreach ($items as $keyword => $item) {
 			// Klucze tablic PHP zamieniają frazy liczbowe („2024”) na int.
@@ -57,6 +59,10 @@ final class KeywordMetricsWriter
 
 			if ($item->intent !== null) {
 				$intents[$keyword] = $item->intent;
+			}
+
+			if ($item->isAnotherLanguage !== null) {
+				$languages[$keyword] = $item->isAnotherLanguage;
 			}
 
 			if ($item->coreKeyword !== null && MarketKeyword::normalize($item->coreKeyword) !== '') {
@@ -78,6 +84,10 @@ final class KeywordMetricsWriter
 
 		if ($cores !== []) {
 			$this->metrics->storeCoreKeys($market, $cores);
+		}
+
+		if ($languages !== []) {
+			$this->metrics->storeOtherLanguage($market, $languages);
 		}
 
 		return $ids;
