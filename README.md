@@ -22,7 +22,8 @@ dostawca danych rynkowych (wolumen, historia wolumenu, CPC, konkurencja Ads, tru
 > (STEP 14: monitorowane frazy, pomiary Google TOP100 w kolejce Standard z podglądem kosztu i harmonogramem — domyślnie
 > wyłączonym, pełne wyniki w historii, Pozycja SERP osobno od średniej pozycji GSC, konkurenci monitorowani i organiczni) oraz moduł
 > „Luki SEO” (STEP 15, Whack-a-mole: frazy domen konkurentów z DataForSEO Labs we wspólnych zbiorach, import w tle z planem i kosztem przed
-> uruchomieniem, widoczność projektu SERP → GSC → punkt odniesienia, priorytet luki, grupy fraz, luka treści jako heurystyka, strony konkurencji). Plan i postęp:
+> uruchomieniem, widoczność projektu SERP → GSC → punkt odniesienia, priorytet luki, grupy fraz, luka treści jako heurystyka, strony konkurencji). W toku:
+> STEP 16 — **Strategia** (backlog SEO łączący sygnały modułów z dowodami; zrobiona faza A: kandydaci, fakty i dowody per fraza, CLI). Plan i postęp:
 > [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 >
 > **Repozytorium jest publiczne.** Nie commituj żadnych sekretów (sekcja „Konfiguracja”).
@@ -181,6 +182,13 @@ wp osf-seo gap:status --project=<public_id>                       # zbiory domen
 wp osf-seo gap:list --project=<public_id> [--type=missing] [--format=json]   # luki fraz z priorytetem i widocznością projektu
 wp osf-seo gap:content --project=<public_id>                      # luki treści (grupy fraz, heurystyka)
 wp osf-seo gap:recalculate --project=<public_id>                  # przeliczenie z zapisanych danych (bez API)
+
+# Strategia (STEP 16, faza A — bez żadnego żądania do API; szczegóły: docs/ARCHITECTURE.md, sekcja 15)
+wp osf-seo strategy:status --project=<public_id>                 # limity, ostatnie przeliczenie, aktualność klucza danych, okno GSC
+wp osf-seo strategy:preview --project=<public_id>                # podgląd kandydatów ze wszystkich źródeł (bez zapisu)
+wp osf-seo strategy:refresh --project=<public_id> [--force]      # zapis kandydatów, faktów i dowodów per fraza
+wp osf-seo strategy:candidates --project=<public_id> [--source=gap] [--format=json]
+wp osf-seo strategy:keyword --project=<public_id> --keyword="fraza"
 ```
 
 Synchronizacja działa w tle przez WP-Cron (lokalnie wystarczy ruch na stronie); na serwerze zalecany cron
@@ -230,7 +238,7 @@ define('OSF_SEO_DATAFORSEO_MONTHLY_COST_LIMIT', 10.00);
   bez ponownej opłaty). Harmonogram odświeżania domyślnie wyłączony. Opcjonalnie: `OSF_SEO_GAP_TTL_DAYS` (30), `OSF_SEO_GAP_MAX_REQUESTS_PER_TICK`
   (10), `OSF_SEO_DATAFORSEO_PRICE_GAP_REQUEST` / `…_GAP_ITEM` (cennik do szacunku).
 
-Pełna lista stałych: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md), sekcja 16.
+Pełna lista stałych: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md), sekcja 17.
 
 ## Bezpieczeństwo
 
