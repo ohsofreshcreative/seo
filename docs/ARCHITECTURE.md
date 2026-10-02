@@ -2305,7 +2305,9 @@ wpisy ręczne) w tematy pracy z dowodami — deterministycznie, bez AI (AI — S
 - Metryki rynkowe (wolumen, KD, CPC, intencja, historia) **nie są kopiowane** — odczyt z `market_keywords`.
 
 Zapis jest przyrostowy: wiersz zmienia się tylko, gdy zmienił się odcisk faktów (`facts_hash`); kandydaci, którzy wypadli, dostają
-`active = 0` z powodem (`no_source`, `overflow`, `filtered_*`, `market_changed`) — identyfikator i wpis ręczny zostają.
+`active = 0` z aktualnym powodem (`no_source`, `overflow`, `brand_own`, `brand_competitor`, `excluded`, `market_changed`) oraz bez źródeł
+i poziomu — identyfikator i wpis ręczny zostają, a fakty i dowody to stan z ostatniego przeliczenia, w którym fraza była kandydatem.
+Frazy GSC i członkowie szans SEO bez wiersza rynkowego dostają go przy zapisie (bez danych i bez wzbogacania — jak dodanie do monitorowania).
 
 ### 15.4 Model danych (schemat 10, M0010)
 
@@ -2360,9 +2362,9 @@ marka projektu i wykluczenia, `strategy_settings.revision` (wpisy ręczne Strate
 
 ```bash
 wp osf-seo strategy:status --project=<id> [--format=json]       # limity, rynek, ostatnie przeliczenie, aktualność klucza danych, okno GSC
-wp osf-seo strategy:preview --project=<id> [--limit=20] [--format=json]   # podgląd kandydatów BEZ zapisu: źródła, filtry, limit, próbka
+wp osf-seo strategy:preview --project=<id> [--limit=20] [--format=json]   # podgląd kandydatów BEZ zapisu: źródła, filtry, limit, próbka (bez fraz GSC bez klucza rynkowego)
 wp osf-seo strategy:refresh --project=<id> [--force] [--format=json]      # materializacja kandydatów, faktów i dowodów (tylko po zmianie klucza)
-wp osf-seo strategy:candidates --project=<id> [--source=…] [--status=active|inactive|all] [--search=…] [--sort=…] [--page=<n>] [--format=json]
+wp osf-seo strategy:candidates --project=<id> [--source=…] [--status=active|inactive|all] [--search=…] [--sort=…] [--page=<n>] [--per-page=<n>] [--format=json]
 wp osf-seo strategy:keyword --project=<id> --keyword=<ULID|fraza> [--format=json]   # fakty i dowody kandydata
 wp osf-seo strategy:add|remove --project=<id> --keywords="a, b"   # wpisy ręczne (osf_seo_manage_strategy)
 ```
