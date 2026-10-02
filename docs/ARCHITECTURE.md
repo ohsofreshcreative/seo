@@ -1937,9 +1937,14 @@ niepotwierdzonych obejść (np. „okien wolumenowych” czy `offset_token`). Dl
 
 - `covered_min_volume` — dolna granica wolumenu, dla której nieobecność frazy jest wiarygodna: import kompletny → minimalny wolumen zakresu;
   import przycięty albo niepełny → wolumen ostatniej pobranej frazy + 1 (frazy o tym samym wolumenie mogły trafić na następną stronę);
-- **duplikaty frazy między stronami** (przesunięcie danych u dostawcy w trakcie stronicowania) → nieobecność w ogóle niewiarygodna
-  (`covered_min_volume = NULL`), import oznaczony w historii;
-- „Brak widoczności” z punktu odniesienia i zdarzenie „lost” tylko w wiarygodnym zakresie — nigdy z przyciętej części.
+- **zapas wolumenu** (`GapConfig::ABSENCE_VOLUME_MARGIN` = 1,5): filtr dostawcy działa na wolumenie z bazy Labs w chwili importu, a nasz wolumen
+  frazy bywa z innego miesiąca lub źródła — brak frazy jest wiarygodny dopiero od `ceil(covered_min_volume × 1,5)` (bez filtra wolumenu: od 0);
+- **niespójne strony** (przesunięcie danych u dostawcy w trakcie stronicowania) → nieobecność w ogóle niewiarygodna (`covered_min_volume = NULL`),
+  powód w `gap_run_targets.unreliable`: `duplicates` (fraza powtórzona na kolejnej stronie), `total_changed` (inny `total_count` niż na poprzedniej
+  stronie), `short_page` (mniej fraz niż `limit`, choć `total_count` zapowiada kolejne), `order` (pierwsza fraza strony z wolumenem większym niż
+  ostatnia poprzedniej), `unreadable` (wynik bez frazy lub pozycji — nie wiemy, której frazy dotyczy), `empty` (pusta odpowiedź dla zbioru, który
+  miał frazy — utrata wszystkiego dopiero po drugiej pustej odpowiedzi z rzędu);
+- „Brak widoczności” z punktu odniesienia i zdarzenie „lost” tylko w wiarygodnym zakresie — nigdy z przyciętej części ani tuż nad granicą.
 
 ### 14.3 Model danych (M0009)
 
@@ -1951,12 +1956,13 @@ Migracja `M0009CreateKeywordGap` (schemat 9) — tylko nowe tabele i nowe kolumn
   (`empty`, `importing`, `ready`, `partial`), zakres ostatniego importu (`coverage_max_rank`, `coverage_min_volume`, `coverage_max_rows`),
   `complete`, `covered_min_volume`, `total_count`, `rows_present`, `labs_updated_at`, `import_run_id`, `imported_at`, `stale_after`.
 - **`osf_gap_domain_keywords`** — PK (`domain_id`, `market_keyword_id`): `rank_group`, `rank_absolute`, `url_id` (słownik `serp_urls`), `etv`,
-  `serp_on` (data migawki Labs), `first_seen`, `last_seen`, `seen_run_id`, `prev_rank`, `changed_on`, `present`; indeks `domain_url`.
+  `serp_on` (data migawki Labs), `first_seen`, `last_seen`, `seen_run_id`, `prev_rank`, `changed_on`, `present` (1 — w zakresie ostatniego
+  importu, 0 — utracona, 2 — niepotwierdzona: brak w ostatnim imporcie tuż nad granicą wolumenu, bez zdarzenia); indeks `domain_url`.
 - **`osf_gap_domain_pages`** — tytuły stron konkurentów (PK `domain_id`, `url_id`).
 - **`osf_gap_domain_events`** — historia zbioru (14.12): PK (`domain_id`, `market_keyword_id`, `run_id`, `event`), indeks `domain_run`.
 - **`osf_gap_runs`** / **`osf_gap_run_targets`** — przebiegi importu (stan, zakres, liczby, koszty, powód blokady; UNIQUE
   `active_project_id` = jeden aktywny przebieg na projekt) i domeny przebiegu (stan, `next_offset`, strony, frazy, żądanie w locie, próby,
-  błąd, termin ponowienia, statystyki).
+  błąd, powód niewiarygodnej nieobecności `unreliable` (14.2), termin ponowienia, statystyki).
 - **`osf_gap_settings`** — ustawienia projektu (próg znaczącej pozycji konkurenta, min. wolumen, maks. KD, słowa tematyczne, marka projektu,
   domyślny zakres importu, odświeżanie, harmonogram) i `data_key` (klucz danych przeliczenia).
 - **`osf_gap_keywords`** — luka frazy projektu: UNIQUE (`project_id`, `market_keyword_id`), `public_id` utf8mb4_bin; status pracy i notatka;
@@ -1975,7 +1981,13 @@ jako ASCII i odrzuca wyszukiwanie z polskimi znakami. Tabele Luk SEO nie należ�
 - Zbiór domeny jest wspólny dla wszystkich projektów na tym samym rynku (domena × lokalizacja × język × dostawca). Świeży zbiór (do
   `OSF_SEO_GAP_TTL_DAYS`, domyślnie 30 dni), który **obejmuje** żądany zakres (TOP N ≥, min. wolumen ≤, limit fraz ≥ albo zbiór kompletny),
   jest używany z pamięci — **bez opłaty**, także przez inny projekt. Węższy zakres mieści się w szerszym; szerszy wymaga importu.
-- Domena importowana właśnie przez inny projekt: plan pokazuje „czeka na import innego projektu”, przebieg użyje wyniku bez opłaty.
+- **Równoległe projekty**: zbiór importuje naraz tylko jeden przebieg — atomowe przejęcie (`GapDomainRepository::claimImport`: `status =
+  importing`, `import_run_id`), wszystkie strony pod wspólną blokadą płatnych żądań (`MarketSyncService::LOCK`). Przebieg innego projektu z tą
+  samą domeną nie wysyła żądań, dopóki import trwa (także wstrzymany limitem kosztów), a po jego zakończeniu korzysta ze zbioru bez opłaty, jeśli
+  zakres wystarcza; z `force` — gdy zbiór zaimportowano już po zleceniu tego przebiegu (dane są co najmniej tak świeże, jak żądane).
+- Plan: domena importowana właśnie przez inny przebieg z zakresem obejmującym żądany → „czeka na trwający import innego projektu (zwykle bez
+  kosztu)”: oczekiwany koszt 0, ale **koszt maksymalny planu obejmuje jej import** (gdyby tamten się nie udał, ten przebieg pobierze zbiór sam,
+  w granicach potwierdzonego maksimum). Trwający import węższego zakresu → zwykły import z kosztem.
 - Domyślny zakres (decyzja STEP 15): **TOP30, wolumen ≥ 10, maks. 10 000 fraz na domenę**. Presety: szybki (TOP10, ≥ 50, 2 000), standardowy
   (TOP30, ≥ 10, 10 000), pełny (TOP100, każdy wolumen, 10 000) albo własny.
 - **Punkt odniesienia projektu** (decyzja STEP 15): frazy domeny projektu z Ranked Keywords w TOP100, z tym samym minimalnym wolumenem i limitem
@@ -1995,9 +2007,16 @@ jako ASCII i odrzuca wyszukiwanie z polskimi znakami. Tabele Luk SEO nie należ�
 4. **Błędy**: niepewne (sieć, timeout, 5xx, niepoprawna odpowiedź) — **bez ponawiania** (żądanie mogło zostać opłacone), koszt szacowany w
    rejestrze, domena niepełna; limit żądań dostawcy → ponowienie po 5 min (maks. 3 próby); błąd konta (logowanie, środki) → wspólna pauza
    płatnych wywołań wszystkich modułów; żądanie w locie starsze niż godzina (proces padł) → domena niepełna bez ponawiania.
-5. **Anulowanie**: bez kolejnych stron; rozpoczęty import zbioru domykany jako niepełny (pobrane strony zostają).
-6. Koszt każdego żądania w `market_tasks` (koszt zgłoszony przez dostawcę rozstrzyga) — w „Danych rynkowych” kategoria „Luki SEO”.
-7. Po zakończeniu przebiegu luki projektu są przeliczane (14.14).
+5. **Anulowanie**: bez kolejnych stron; rozpoczęty import zbioru domykany jako niepełny (pobrane strony zostają) — od razu, jeśli żaden proces
+   nie wysyła właśnie płatnych żądań, inaczej przez ten proces po bieżącej stronie albo utrzymanie w kolejnym kroku tła. **Utrzymanie**
+   (żądania przerwane, wygasłe wstrzymania, domknięcie anulowanych) działa wyłącznie pod wspólną blokadą płatnych żądań — nigdy w trakcie
+   zapisu strony przez inny proces (np. `wp osf-seo gap:run`).
+6. **Odświeżenie przerwane, wstrzymane albo niespójne nie traci poprzedniego zbioru**: strony są tylko dopisywane i aktualizowane (nowsze
+   obserwacje), utrata fraz (`lost`) zapisywana wyłącznie po zakończonym, spójnym imporcie. Odświeżenie anulowane, nieudane, wygasłe albo
+   niespójne (14.2) kończy domenę jako `partial`, a zbiór zachowuje zakres, kompletność, `covered_min_volume`, datę i świeżość poprzedniego
+   udanego importu (kolejny plan pobierze go ponownie). Pierwszy import niespójny zapisuje pobrane frazy bez wiarygodnej nieobecności.
+7. Koszt każdego żądania w `market_tasks` (koszt zgłoszony przez dostawcę rozstrzyga) — w „Danych rynkowych” kategoria „Luki SEO”.
+8. Po zakończeniu przebiegu luki projektu są przeliczane (14.14).
 
 ### 14.6 Widoczność projektu — hierarchia dowodów (D46)
 
@@ -2009,8 +2028,12 @@ jako ASCII i odrzuca wyszukiwanie z polskimi znakami. Tabele Luk SEO nie należ�
    średnia pozycja `SUM(position_sum) / SUM(impressions)`; > 10 → słaba; ≤ 10, ale wyświetlenia < 10% oczekiwanych z wolumenu → słaba
    (sporadycznie); inaczej widoczna.
 3. **Punkt odniesienia Labs**: domena projektu rankuje → widoczna/słaba wg pozycji Labs; nie rankuje → **brak tylko wtedy**, gdy nieobecność
-   jest wiarygodna (14.2) **i** GSC ma dane projektu z < 10 wyświetleniami frazy.
-4. W pozostałych przypadkach **Nieznana**.
+   dowodzi braku widoczności (`GapDomain::provesNoVisibility()`) **i** GSC ma dane projektu z < 10 wyświetleniami frazy. Nieobecność dowodzi
+   braku widoczności tylko w zbiorze obejmującym **pełne TOP100** (zbiór domeny projektu pobrany jako konkurent innego projektu w TOP30 nie
+   wyklucza pozycji 31–100), ze spójnego importu (14.2) i dla frazy o znanym wolumenie co najmniej `covered_min_volume` z zapasem — także przy
+   imporcie przyciętym limitem 10 000 fraz albo przerwanym (granica = wolumen ostatniej pobranej frazy + 1). Fraza niepotwierdzona (`present = 2`)
+   to brak frazy.
+4. W pozostałych przypadkach **Nieznana** — panel frazy podaje powód niepewności (`GapDomain::absenceDoubt()`).
 
 ### 14.7 Typ luki
 
@@ -2069,7 +2092,8 @@ połowa jej fraz należała do tej samej starej grupy; grupy bez następcy staj�
 
 ### 14.12 Historia zbiorów domen (D50)
 
-Od **drugiego** importu zbioru zdarzenia na frazę: `new`, `lost` (tylko w wiarygodnym zakresie wolumenu i w TOP N importu), `back`, `url`
+Od **drugiego** importu zbioru zdarzenia na frazę: `new`, `lost` (tylko po zakończonym, spójnym imporcie, w TOP N importu i z wolumenem
+z zapasem nad granicą; tuż nad granicą fraza staje się niepotwierdzona — bez zdarzenia, bez późniejszego `back`), `back`, `url`
 (inny adres), `up`/`down` (zmiana o ≥ 5 pozycji albo przejście progu TOP3/10/20/50/100). To zmiany w bazie Labs między importami — **nie drugi
 rank tracker**: nie liczymy z nich trendów pozycji ani alertów; właściwy monitoring pozycji to moduł „Pozycje” (STEP 14). Historia importów
 domeny (liczby fraz, nowe/utracone, koszt) w `gap_run_targets`.
@@ -2174,7 +2198,12 @@ Tylko na wyraźne polecenie właściciela, po wdrożeniu i `wp osf-seo db:migrat
 ### 14.21 Ograniczenia
 
 - **Maks. 10 000 fraz na domenę i zakres** (potwierdzone stronicowanie `limit` + `offset`); większe domeny przycięte do najmocniejszych fraz;
-  nieobecność poniżej wolumenu ostatniej pobranej frazy nie jest wiarygodna.
+  nieobecność poniżej wolumenu ostatniej pobranej frazy (z zapasem 1,5×) nie jest wiarygodna.
+- Wykrywanie niespójnych stron (14.2) opiera się na sygnałach z odpowiedzi; przesunięcia danych u dostawcy, które nie zmienią `total_count`,
+  kolejności ani nie zdublują fraz, są niewykrywalne. Ich częstość (szczególnie przy imporcie rozłożonym na kilka dni przez limit kosztów)
+  do sprawdzenia na prawdziwym API — powód niewiarygodności widać w `gap:status` i na stronie importu.
+- Zbiór pobrany w węższym zakresie niż poprzedni (np. TOP30 po TOP100, gdy szerszy był już nieaktualny) przejmuje węższy zakres; wiersze spoza
+  niego zostają z datą migawki Labs, ale nie dają już „Brak widoczności” (wymóg pełnego TOP100).
 - Pozycje konkurentów to migawka bazy Labs (data przy frazie), nie bieżący ranking; dla dokładnej pozycji — monitorowanie w „Pozycjach”.
 - Bez stemmingu: odmiany fraz łączy dopiero wspólny adres, grupa synonimów dostawcy lub strona projektu.
 - Heurystyki (widoczność sporadyczna, luka treści, priorytet) to przybliżenia do kalibracji na prawdziwych projektach (`OSF_SEO_GAP_*`).

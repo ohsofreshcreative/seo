@@ -156,9 +156,11 @@ Motyw powstał z marketingowego motywu `h2otwock` i wciąż zawiera jego kod: bl
   `expected_cost`). Każda zmiana musi zachować: plan bez API z maksymalnym i oczekiwanym kosztem, limit kosztów sprawdzany **przed każdą
   stroną** (pauza i automatyczne wznowienie, bez obchodzenia limitów), brak ponawiania niepewnego żądania (sieć, 5xx, niepoprawna odpowiedź,
   przerwane w locie), jeden aktywny przebieg na projekt, harmonogram domyślnie wyłączony i włączany tylko z potwierdzeniem kosztu, wspólne
-  zbiory domen (ponowne użycie świeżego zbioru bez opłaty). **Stronicowanie Ranked Keywords tylko `limit` + `offset` (maks. 10 000 fraz na
-  domenę)** — bez niepotwierdzonych obejść; nieobecność frazy wiarygodna tylko w zakresie `covered_min_volume` (przycięty import, duplikaty
-  między stronami → mniej albo brak „lost” i „Brak widoczności”). Historia zbiorów (new / lost / back / url / up / down) nie jest drugim rank
+  zbiory domen (ponowne użycie świeżego zbioru bez opłaty; zbiór importuje naraz jeden przebieg — `claimImport`, utrzymanie i domykanie importu
+  tylko pod `MarketSyncService::LOCK`). **Stronicowanie Ranked Keywords tylko `limit` + `offset` (maks. 10 000 fraz na
+  domenę)** — bez niepotwierdzonych obejść; nieobecność frazy wiarygodna tylko od `covered_min_volume` × zapas 1,5 (przycięty import, niespójne
+  strony — `gap_run_targets.unreliable` → mniej albo brak „lost” i „Brak widoczności”). Odświeżenie przerwane, wstrzymane albo niespójne nie
+  zapisuje „lost” i zostawia zbiorowi stan poprzedniego udanego importu. Historia zbiorów (new / lost / back / url / up / down) nie jest drugim rank
   trackerem — monitoring pozycji pozostaje w STEP 14. Pełne przeliczenie luk (`GapRefresher`) nigdy w żądaniu WWW ani przy renderowaniu
   (panel tylko unieważnia klucz danych). Globalnych limitów kosztów DataForSEO nie zmieniaj bez decyzji właściciela.
 - `$wpdb` traktuje tabelę z kolumnami ascii i utf8mb4 bez kolumny binarnej jako ASCII i odrzuca zapytania z polskimi znakami
@@ -199,7 +201,8 @@ Motyw powstał z marketingowego motywu `h2otwock` i wciąż zawiera jego kod: bl
   heurystyki; strona docelowa tylko z GSC, inaczej „Brak przypisanej strony”. Bez AI i bez wbudowanych seedów czy wykluczeń.
 - Luki SEO: **Keyword Gap** (luki fraz) i **Content Gap** (luki treści) to osobne pojęcia. Pozycja konkurenta pochodzi z bazy DataForSEO Labs
   (migawka z datą) — w UI zawsze „(Labs)”, nigdy jako nasza Pozycja SERP. Widoczność projektu: świeży pomiar SERP → GSC → punkt odniesienia Labs;
-  **sam brak frazy w GSC nigdy nie oznacza braku widoczności** (wtedy „Nieznana”). Wynik 0–100 to „Priorytet luki” (sygnał do sprawdzenia),
+  **sam brak frazy w GSC nigdy nie oznacza braku widoczności** (wtedy „Nieznana”); brak frazy w punkcie odniesienia oznacza „Brak widoczności”
+  tylko w spójnym zbiorze pełnego TOP100 i z wolumenem z zapasem nad granicą (`GapDomain::provesNoVisibility()`). Wynik 0–100 to „Priorytet luki” (sygnał do sprawdzenia),
   formuła w `GapScorer` (sekcja 14.9). Luka treści to heurystyka z powodem i pewnością — etykiety wyłącznie „Potencjalna luka treści”,
   „Istniejąca strona — do wzmocnienia”, „Bez luki treści”, „Niejasne”; nigdy „projekt potrzebuje nowej strony”. Frazy markowe, wykluczone,
   w innym języku, poniżej progów — `listed = 0` z powodem (nie usuwamy); status pracy przetrwa przeliczenie. Bez AI, stemmingu i crawla konkurencji.
