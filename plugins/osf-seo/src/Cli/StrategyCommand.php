@@ -7,8 +7,13 @@ namespace OsfSeo\Cli;
 use OsfSeo\Auth\AccessDenied;
 use OsfSeo\Auth\Capabilities;
 use OsfSeo\Plugin;
+use OsfSeo\Serp\SerpRun;
+use OsfSeo\Serp\SerpStartResult;
+use OsfSeo\Serp\SerpTrackingService;
 use OsfSeo\Strategy\CandidateFilters;
 use OsfSeo\Strategy\CandidateRow;
+use OsfSeo\Strategy\Serp\SerpAnalysisPlan;
+use OsfSeo\Strategy\Serp\SerpAnalysisService;
 use OsfSeo\Strategy\StrategyNotFound;
 use OsfSeo\Strategy\StrategyService;
 use OsfSeo\Strategy\StrategySource;
@@ -69,6 +74,34 @@ final class StrategyCommand
 		WP_CLI::add_command('osf-seo strategy:remove', [$command, 'remove'], [
 			'shortdesc' => 'Remove the manual flag of strategy candidates (they stay if other sources support them).',
 			'synopsis' => [$project, $keywords],
+		]);
+		$selection = ['type' => 'assoc', 'name' => 'keywords', 'description' => 'Candidates (IDs or keywords, comma separated). Default: strategy priority order.', 'optional' => true];
+		WP_CLI::add_command('osf-seo strategy:serp-plan', [$command, 'serpPlan'], [
+			'shortdesc' => 'Plan a one-off strategy SERP analysis WITHOUT any request: reused measurements, new tasks, estimated maximum cost, budget.',
+			'synopsis' => [$project, $selection, $format],
+		]);
+		WP_CLI::add_command('osf-seo strategy:serp-run', [$command, 'serpRun'], [
+			'shortdesc' => 'PAID: queue a one-off strategy SERP analysis (Google Organic SERP via the SERP tracking submitter, shared DataForSEO limits) and submit it.',
+			'synopsis' => [
+				$project,
+				$selection,
+				['type' => 'flag', 'name' => 'yes', 'description' => 'Do not ask for confirmation.', 'optional' => true],
+				['type' => 'flag', 'name' => 'queue-only', 'description' => 'Only queue (the background step submits the tasks).', 'optional' => true],
+				['type' => 'assoc', 'name' => 'wait', 'description' => 'Wait up to N seconds and collect results.', 'optional' => true],
+				$format,
+			],
+		]);
+		WP_CLI::add_command('osf-seo strategy:serp-status', [$command, 'serpStatus'], [
+			'shortdesc' => 'Strategy SERP analysis status: analysis keywords, measured, recent analysis runs (no API call).',
+			'synopsis' => [$project, $format],
+		]);
+		WP_CLI::add_command('osf-seo strategy:serp', [$command, 'serp'], [
+			'shortdesc' => 'SERP intelligence of a candidate: latest compatible measurement, freshness, shape, composition, TOP20 shapes (no API call).',
+			'synopsis' => [$project, ['type' => 'assoc', 'name' => 'keyword', 'description' => 'Candidate ID (ULID) or keyword text.', 'optional' => false], $format],
+		]);
+		WP_CLI::add_command('osf-seo strategy:serp-overlap', [$command, 'serpOverlap'], [
+			'shortdesc' => 'SERP overlap of two candidates (shared TOP10 URLs and domains, safeguards, no API call).',
+			'synopsis' => [$project, ['type' => 'assoc', 'name' => 'keywords', 'description' => 'Two candidates (IDs or keywords), comma separated.', 'optional' => false], $format],
 		]);
 	}
 
@@ -297,6 +330,306 @@ final class StrategyCommand
 		}
 
 		WP_CLI::success(sprintf('Manual flag removed from %d candidates.', $removed));
+	}
+
+	/**
+	 * @param list<string> $args
+	 * @param array<string, string> $assocArgs
+	 */
+	public function serpPlan(array $args, array $assocArgs): void
+	{
+		$context = CliProject::resolve($this->plugin, $assocArgs, Capabilities::MANAGE_STRATEGY);
+
+		try {
+			$plan = $this->analysis()->plan($context, self::values($assocArgs));
+		} catch (AccessDenied) {
+			WP_CLI::error('Access denied (requires osf_seo_manage_strategy and osf_seo_manage_serp_tracking).');
+		}
+
+		if (($assocArgs['format'] ?? 'table') === 'json') {
+			self::json($plan->toArray());
+
+			return;
+		}
+
+		self::printAnalysisPlan($plan);
+	}
+
+	/**
+	 * @param list<string> $args
+	 * @param array<string, string> $assocArgs
+	 */
+	public function serpRun(array $args, array $assocArgs): void
+	{
+		$context = CliProject::resolve($this->plugin, $assocArgs, Capabilities::MANAGE_STRATEGY);
+		$json = ($assocArgs['format'] ?? 'table') === 'json';
+		$values = self::values($assocArgs);
+
+		try {
+			$plan = $this->analysis()->plan($context, $values);
+		} catch (AccessDenied) {
+			WP_CLI::error('Access denied (requires osf_seo_manage_strategy and osf_seo_manage_serp_tracking).');
+		}
+
+		if (! $json) {
+			self::printAnalysisPlan($plan);
+		}
+
+		if ($plan->skipReason === null && $plan->tasks() > 0 && ! isset($assocArgs['yes'])) {
+			WP_CLI::confirm(sprintf('Submit %d paid SERP task(s) (TOP%d, Standard queue), estimated maximum cost %.4f USD?', $plan->tasks(), (int) $plan->context?->depth, $plan->estimatedCost()));
+		}
+
+		$result = $this->analysis()->start($context, $values, $plan->tasks(), $plan->estimatedCost(), SerpAnalysisService::TRIGGER_CLI);
+
+		if ($result['status'] !== SerpStartResult::QUEUED || $result['run'] === null) {
+			if ($json) {
+				self::json(['status' => $result['status'], 'reason' => $result['reason']]);
+
+				return;
+			}
+
+			$message = match ($result['status']) {
+				SerpStartResult::NOTHING_TO_DO, SerpAnalysisPlan::NOTHING_TO_DO => 'Nothing to measure — fresh measurements are reused or checks are pending.',
+				SerpAnalysisPlan::OVER_RUN_LIMIT => sprintf('The selection needs more new measurements than the per-run limit (%d). Select fewer keywords.', $plan->limit),
+				SerpStartResult::PLAN_CHANGED => 'The plan changed (more tasks or a higher cost than shown). Run strategy:serp-plan again.',
+				SerpStartResult::NOT_CONFIGURED => 'DataForSEO is not configured.',
+				SerpStartResult::UNSUPPORTED_MARKET => 'The project market is not supported.',
+				SerpStartResult::NO_KEYWORDS => 'No strategy candidates to analyse (run strategy:refresh first).',
+				SerpStartResult::OVER_BUDGET => 'The analysis exceeds the shared DataForSEO budget (' . $result['reason'] . ').',
+				SerpStartResult::PAUSED => 'Paid DataForSEO calls are paused after an account error.',
+				SerpStartResult::LOCKED => 'Another SERP check is being planned. Try again in a moment.',
+				default => $result['status'],
+			};
+			in_array($result['status'], [SerpStartResult::NOTHING_TO_DO, SerpAnalysisPlan::NOTHING_TO_DO], true) ? WP_CLI::success($message) : WP_CLI::error($message);
+
+			return;
+		}
+
+		$run = $result['run'];
+
+		if (isset($assocArgs['queue-only'])) {
+			$json ? self::json($run->toArray()) : WP_CLI::success(sprintf('Analysis %s queued — tasks are submitted by the background step.', $run->publicId));
+
+			return;
+		}
+
+		$serp = $this->plugin->get(SerpTrackingService::class);
+		$report = $serp->execute($context, $run, 300.0);
+		$wait = max(0, (int) ($assocArgs['wait'] ?? 0));
+		$started = time();
+
+		while ($wait > 0 && time() - $started < $wait) {
+			if (! in_array($serp->run($context, $run->publicId)->status, SerpRun::ACTIVE, true)) {
+				break;
+			}
+
+			sleep(15);
+			$serp->collect(30.0);
+		}
+
+		$current = $serp->run($context, $run->publicId);
+
+		if ($json) {
+			self::json(['submitted' => $report, 'run' => $current->toArray()]);
+
+			return;
+		}
+
+		WP_CLI::log(sprintf('Submitted %d task(s) in %d request(s); reported cost %.4f USD.', $report['tasks'] ?? 0, $report['posts'] ?? 0, $report['cost'] ?? 0));
+		WP_CLI::log(sprintf('Analysis %s: %s — completed %d, failed %d.', $current->publicId, $current->status, $current->tasksCompleted, $current->tasksFailed));
+
+		if (($report['stopped'] ?? null) !== null) {
+			WP_CLI::warning('Stopped: ' . $report['stopped'] . '.');
+		} elseif ($current->isActive()) {
+			WP_CLI::success('Tasks submitted — results are collected in the background (or run: wp osf-seo serp:collect), then run strategy:refresh.');
+		} else {
+			WP_CLI::success('SERP analysis finished — run strategy:refresh to update the evidence.');
+		}
+	}
+
+	/**
+	 * @param list<string> $args
+	 * @param array<string, string> $assocArgs
+	 */
+	public function serpStatus(array $args, array $assocArgs): void
+	{
+		$context = CliProject::resolve($this->plugin, $assocArgs, Capabilities::ACCESS);
+		$status = $this->analysis()->status($context, $context->can(Capabilities::MANAGE_SERP_TRACKING));
+
+		if (($assocArgs['format'] ?? 'table') === 'json') {
+			self::json($status);
+
+			return;
+		}
+
+		WP_CLI::log(sprintf('Analysis keywords: %d (measured %d, last check %s). New measurements per run: up to %d.', $status['analysis_keywords'], $status['measured'], $status['last_checked_at'] ?? 'never', $status['limit_per_run']));
+
+		if ($status['runs'] !== []) {
+			Utils\format_items('table', array_map(static fn (array $run): array => [
+				'id' => $run['id'] ?? '',
+				'status' => $run['status'] ?? '',
+				'planned' => $run['keywords_planned'] ?? '',
+				'completed' => $run['tasks_completed'] ?? '',
+				'created_at' => $run['created_at'] ?? '',
+			], $status['runs']), ['id', 'status', 'planned', 'completed', 'created_at']);
+		}
+	}
+
+	/**
+	 * @param list<string> $args
+	 * @param array<string, string> $assocArgs
+	 */
+	public function serp(array $args, array $assocArgs): void
+	{
+		$context = CliProject::resolve($this->plugin, $assocArgs, Capabilities::ACCESS);
+
+		try {
+			$detail = $this->service()->serp($context, (string) $assocArgs['keyword']);
+		} catch (StrategyNotFound) {
+			WP_CLI::error('Strategy candidate not found.');
+		}
+
+		if (($assocArgs['format'] ?? 'table') === 'json') {
+			self::json(['serp' => $detail]);
+
+			return;
+		}
+
+		if ($detail === null) {
+			WP_CLI::log('No compatible SERP measurement in the project measurement context — the keyword qualifies for analysis (strategy:serp-plan).');
+
+			return;
+		}
+
+		$profile = $detail['profile'];
+		WP_CLI::log(sprintf('Measurement %s at %s (%s), %s TOP%d, tracking: %s.', $detail['snapshot'], $detail['checked_at'], $detail['freshness'], $detail['context']['device'], $detail['context']['depth'], $detail['tracking']));
+
+		if ($profile !== null) {
+			WP_CLI::log(sprintf(
+				'Shape: %s (share %s, confidence %s). SERP intent signal: %s (confidence %s; provider intent is not changed). Features: %s.',
+				$profile['shape'],
+				$profile['shape_share'] ?? '—',
+				$profile['shape_confidence'] ?? '—',
+				$profile['intent_signal'],
+				$profile['intent_confidence'] ?? '—',
+				$profile['features'] === [] ? 'none' : implode(', ', $profile['features']),
+			));
+		}
+
+		WP_CLI::log($detail['project'] === null ? 'Project SERP position: not used (measurement older than 30 days).' : sprintf('Project SERP position: %s.', $detail['project']['found'] ? '#' . $detail['project']['rank'] : 'not in TOP' . $detail['context']['depth']));
+		Utils\format_items('table', array_map(static fn (array $row): array => [
+			'rank' => $row['rank'],
+			'host' => $row['host'] . ($row['project'] ? ' (project)' : ($row['competitor'] !== null ? ' (competitor)' : '')),
+			'shape' => $row['shape'] ?? '—',
+			'confidence' => $row['confidence'] ?? '—',
+			'reason' => $row['reason'] ?? '—',
+			'url' => $row['url'],
+		], $detail['results']), ['rank', 'host', 'shape', 'confidence', 'reason', 'url']);
+	}
+
+	/**
+	 * @param list<string> $args
+	 * @param array<string, string> $assocArgs
+	 */
+	public function serpOverlap(array $args, array $assocArgs): void
+	{
+		$context = CliProject::resolve($this->plugin, $assocArgs, Capabilities::ACCESS);
+		$values = self::values($assocArgs) ?? [];
+
+		if (count($values) !== 2) {
+			WP_CLI::error('Provide exactly two candidates: --keywords="first, second".');
+		}
+
+		try {
+			$overlap = $this->service()->serpOverlap($context, $values[0], $values[1]);
+		} catch (StrategyNotFound) {
+			WP_CLI::error('Strategy candidate not found.');
+		}
+
+		if (($assocArgs['format'] ?? 'table') === 'json') {
+			self::json($overlap);
+
+			return;
+		}
+
+		WP_CLI::log(sprintf(
+			'Overlap: %s%s — shared TOP10 URLs %d (counted %d, discounted %d: ubiquitous domains and home pages), shared domains %d. Reasons: %s.',
+			$overlap['level'],
+			$overlap['mergeable'] ? ' (auto-merge allowed)' : '',
+			$overlap['shared_urls'],
+			$overlap['counted_urls'],
+			$overlap['discounted_urls'],
+			$overlap['shared_domains'],
+			$overlap['reasons'] === [] ? 'none' : implode(', ', $overlap['reasons']),
+		));
+
+		if ($overlap['urls'] !== []) {
+			Utils\format_items('table', $overlap['urls'], ['url', 'rank_a', 'rank_b', 'counted']);
+		}
+	}
+
+	private static function printAnalysisPlan(SerpAnalysisPlan $plan): void
+	{
+		$data = $plan->toArray();
+		WP_CLI::log(sprintf(
+			'Strategy SERP analysis (plan, no request): %s; %s, %s TOP%s; selection: %s.',
+			$data['market'] ?? 'unsupported market',
+			$data['context']['location_code'] ?? '—',
+			$data['context']['device'] ?? '—',
+			$data['context']['depth'] ?? '—',
+			$data['selection'],
+		));
+		WP_CLI::log(sprintf(
+			'Keywords: %d — reuse %d (fresh measurement, no cost), pending %d, new %d (limit %d per run), rejected %d.',
+			$data['keywords'],
+			$data['reuse'],
+			$data['pending'],
+			$data['measure'],
+			$data['limit'],
+			$data['rejected'],
+		));
+		WP_CLI::log(sprintf(
+			'Estimated MAXIMUM cost: %.4f USD (%d task(s) × %.5f; the cost reported by the provider is binding). Remaining today %s, this month %s.%s',
+			$data['estimated_max_cost'],
+			$data['tasks'],
+			$data['cost_per_task'],
+			$data['remaining_today'] === null ? '—' : sprintf('%.4f', $data['remaining_today']),
+			$data['remaining_month'] === null ? '—' : sprintf('%.4f', $data['remaining_month']),
+			$data['blocked_by'] === null ? '' : ' Blocked by: ' . $data['blocked_by'] . '.',
+		));
+
+		if ($data['skip_reason'] !== null) {
+			WP_CLI::warning('Nothing will be queued: ' . $data['skip_reason'] . '.');
+		}
+
+		if ($data['items'] !== []) {
+			Utils\format_items('table', array_map(static fn (array $item): array => [
+				'keyword' => $item['keyword'],
+				'action' => $item['action'],
+				'reason' => $item['reason'],
+				'measurement' => $item['checked_at'] ?? '—',
+				'freshness' => $item['freshness'] ?? '—',
+				'tracking' => $item['tracking'] ?? '—',
+			], $data['items']), ['keyword', 'action', 'reason', 'measurement', 'freshness', 'tracking']);
+		}
+	}
+
+	/**
+	 * @param array<string, string> $assocArgs
+	 * @return list<string>|null
+	 */
+	private static function values(array $assocArgs): ?array
+	{
+		if (! isset($assocArgs['keywords'])) {
+			return null;
+		}
+
+		return array_values(array_filter(array_map('trim', preg_split('/[\r\n,;]+/u', (string) $assocArgs['keywords']) ?: []), static fn (string $value): bool => $value !== ''));
+	}
+
+	private function analysis(): SerpAnalysisService
+	{
+		return $this->plugin->get(SerpAnalysisService::class);
 	}
 
 	/**
