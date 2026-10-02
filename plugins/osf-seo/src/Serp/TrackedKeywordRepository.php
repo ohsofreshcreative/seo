@@ -14,12 +14,14 @@ use OsfSeo\Support\Ulid;
  *
  * Tożsamość frazy = wspólna fraza rynkowa (`market_keywords`) — bez duplikatów między GSC, Nowymi frazami i wpisem ręcznym.
  * Usunięcie jest miękkie (status `removed`): historia pomiarów zostaje, ponowne dodanie przywraca tę samą frazę.
+ * Status `analysis` (STEP 16): jednorazowa analiza Strategii — poza harmonogramem, listą Pozycji i miękkim limitem; dodanie frazy
+ * do monitorowania zmienia go na `active` (ta sama fraza, ta sama historia pomiarów).
  * Bieżący stan (ostatni pomiar, poprzedni porównywalny, zmiana) jest przeliczany przy zapisie pomiaru — lista pozycji
  * czyta tylko tę tabelę, bez skanowania historii.
  */
 final class TrackedKeywordRepository
 {
-	public const SOURCES = ['manual', 'gsc', 'discovery', 'gap'];
+	public const SOURCES = ['manual', 'gsc', 'discovery', 'gap', 'strategy'];
 
 	public function __construct(
 		private readonly Connection $db,
@@ -28,7 +30,8 @@ final class TrackedKeywordRepository
 	}
 
 	/**
-	 * Dodanie fraz (bez żadnego żądania do API). Istniejąca aktywna fraza nie jest duplikowana, usunięta wraca.
+	 * Dodanie fraz (bez żadnego żądania do API). Istniejąca aktywna fraza nie jest duplikowana, usunięta wraca, analizowana
+	 * (`analysis`) przechodzi do monitorowania — obie liczone jako przywrócone (historia pomiarów zostaje).
 	 *
 	 * @param array<int, string> $entries market_keyword_id → źródło
 	 * @return array{added: int, restored: int, existing: int}
@@ -71,7 +74,7 @@ final class TrackedKeywordRepository
 				if ($row === null) {
 					$insert->add([Ulid::generate(), $projectId, $marketKeywordId, in_array($source, self::SOURCES, true) ? $source : 'manual', 'active', (int) $userId, $now, $now]);
 					$result['added']++;
-				} elseif ($row['status'] === 'removed') {
+				} elseif ($row['status'] === 'removed' || $row['status'] === 'analysis') {
 					$restore[] = (int) $row['id'];
 				} else {
 					$result['existing']++;
@@ -174,7 +177,7 @@ final class TrackedKeywordRepository
 
 		foreach (array_chunk($ids, 500) as $chunk) {
 			$rows = $this->db->fetchAll(
-				"SELECT id FROM `{$this->table()}` WHERE id IN (" . Connection::placeholders($chunk, '%d') . ") AND status = 'active'
+				"SELECT id FROM `{$this->table()}` WHERE id IN (" . Connection::placeholders($chunk, '%d') . ") AND status IN ('active', 'analysis')
 				AND (last_requested_at IS NULL OR last_requested_at < %s) FOR UPDATE",
 				[...$chunk, $cutoff],
 			);
@@ -190,6 +193,115 @@ final class TrackedKeywordRepository
 		}
 
 		return $claimed;
+	}
+
+	/**
+	 * Frazy do jednorazowej analizy Strategii (bez żadnego żądania): brakujące — nowe wiersze `analysis` (źródło `strategy`), usunięte
+	 * z monitorowania — `analysis` (historia zostaje), monitorowane i analizowane — bez zmian (pomiar analizy ich nie zmienia).
+	 *
+	 * @param list<int> $marketKeywordIds
+	 * @return array{rows: array<int, array{id: int, status: string, last_requested_at: ?string}>, created: list<int>, changed: list<int>}
+	 */
+	public function prepareAnalysis(int $projectId, array $marketKeywordIds, ?int $userId): array
+	{
+		$marketKeywordIds = array_values(array_unique(array_map('intval', $marketKeywordIds)));
+
+		if ($marketKeywordIds === []) {
+			return ['rows' => [], 'created' => [], 'changed' => []];
+		}
+
+		return $this->db->transaction(function () use ($projectId, $marketKeywordIds, $userId): array {
+			$existing = $this->rowsFor($projectId, $marketKeywordIds, true);
+			$now = $this->now();
+			$insert = new BulkInsert(
+				$this->db,
+				$this->table(),
+				['public_id', 'project_id', 'market_keyword_id', 'source', 'status', 'added_by', 'added_at', 'updated_at'],
+				['%s', '%d', '%d', '%s', '%s', 'NULLIF(%d, 0)', '%s', '%s'],
+				'',
+				500,
+			);
+			$changed = [];
+
+			foreach ($marketKeywordIds as $marketKeywordId) {
+				$row = $existing[$marketKeywordId] ?? null;
+
+				if ($row === null) {
+					$insert->add([Ulid::generate(), $projectId, $marketKeywordId, 'strategy', 'analysis', max(0, (int) $userId), $now, $now]);
+				} elseif ($row['status'] === 'removed') {
+					$changed[] = $row['id'];
+				}
+			}
+
+			$insert->flush();
+
+			foreach (array_chunk($changed, 500) as $chunk) {
+				$this->db->execute(
+					"UPDATE `{$this->table()}` SET status = 'analysis', updated_at = %s WHERE project_id = %d AND status = 'removed' AND id IN (" . Connection::placeholders($chunk, '%d') . ')',
+					[$now, $projectId, ...$chunk],
+				);
+			}
+
+			$rows = $this->rowsFor($projectId, $marketKeywordIds, false);
+			$created = [];
+
+			foreach ($rows as $marketKeywordId => $row) {
+				if (! isset($existing[$marketKeywordId])) {
+					$created[] = $row['id'];
+				}
+			}
+
+			return ['rows' => $rows, 'created' => $created, 'changed' => $changed];
+		});
+	}
+
+	/**
+	 * Cofnięcie przygotowania analizy, której nie zakolejkowano (limit, nic do zrobienia): usunięcie wierszy utworzonych przez to
+	 * przygotowanie (bez pomiarów) i powrót usuniętych fraz do `removed`.
+	 *
+	 * @param list<int> $created
+	 * @param list<int> $changed
+	 */
+	public function rollbackAnalysis(int $projectId, array $created, array $changed): void
+	{
+		foreach (array_chunk($created, 500) as $chunk) {
+			$this->db->execute(
+				"DELETE t FROM `{$this->table()}` t WHERE t.project_id = %d AND t.status = 'analysis' AND t.last_snapshot_id IS NULL AND t.last_requested_at IS NULL
+				AND t.id IN (" . Connection::placeholders($chunk, '%d') . ")
+				AND NOT EXISTS (SELECT 1 FROM `{$this->db->table('serp_snapshots')}` s WHERE s.tracked_keyword_id = t.id)",
+				[$projectId, ...$chunk],
+			);
+		}
+
+		foreach (array_chunk($changed, 500) as $chunk) {
+			$this->db->execute(
+				"UPDATE `{$this->table()}` SET status = 'removed', updated_at = %s WHERE project_id = %d AND status = 'analysis' AND id IN (" . Connection::placeholders($chunk, '%d') . ')',
+				[$this->now(), $projectId, ...$chunk],
+			);
+		}
+	}
+
+	/**
+	 * Wiersze fraz projektu (każdy status): id frazy rynkowej → id, status, ostatnie zlecenie.
+	 *
+	 * @param list<int> $marketKeywordIds
+	 * @return array<int, array{id: int, status: string, last_requested_at: ?string}>
+	 */
+	public function rowsFor(int $projectId, array $marketKeywordIds, bool $forUpdate = false): array
+	{
+		$result = [];
+
+		foreach (array_chunk(array_values(array_unique(array_map('intval', $marketKeywordIds))), 500) as $chunk) {
+			foreach ($this->db->fetchAll(
+				"SELECT id, market_keyword_id, status, last_requested_at FROM `{$this->table()}` WHERE project_id = %d AND market_keyword_id IN ("
+				. Connection::placeholders($chunk, '%d') . ')' . ($forUpdate ? ' FOR UPDATE' : ''),
+				[$projectId, ...$chunk],
+			) as $row) {
+				$result[(int) $row['market_keyword_id']] = ['id' => (int) $row['id'], 'status' => (string) $row['status'], 'last_requested_at' => $row['last_requested_at']];
+			}
+		}
+
+		return $result;
 	}
 
 	/** Zwolnienie zajęcia (pomiar nie został wysłany — np. anulowany przed zleceniem). */

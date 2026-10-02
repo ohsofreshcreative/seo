@@ -98,7 +98,7 @@ final class GapRefresher
 		$exclusions = $this->discoverySettings->exclusions($projectId);
 		$latest = $this->db->fetchValue("SELECT MAX(date) FROM `{$this->db->table('gsc_query_daily')}` WHERE project_id = %d", [$projectId]);
 		$serpVersion = $this->db->fetchValue(
-			"SELECT CONCAT(COUNT(*), ':', COALESCE(MAX(last_snapshot_id), 0), ':', COALESCE(SUM(last_snapshot_id), 0)) FROM `{$this->db->table('serp_tracked_keywords')}` WHERE project_id = %d AND status = 'active'",
+			"SELECT CONCAT(COUNT(*), ':', COALESCE(MAX(last_snapshot_id), 0), ':', COALESCE(SUM(last_snapshot_id), 0)) FROM `{$this->db->table('serp_tracked_keywords')}` WHERE project_id = %d AND status IN ('active', 'analysis')",
 			[$projectId],
 		);
 		$key = md5((string) json_encode([
@@ -1019,7 +1019,8 @@ final class GapRefresher
 	}
 
 	/**
-	 * Monitorowane frazy projektu ze świeżym pomiarem SERP (STEP 14).
+	 * Frazy projektu ze świeżym pomiarem SERP (STEP 14): monitorowane i jednorazowo analizowane przez Strategię (`analysis`, STEP 16) —
+	 * pomiar analizy jest takim samym dowodem widoczności.
 	 *
 	 * @param list<int> $ids
 	 * @return array<int, array<string, string|null>>
@@ -1031,7 +1032,7 @@ final class GapRefresher
 		foreach ($this->db->fetchAll(
 			"SELECT market_keyword_id, last_found, last_rank, last_depth, last_checked_at, last_url_id, last_snapshot_id
 			FROM `{$this->db->table('serp_tracked_keywords')}`
-			WHERE project_id = %d AND status = 'active' AND last_snapshot_id IS NOT NULL AND last_found IS NOT NULL AND last_checked_at >= %s
+			WHERE project_id = %d AND status IN ('active', 'analysis') AND last_snapshot_id IS NOT NULL AND last_found IS NOT NULL AND last_checked_at >= %s
 				AND market_keyword_id IN (" . Connection::placeholders($ids, '%d') . ')',
 			[$projectId, $since, ...$ids],
 		) as $row) {
