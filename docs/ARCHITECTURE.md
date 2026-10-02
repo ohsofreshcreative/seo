@@ -23,12 +23,13 @@ nigdy wartości sekretów.
 11. [Dane rynkowe (DataForSEO, STEP 12)](#11-dane-rynkowe-dataforseo-step-12)
 12. [Nowe frazy (STEP 13)](#12-nowe-frazy-step-13)
 13. [Pozycje SERP i konkurenci (STEP 14)](#13-pozycje-serp-i-konkurenci-step-14)
-14. [Bezpieczeństwo](#14-bezpieczeństwo)
-15. [Konfiguracja i sekrety](#15-konfiguracja-i-sekrety)
-16. [Deployment (do ustalenia)](#16-deployment-do-ustalenia)
-17. [Roadmapa i stan prac](#17-roadmapa-i-stan-prac)
-18. [Porządki w motywie (C1–C5)](#18-porządki-w-motywie-c1c5)
-19. [Ryzyka i otwarte kwestie](#19-ryzyka-i-otwarte-kwestie)
+14. [Luki SEO (STEP 15)](#14-luki-seo-step-15)
+15. [Bezpieczeństwo](#15-bezpieczeństwo)
+16. [Konfiguracja i sekrety](#16-konfiguracja-i-sekrety)
+17. [Deployment (do ustalenia)](#17-deployment-do-ustalenia)
+18. [Roadmapa i stan prac](#18-roadmapa-i-stan-prac)
+19. [Porządki w motywie (C1–C5)](#19-porządki-w-motywie-c1c5)
+20. [Ryzyka i otwarte kwestie](#20-ryzyka-i-otwarte-kwestie)
 
 ---
 
@@ -39,7 +40,9 @@ Console system sam pobiera frazy, na które strona pojawia się w Google, zapisu
 bazie i pokazuje: ranking fraz (średnia pozycja GSC), porównania okresów, wzrosty i spadki,
 szanse SEO, landing pages i wykresy. Od STEP 13 wyszukuje też **nowe frazy**, na które strona jeszcze nie ma widoczności
 (seedy → DataForSEO Labs → deduplikacja → widoczność w GSC → priorytet → decyzja; sekcja 12), a od STEP 14 mierzy **Pozycję SERP**
-monitorowanych fraz (pełne TOP100 Google z DataForSEO, historia, konkurenci; sekcja 13) — osobno od średniej pozycji GSC.
+monitorowanych fraz (pełne TOP100 Google z DataForSEO, historia, konkurenci; sekcja 13) — osobno od średniej pozycji GSC, a od STEP 15
+pokazuje **Luki SEO**: frazy, na które rankują konkurenci, a projekt nie albo słabiej, oraz potencjalne luki treści (sekcja 14).
+W nowych tekstach produkt nazywa się **Whack-a-mole** (identyfikatory techniczne `osf-seo` / `osf_seo_*` bez zmian).
 
 Źródła danych: Google Search Console (źródło prawdy o skuteczności strony: kliknięcia, wyświetlenia, CTR, średnia pozycja
 GSC, strony docelowe, historia) oraz — od STEP 12 — **DataForSEO** jako zatwierdzony płatny dostawca danych rynkowych
@@ -59,7 +62,7 @@ API wymaga osobnej decyzji architektonicznej; integracje dostawców wyłącznie 
 | D5 | Hosting: Hostinger. Staging: `https://seo.ohsofresh.top`. Bez Redis/persistent object cache w MVP | Cache przez transients/bazę; nic nie zależy od Redis |
 | D6 | Lokalnie system działa bez systemowego crona (WP-Cron); na produkcji podpinamy cron systemowy | Sekcja 9.1 |
 | D7 | Aplikacja OAuth w trybie External/Testing akceptowana do czasu publikacji | Refresh tokeny w trybie Testing wygasają po 7 dniach — publikacja przed produkcją |
-| D8 | Motyw czyszczony etapami do czystego Sage 11 tylko dla OSF SEO (C1–C5), build/test po każdym etapie | Sekcja 18 |
+| D8 | Motyw czyszczony etapami do czystego Sage 11 tylko dla OSF SEO (C1–C5), build/test po każdym etapie | Sekcja 19 |
 | D9 | Panel: standardowe utilities Tailwind, proste konwencje (AGENTS.md, sekcja 8) | Dawne ograniczenia projektu marketingowego nie obowiązują |
 | D10 | Wykresy: Chart.js. React niepotrzebny (do usunięcia w cleanupie) | — |
 | D11 | MVP 1 bez rozbicia fraz na device/country | Nie mnożymy danych bez potrzeby; priorytet: query, page, date, clicks, impressions, CTR, średnia pozycja |
@@ -68,7 +71,7 @@ API wymaga osobnej decyzji architektonicznej; integracje dostawców wyłącznie 
 | D14 | `query_page_daily` eksperymentalnie; pomiar na kilku projektach przed decyzją o retencji/rollupie | Sekcja 6.4 |
 | D15 | Opportunity Score dopiero w MVP 2 | Sekcja 10 (tylko specyfikacja) |
 | D16 | `public_id` (ULID) w URL + `ProjectGuard` | ULID tylko utrudnia enumerację; zabezpieczeniem jest autoryzacja |
-| D17 | Repozytorium publiczne: sekrety wyłącznie w `wp-config.php` / zmiennych środowiskowych | Sekcja 15 |
+| D17 | Repozytorium publiczne: sekrety wyłącznie w `wp-config.php` / zmiennych środowiskowych | Sekcja 16 |
 | D18 | Zmiana property GSC przy istniejących danych = jawny reset (usunięcie danych projektu i ponowny import); bez izolacji danych per property | Prostszy model (klucze faktów bez property), zero ryzyka mieszania danych. Sekcja 7.1 |
 | D19 | Kolejka synchronizacji: własna, na `osf_sync_runs` + WP-Cron / cron systemowy (zamiast Action Scheduler) | Bez zewnętrznej biblioteki w publicznym repo i dodatkowych tabel; jeden runner (GET_LOCK), budżet czasu. Sekcja 9.1 |
 | D20 | Szanse SEO w modelu hybrydowym: dowody wyliczane z danych GSC (wykrycia okresu zastępowane przy analizie), stan pracy trwały; szansa = projekt × stabilny odcisk (property, typ, podstrona/fraza/para adresów) | Lista zadań przetrwa przeliczenia i ponowny import; bez kopiowania faktów GSC. Sekcja 10 |
@@ -94,6 +97,14 @@ API wymaga osobnej decyzji architektonicznej; integracje dostawców wyłącznie 
 | D40 | Płatne pomiary pod bezpiecznikami DataForSEO: rezerwacja kosztu szacowanego w `market_tasks` już przy zakolejkowaniu (wspólne limity), cały pomiar albo wcale, wysyłka tylko w tle/CLI pod wspólną blokadą, pomiar `uncertain` przed wysłaniem — zlecenie o nieznanym wyniku nie jest ponawiane, odzyskanie po `tag` | Jeden budżet dla wszystkich modułów; żądanie przeglądarki nigdy nie wysyła płatnego żądania; brak podwójnej opłaty po timeoucie. Sekcja 13.7 |
 | D41 | Harmonogram domyślnie wyłączony (tydzień, gdy włączony po potwierdzeniu kosztu); `UNIQUE (project_id, slot_key)` na termin, okno ponownego sprawdzenia 6 h, odstęp pomiaru ręcznego 15 min; przekroczenie limitu = przebieg pominięty z powodem i ponowienie po odnowieniu limitu | Brak nakładania się crona i pomiarów ręcznych; przewidywalny koszt; widoczny powód braku pomiaru. Sekcja 13.8 |
 | D42 | Konkurenci (monitorowani i organiczni) wyłącznie z zapisanych SERP-ów — bez dodatkowych żądań, bez ocen „siły” | Zero kosztu za konkurenta; fakty zamiast punktacji. Sekcja 13.9 |
+| D43 | Luki SEO za interfejsem `CompetitorKeywordsProvider`; DataForSEO **Labs Ranked Keywords (Live)**, tylko wyniki organiczne, filtry pozycji i wolumenu po stronie dostawcy, cena konfigurowalna (0,012 USD za żądanie + 0,00012 USD za frazę) | Jedno żądanie zwraca do 1 000 fraz domeny z metrykami (bez dodatkowych zapytań o wolumen/KD); Live — dane potrzebne w jednym przebiegu. Sekcja 14.2 |
+| D44 | Stronicowanie wyłącznie potwierdzonym mechanizmem `limit` + `offset` (maks. 10 000 fraz na domenę), bez niepotwierdzonych obejść; przycięcie do najmocniejszych fraz, wiarygodność nieobecności (`covered_min_volume`, duplikaty między stronami) | Ryzyko pominięcia lub zdublowania fraz niedopuszczalne (decyzja STEP 15); ograniczenie opisane w UI i dokumentacji. Sekcja 14.2 |
+| D45 | Zbiory fraz domen **wspólne dla projektów** na rynku (domena × lokalizacja × język), świeże przez 30 dni, ponowne użycie bez opłaty, gdy obejmują zakres; domyślnie TOP30, wolumen ≥ 10, 10 000 fraz; punkt odniesienia projektu z Ranked Keywords (TOP100) | Ten sam konkurent wielu klientów kosztuje raz; punkt odniesienia odróżnia brak widoczności od nieznanej. Sekcja 14.4 |
+| D46 | Widoczność projektu: świeży pomiar SERP (STEP 14) → GSC → punkt odniesienia Labs; sam brak frazy w GSC nigdy nie oznacza braku widoczności | GSC pokazuje tylko frazy z wyświetleniami; brak = brak dowodu. Sekcja 14.6 |
+| D47 | Płatne żądania wyłącznie z `GapImporter` (tło / CLI) pod wspólną blokadą i wspólnymi limitami; limit sprawdzany przed każdą stroną, pauza i wznowienie, bez ponawiania niepewnych żądań, jeden aktywny przebieg na projekt; **globalne limity bez zmian** do smoke testu | Jeden budżet dla wszystkich modułów; brak podwójnej opłaty; przewidywalny koszt. Sekcja 14.5 |
+| D48 | Priorytet luki 0–100 (popyt, osiągalność, siła sygnału, luka, intencja, CPC — skale logarytmiczne z limitem) i mnożnik dla fraz bez luki; sygnał do sprawdzenia, nie prognoza | Przejrzysty i stabilny ranking bez dominacji ogromnego wolumenu. Sekcja 14.9 |
+| D49 | Keyword Gap i Content Gap osobno; luka treści jako heurystyka z powodem i pewnością („Potencjalna luka treści”, „Istniejąca strona — do wzmocnienia”, „Bez luki treści”, „Niejasne”), grupy deterministyczne wokół lidera ze stabilnymi identyfikatorami | Bez AI i bez twierdzeń o „potrzebnej nowej stronie”; status pracy przetrwa przeliczenie. Sekcje 14.10–14.11 |
+| D50 | Historia zbiorów: new / lost / back / url / istotne zmiany pozycji między importami Labs — bez rozbudowy w drugi rank tracker | Monitoring pozycji pozostaje w STEP 14. Sekcja 14.12 |
 
 ## 3. Repozytorium i środowiska
 
@@ -231,6 +242,22 @@ GET  /projects/{project}/competitors[?archived=1]          POST /projects/{proje
 GET  /projects/{project}/competitors/organic               GET/POST /projects/{project}/competitors/{competitor} (szczegóły / edycja, status)
 ```
 
+Zaimplementowane w STEP 15 (`{gap}`, `{cluster}`, `{run}`, `{competitor}` = ULID, `{url}` = klucz adresu MD5; mutacje, plan i koszty —
+`osf_seo_manage_keyword_gap`, nonce + Origin):
+
+```
+GET  /projects/{project}/gaps                              (przegląd)               POST …/gaps/recalculate (przeliczenie w tle)
+GET  /projects/{project}/gaps/keywords                     (luki fraz: ?type, competitor, visibility, content, status, intent, min_volume, max_kd, min_priority, filtered, q, sort, dir, page)
+GET  /projects/{project}/gaps/keywords/{gap}               (szczegóły luki)         POST …/gaps/keywords/{gap} (status, note)
+GET  /projects/{project}/gaps/content[/{cluster}]          (luki treści / grupa)    POST …/gaps/content/{cluster} (status, note)
+GET  /projects/{project}/gaps/pages[/{competitor}/{url}]   (strony konkurencji / strona)
+GET  /projects/{project}/gaps/import                       (formularz)              POST …/gaps/preview (plan i koszt, bez API)
+POST /projects/{project}/gaps/runs                         (uruchomienie: expected_requests, expected_cost z podglądu; raz na 60 s)
+GET  /projects/{project}/gaps/runs/{run}                   (import)                 GET  …/runs/{run}/status (JSON postępu; koszt tylko z capability)
+POST /projects/{project}/gaps/runs/{run}/cancel            POST …/gaps/bulk (status zaznaczonych luk lub grup)
+GET/POST /projects/{project}/gaps/settings                 POST …/gaps/schedule (enabled, confirm)   POST …/gaps/competitors/{competitor}/brand
+```
+
 Kolejne etapy:
 
 ```
@@ -259,10 +286,11 @@ plugins/osf-seo/
 │   ├── Analytics/       # Metrics, Period, KeywordReport, OverviewReport, Visibility, ReportCache
 │   ├── Opportunities/   # Szanse SEO (STEP 11): OpportunityDetector, CtrModel, OpportunityScorer, ConfidenceModel, Fingerprint, OpportunityExplainer, OpportunityConfig, OpportunityDataSource, OpportunityAnalyzer, OpportunityRepository, OpportunityService, OpportunityScheduler
 │   ├── Market/          # Dane rynkowe (STEP 12): KeywordMetricsProvider (interfejs), MarketKeyword (normalizacja), MarketSyncService, repozytoria, plan, limity kosztów
-│   ├── DataForSeo/      # DataForSeoClient (HTTP, Basic Auth, błędy), DataForSeoResponse, DataForSeoProvider, DataForSeoDiscoveryProvider (Labs), DataForSeoSerpProvider (Google Organic), DataForSeoMarkets, KeywordRules
+│   ├── DataForSeo/      # DataForSeoClient (HTTP, Basic Auth, błędy), DataForSeoResponse, DataForSeoProvider, DataForSeoDiscoveryProvider (Labs), DataForSeoSerpProvider (Google Organic), DataForSeoRankedKeywordsProvider (Labs Ranked Keywords), DataForSeoMarkets, KeywordRules
 │   ├── Discovery/       # Nowe frazy (STEP 13): KeywordDiscoveryProvider (interfejs), DiscoveryPlanner, DiscoveryRunner (jedyne płatne żądania), DiscoveryService, DiscoveryRefresher, VisibilityClassifier, DiscoveryScorer, SeedSuggester, SeedList, ExclusionList, repozytoria
 │   ├── Rest/            # (później) endpointy dla panelu — w MVP 1 dane renderowane serwerowo + JSON stanu synchronizacji
 │   ├── Serp/            # Pozycje SERP i konkurenci (STEP 14): SerpProvider (interfejs), SerpPlanner, SerpSubmitter (jedyne płatne zlecenia), SerpCollector, SerpStore, SerpDictionary, DomainFamily, RankChange, SerpTrackingService, CompetitorService, SerpReports, repozytoria
+│   ├── Gap/             # Luki SEO (STEP 15): CompetitorKeywordsProvider (interfejs), GapPlanner, GapImporter (jedyne płatne żądania), GapRefresher, VisibilityResolver, GapClassifier, GapScorer, BrandMatcher, KeywordClusterer, ContentGapClassifier, GapService, GapReports, repozytoria
 │   └── Crawler/         # (MVP 3)
 └── tests/               # PHPUnit: Unit (bez WordPressa), Integration (prawdziwy WP + MySQL/MariaDB)
 ```
@@ -312,6 +340,7 @@ Zaimplementowane w STEP 1 (`plugins/osf-seo/src/Auth`). Kod sprawdza **capabilit
 | `osf_seo_manage_market_data` | płatna synchronizacja danych rynkowych (DataForSEO), podgląd planu, koszty i limity (od STEP 12, wersja 0.12.0) |
 | `osf_seo_manage_keyword_discovery` | wyszukiwanie nowych fraz: plan i koszt, płatne uruchomienie, pobranie mimo cache, anulowanie, decyzje i notatki, wykluczenia, koszty (od STEP 13, wersja 0.13.0) |
 | `osf_seo_manage_serp_tracking` | pozycje SERP: ustawienia i włączenie płatnych pomiarów, plan i koszt, pomiar ręczny, anulowanie, monitorowane frazy, konkurenci, koszty (od STEP 14, wersja 0.14.0) |
+| `osf_seo_manage_keyword_gap` | luki SEO: plan i koszt, płatny import fraz konkurentów, anulowanie, przeliczenie, ustawienia analizy, harmonogram, warianty marki, status i notatki luk i grup, koszty (od STEP 15, wersja 0.15.0) |
 
 | Rola | Capabilities |
 |---|---|
@@ -497,6 +526,12 @@ Tabele wyszukiwania nie należą do `GscDataStore::DATA_TABLES` — reset proper
   **`osf_serp_snippets`** (`snippet_hash` UNIQUE, `title`, `description`, `breadcrumb`, `website_name`, `extra` JSON).
 
 Tabele SERP nie należą do `GscDataStore::DATA_TABLES` — reset property ich nie usuwa.
+
+**Luki SEO** (od schematu 9, migracja `M0009CreateKeywordGap` — nowe tabele i kolumny, sekcja 14.3): `osf_gap_domains` (wspólne zbiory
+domen), `osf_gap_domain_keywords` (frazy zbioru, PK `domain_id` + `market_keyword_id`), `osf_gap_domain_pages`, `osf_gap_domain_events`,
+`osf_gap_runs`, `osf_gap_run_targets`, `osf_gap_settings`, `osf_gap_keywords` (luki fraz projektu), `osf_gap_clusters` (grupy, luka treści),
+`osf_gap_competitor_pages`; kolumny `market_keywords.core_key`, `market_keywords.other_language`, `serp_competitors.brand_terms` oraz
+wartość `gap` w `serp_tracked_keywords.source`. Tabele Luk SEO nie należą do `GscDataStore::DATA_TABLES`.
 
 **Wersja schematu**: opcja `osf_seo_db_version` (autoload), podbijana po każdej udanej migracji.
 
@@ -1858,7 +1893,295 @@ Wykonuje osoba z dostępem do stagingu — nie agent. Zakłada wdrożony kod STE
 - Wolumen i KD monitorowanej frazy pojawiają się, gdy fraza trafi do danych rynkowych STEP 12/13 (brak osobnego wzbogacania).
 - Bez automatycznej retencji historii (świadomie; rozmiar w 13.14). Tło zależy od crona (jak kolejka GSC); `serp:run`/`serp:collect` działają od razu.
 
-## 14. Bezpieczeństwo
+## 14. Luki SEO (STEP 15)
+
+Zaimplementowane w STEP 15 (`plugins/osf-seo/src/Gap`, `src/DataForSeo/DataForSeoRankedKeywordsProvider.php`, migracja M0009 — schemat 9;
+UI: `GapsController`, `GapKeywordsController`, `GapContentController`, moduł „Luki SEO”; CLI `wp osf-seo gap:*`). Cel: frazy, na które
+rankują konkurenci projektu, a projekt nie albo słabiej (**Keyword Gap** — „Luki fraz”), oraz grupy takich fraz, dla których projekt może
+nie mieć przekonującej strony (**Content Gap** — „Luki treści”). W nowych tekstach UI i dokumentacji produkt nazywa się **Whack-a-mole**;
+identyfikatory techniczne (`osf-seo`, `OsfSeo\`, `osf_*`, `osf_seo_*`, `wp osf-seo`) pozostają bez zmian.
+
+### 14.1 Zasady
+
+- **Keyword Gap i Content Gap to osobne pojęcia.** Luka frazy to porównanie pozycji konkurenta z widocznością projektu dla jednej frazy;
+  luka treści to heurystyka dla grupy fraz (14.10) — osobne listy, etykiety i statusy pracy.
+- **Pozycja konkurenta pochodzi z bazy DataForSEO Labs** (Ranked Keywords — migawka Google z datą przy frazie), nie z naszego pomiaru SERP.
+  W UI zawsze „Pozycja (Labs)” albo „#N (Labs)”; dokładny ranking mierzy moduł „Pozycje” (STEP 14 pozostaje jedynym monitoringiem pozycji).
+- **Hierarchia dowodów widoczności projektu (D46)**: świeży pomiar SERP (STEP 14) → średnia pozycja (GSC) → punkt odniesienia DataForSEO Labs.
+  **Sam brak frazy w GSC nigdy nie oznacza braku widoczności** — bez innego dowodu fraza jest „Nieznana”.
+- **Płatne żądania wyłącznie z `GapImporter`** — w kroku w tle (`GapService::runBackground`, WP-Cron / `sync:run`, po Nowych frazach)
+  albo z `wp osf-seo gap:run`, pod wspólną blokadą `MarketSyncService::LOCK` i wspólnymi limitami kosztów (zadania w `market_tasks`,
+  `trigger_type = gap`, endpoint `labs_ranked_keywords`). Kontroler, widok i raport nigdy nie wysyłają płatnego żądania: plan i podgląd kosztu
+  są lokalne, „Uruchom import” tylko kolejkuje potwierdzony plan.
+- **Globalne limity DataForSEO bez zmian** (1 USD dziennie, 10 USD miesięcznie — decyzja STEP 15: podniesienie dopiero po realnym smoke
+  teście). Import większy niż dzienny limit rozkłada się na kolejne dni (pauza i automatyczne wznowienie, 14.5).
+- **Brak automatycznego startu.** Wdrożenie niczego nie pobiera; import uruchamia człowiek (panel, CLI), a harmonogram odświeżania jest
+  domyślnie wyłączony i włączany tylko z potwierdzeniem szacowanego kosztu miesięcznego.
+- Priorytet luki to **sygnał do sprawdzenia** (nigdy prognoza ruchu ani wartość biznesowa); luka treści to **heurystyka** (nigdy twierdzenie,
+  że projekt „potrzebuje nowej strony”). Bez AI, embeddingów, crawla konkurencji, backlinków i generowania treści.
+
+### 14.2 Endpoint, stronicowanie i ceny (D43, D44)
+
+| Element | Wartość |
+|---|---|
+| Żądanie | `POST dataforseo_labs/google/ranked_keywords/live` — jedna domena, jedna strona wyników (do **1 000** fraz) |
+| Treść | `target` (domena bez schematu i `www.`), `location_code`, `language_code`, `item_types: ["organic"]`, `historical_serp_mode: "live"`, `ignore_synonyms: false`, `load_rank_absolute: false`, filtry `ranked_serp_element.serp_item.rank_group <= N` i `keyword_data.keyword_info.search_volume >= M`, `order_by` wolumen malejąco + pozycja rosnąco, `limit`, `offset` |
+| Odpowiedź | `total_count`, `items[]` (fraza z metrykami: wolumen, CPC, konkurencja, KD, intencja, `core_keyword`, inny język; element SERP: `rank_group`, `rank_absolute`, URL, tytuł, `etv`, data aktualizacji) |
+| Odrzucane wiersze | inne niż organiczne, z innej domeny niż cel (host spoza rodziny domeny), bez prawidłowej frazy lub pozycji; duplikat frazy na stronie — najlepsza pozycja |
+| Cena | `OSF_SEO_DATAFORSEO_PRICE_GAP_REQUEST` = 0,012 USD za żądanie + `OSF_SEO_DATAFORSEO_PRICE_GAP_ITEM` = 0,00012 USD za zwróconą frazę; pełna strona 0,132 USD, 10 000 fraz domeny = **1,32 USD** |
+
+**Stronicowanie (D44) — wyłącznie potwierdzony mechanizm `limit` + `offset`.** Specyfikacja OpenAPI i oficjalne SDK DataForSEO
+dokumentują dla Ranked Keywords `limit` (maks. 1000) i `offset` z ograniczeniem `offset + limit ≤ 10 000`; nie korzystamy z
+niepotwierdzonych obejść (np. „okien wolumenowych” czy `offset_token`). Dlatego **maksymalnie 10 000 fraz na domenę i zakres**
+(`MAX_ROWS_PER_DOMAIN`); większe domeny są **przycinane** do najmocniejszych fraz (wolumen malejąco). Bezpieczeństwo danych:
+
+- `covered_min_volume` — dolna granica wolumenu, dla której nieobecność frazy jest wiarygodna: import kompletny → minimalny wolumen zakresu;
+  import przycięty albo niepełny → wolumen ostatniej pobranej frazy + 1 (frazy o tym samym wolumenie mogły trafić na następną stronę);
+- **duplikaty frazy między stronami** (przesunięcie danych u dostawcy w trakcie stronicowania) → nieobecność w ogóle niewiarygodna
+  (`covered_min_volume = NULL`), import oznaczony w historii;
+- „Brak widoczności” z punktu odniesienia i zdarzenie „lost” tylko w wiarygodnym zakresie — nigdy z przyciętej części.
+
+### 14.3 Model danych (M0009)
+
+Migracja `M0009CreateKeywordGap` (schemat 9) — tylko nowe tabele i nowe kolumny (bez usuwania danych):
+
+- `market_keywords`: + `core_key` BINARY(16) (grupa synonimów dostawcy), `other_language` (fraza w innym języku według dostawcy);
+  `serp_competitors`: + `brand_terms` (warianty marki konkurenta); `serp_tracked_keywords.source`: + `gap`.
+- **`osf_gap_domains`** — wspólny zbiór domeny na rynku: UNIQUE (`provider`, `location_code`, `language_code`, `domain_key`); stan
+  (`empty`, `importing`, `ready`, `partial`), zakres ostatniego importu (`coverage_max_rank`, `coverage_min_volume`, `coverage_max_rows`),
+  `complete`, `covered_min_volume`, `total_count`, `rows_present`, `labs_updated_at`, `import_run_id`, `imported_at`, `stale_after`.
+- **`osf_gap_domain_keywords`** — PK (`domain_id`, `market_keyword_id`): `rank_group`, `rank_absolute`, `url_id` (słownik `serp_urls`), `etv`,
+  `serp_on` (data migawki Labs), `first_seen`, `last_seen`, `seen_run_id`, `prev_rank`, `changed_on`, `present`; indeks `domain_url`.
+- **`osf_gap_domain_pages`** — tytuły stron konkurentów (PK `domain_id`, `url_id`).
+- **`osf_gap_domain_events`** — historia zbioru (14.12): PK (`domain_id`, `market_keyword_id`, `run_id`, `event`), indeks `domain_run`.
+- **`osf_gap_runs`** / **`osf_gap_run_targets`** — przebiegi importu (stan, zakres, liczby, koszty, powód blokady; UNIQUE
+  `active_project_id` = jeden aktywny przebieg na projekt) i domeny przebiegu (stan, `next_offset`, strony, frazy, żądanie w locie, próby,
+  błąd, termin ponowienia, statystyki).
+- **`osf_gap_settings`** — ustawienia projektu (próg znaczącej pozycji konkurenta, min. wolumen, maks. KD, słowa tematyczne, marka projektu,
+  domyślny zakres importu, odświeżanie, harmonogram) i `data_key` (klucz danych przeliczenia).
+- **`osf_gap_keywords`** — luka frazy projektu: UNIQUE (`project_id`, `market_keyword_id`), `public_id` utf8mb4_bin; status pracy i notatka;
+  `active`, `listed`, `filter_reason`; typ luki, widoczność i jej źródło, pozycje (SERP, GSC, Labs), konkurenci (liczba, TOP10, najlepszy,
+  pozycja, adres), metryki, strona docelowa, grupa i luka treści, priorytet i jego składniki. Indeksy `project_list`
+  (`project_id`, `listed`, `active`, `gap_type`, `status`, `priority` — pokrywa domyślną listę), `project_volume`, `project_cluster`.
+- **`osf_gap_clusters`** — grupy fraz (lider, etykieta, liczby, wolumen luk, konkurenci i ich podstrony, luka treści z powodem i pewnością,
+  strona docelowa, priorytet, status pracy, notatka); **`osf_gap_competitor_pages`** — strony konkurencji projektu (agregaty).
+
+Kolumny tekstowe `osf_gap_keywords` są w utf8mb4 (bez ascii): `$wpdb` traktuje tabelę mieszającą ascii i utf8mb4 bez kolumny binarnej
+jako ASCII i odrzuca wyszukiwanie z polskimi znakami. Tabele Luk SEO nie należą do `GscDataStore::DATA_TABLES` — reset property ich nie usuwa
+(luki przeliczają się z nowych danych GSC).
+
+### 14.4 Wspólne zbiory domen i zakres (D45)
+
+- Zbiór domeny jest wspólny dla wszystkich projektów na tym samym rynku (domena × lokalizacja × język × dostawca). Świeży zbiór (do
+  `OSF_SEO_GAP_TTL_DAYS`, domyślnie 30 dni), który **obejmuje** żądany zakres (TOP N ≥, min. wolumen ≤, limit fraz ≥ albo zbiór kompletny),
+  jest używany z pamięci — **bez opłaty**, także przez inny projekt. Węższy zakres mieści się w szerszym; szerszy wymaga importu.
+- Domena importowana właśnie przez inny projekt: plan pokazuje „czeka na import innego projektu”, przebieg użyje wyniku bez opłaty.
+- Domyślny zakres (decyzja STEP 15): **TOP30, wolumen ≥ 10, maks. 10 000 fraz na domenę**. Presety: szybki (TOP10, ≥ 50, 2 000), standardowy
+  (TOP30, ≥ 10, 10 000), pełny (TOP100, każdy wolumen, 10 000) albo własny.
+- **Punkt odniesienia projektu** (decyzja STEP 15): frazy domeny projektu z Ranked Keywords w TOP100, z tym samym minimalnym wolumenem i limitem
+  fraz co konkurenci — pozwala odróżnić „Brak widoczności” od „Nieznanej” dla fraz bez GSC i bez pomiaru SERP. Można go wyłączyć w imporcie.
+
+### 14.5 Import: plan, kolejka, limity kosztów, błędy (D47)
+
+1. **Plan bez API** (`GapPlanner`): aktywni konkurenci projektu (bez domeny projektu i duplikatów) + punkt odniesienia; dla każdej domeny stan
+   (z pamięci / czeka / import / odświeżenie), znana liczba fraz z poprzedniego importu o tych samych filtrach, maks. żądań, **koszt maksymalny**
+   (pełny limit fraz) i **oczekiwany** (znana liczba fraz). Pozostały limit dzienny i miesięczny.
+2. **Uruchomienie**: plan przeliczany ponownie; większy lub droższy niż potwierdzony podgląd → „plan się zmienił”. Blokada startu, gdy
+   oczekiwany koszt przekracza pozostały limit miesięczny albo limit dzienny = 0; mniejszy limit dzienny tylko ostrzega (import potrwa kilka dni).
+   Jeden aktywny przebieg na projekt (UNIQUE), ręczny start raz na 60 s, pauza konta DataForSEO blokuje start.
+3. **Wykonanie w tle**: strona po stronie, najwyżej `OSF_SEO_GAP_MAX_REQUESTS_PER_TICK` (10) żądań na krok, **limit kosztów sprawdzany przed
+   każdą stroną**. Limit dzienny lub miesięczny → przebieg `paused` (pobrane strony zostają) i wznawia się sam, gdy limit się odnowi; wstrzymany
+   dłużej niż 7 dni → zakończony częściowo.
+4. **Błędy**: niepewne (sieć, timeout, 5xx, niepoprawna odpowiedź) — **bez ponawiania** (żądanie mogło zostać opłacone), koszt szacowany w
+   rejestrze, domena niepełna; limit żądań dostawcy → ponowienie po 5 min (maks. 3 próby); błąd konta (logowanie, środki) → wspólna pauza
+   płatnych wywołań wszystkich modułów; żądanie w locie starsze niż godzina (proces padł) → domena niepełna bez ponawiania.
+5. **Anulowanie**: bez kolejnych stron; rozpoczęty import zbioru domykany jako niepełny (pobrane strony zostają).
+6. Koszt każdego żądania w `market_tasks` (koszt zgłoszony przez dostawcę rozstrzyga) — w „Danych rynkowych” kategoria „Luki SEO”.
+7. Po zakończeniu przebiegu luki projektu są przeliczane (14.14).
+
+### 14.6 Widoczność projektu — hierarchia dowodów (D46)
+
+`VisibilityResolver`, w tej kolejności:
+
+1. **Pomiar SERP** (STEP 14), jeśli fraza jest monitorowana i pomiar ma do `OSF_SEO_GAP_SERP_FRESH_DAYS` (30) dni: znaleziona → widoczna
+   (pozycja ≤ 10) albo słaba; nieznaleziona przy głębokości ≥ 100 → brak.
+2. **GSC** (okno `OSF_SEO_GAP_WINDOW_DAYS` = 90 dni, warianty zapisu po kluczu rynkowym): ≥ `OSF_SEO_GAP_MIN_IMPRESSIONS` (10) wyświetleń →
+   średnia pozycja `SUM(position_sum) / SUM(impressions)`; > 10 → słaba; ≤ 10, ale wyświetlenia < 10% oczekiwanych z wolumenu → słaba
+   (sporadycznie); inaczej widoczna.
+3. **Punkt odniesienia Labs**: domena projektu rankuje → widoczna/słaba wg pozycji Labs; nie rankuje → **brak tylko wtedy**, gdy nieobecność
+   jest wiarygodna (14.2) **i** GSC ma dane projektu z < 10 wyświetleniami frazy.
+4. W pozostałych przypadkach **Nieznana**.
+
+### 14.7 Typ luki
+
+C — najlepsza pozycja konkurenta (Labs) w progu znaczącej pozycji (domyślnie TOP20, ustawienie projektu); P — pozycja projektu z wybranego dowodu.
+Kolejność (`GapClassifier`): widoczność nieznana → **Nieznana**; brak → **Brak widoczności**; sporadyczna → **Słaba widoczność**; P < C →
+**Projekt silniejszy**; P ≤ 10 albo P − C < 5 → **Porównywalna**; inaczej → **Słaba widoczność**. Domyślna lista „Do sprawdzenia” = brak,
+słaba, nieznana; porównywalne i silniejsze są widoczne po zmianie filtra.
+
+### 14.8 Filtry — frazy zostają, tylko nie są lukami
+
+`listed = 0` z powodem (filtr „Odfiltrowane”), w kolejności: **marka projektu** i **marka konkurenta** (`BrandMatcher`: warianty podane przez
+użytkownika pasują zawsze; warianty automatyczne z domeny i nazwy — gdy wariant wielowyrazowy występuje jako jeden wyraz albo fraza zawiera
+wariant i dostawca oznaczył intencję nawigacyjną — dzięki temu domena-fraza nie ukrywa fraz branżowych), **wykluczenia projektu** (wspólne
+z Nowymi frazami), **słowa tematyczne** (jeśli podane — tylko frazy z nimi), **inny język** (według dostawcy), **minimalny wolumen**,
+**maksymalna trudność SEO**. Frazy, na które żaden aktywny konkurent już nie rankuje w progu, są **nieaktualne** (`active = 0`) — status
+pracy i notatka zostają, a fraza wraca z tym samym identyfikatorem, gdy dowód się pojawi.
+
+### 14.9 Priorytet luki (D48)
+
+0–100, `GapScorer` (składniki ograniczone; `L(x, cap) = min(1, log10(1 + x) / log10(1 + cap))`):
+
+| Składnik | Punkty |
+|---|---|
+| Popyt | 25 × L(wolumen, 10 000); brak wolumenu = 0 |
+| Osiągalność | 15 × (1 − KD/100); brak KD = 7,5 |
+| Siła sygnału | 12 × f(C) + 8 × min(1, (n − 1)/3); f: C 1–3 = 1; 4–10 = 0,85; 11–20 = 0,6; 21–30 = 0,3; dalej 0,15; n — konkurenci w progu |
+| Luka | brak 30; słaba 30 × max(0,4; min(1; (P − C)/30)); sporadyczna 15; nieznana 15; porównywalna 4; silniejszy 0 |
+| Intencja | transakcyjna/komercyjna 5, informacyjna 3, nawigacyjna 0, brak 2,5 |
+| Sygnał komercyjny | 5 × L(CPC, 10 USD) — mała waga |
+
+Mnożnik: porównywalna × 0,6, projekt silniejszy × 0,3. Priorytet grupy = 0,7 × najwyższy priorytet frazy + 30 × L(wolumen luk grupy, 50 000).
+W szczegółach luki widoczne jest rozbicie na składniki.
+
+### 14.10 Luka treści — heurystyka (D49)
+
+Dla każdej grupy (14.11), `ContentGapClassifier` — bez AI, z powodem i pewnością (niska / średnia / wysoka):
+
+- **Strona docelowa projektu**: pomiar SERP (najczęstszy adres projektu w grupie) → GSC (strona z ≥ 60% wyświetleń grupy; druga z ≥ 20% →
+  wyświetlenia **rozproszone**) → punkt odniesienia Labs (adres ważony wolumenem) → adres projektu pasujący słowami do frazy wiodącej (≥ 60%).
+- Brak danych projektu → **Niejasne**; rozproszone → **Niejasne**.
+- Strona istnieje: fraza wiodąca porównywalna/silniejsza i < 50% fraz z luką → **Bez luki treści**; jedyną stroną jest strona główna, a
+  konkurenci rankują podstronami → **Potencjalna luka treści**; inaczej → **Istniejąca strona — do wzmocnienia**.
+- Brak strony: konkurenci rankują podstronami i wolumen luk ≥ 50 → **Potencjalna luka treści**; tylko stronami głównymi → **Niejasne**;
+  inaczej → **Niejasne** (mały popyt).
+
+UI zawsze opisuje wynik jako heurystykę do sprawdzenia, nigdy jako diagnozę.
+
+### 14.11 Grupowanie fraz
+
+`KeywordClusterer` — deterministyczne, wokół lidera (bez embeddingów): frazy z listy (najwyżej `OSF_SEO_GAP_MAX_CLUSTER_KEYWORDS` = 20 000
+według priorytetu) w kolejności wolumen malejąco; fraza dołącza do pierwszej grupy, której **lider** jest powiązany: co najmniej 2 wspólne adresy
+konkurentów (albo wspólny jedyny adres), ta sama grupa synonimów dostawcy (`core_keyword`), ta sama strona docelowa projektu, ten sam zbiór
+wyrazów (bez kolejności i diakrytyków) albo ≥ 4 wspólne adresy w TOP10 naszych migawek SERP. Strony główne i „huby” (> max(300, 20%) fraz
+zbioru) nie łączą fraz. Bez stemmingu. **Stabilne identyfikatory**: nowa grupa przejmuje identyfikator i status pracy starej, jeśli co najmniej
+połowa jej fraz należała do tej samej starej grupy; grupy bez następcy stają się nieaktywne.
+
+### 14.12 Historia zbiorów domen (D50)
+
+Od **drugiego** importu zbioru zdarzenia na frazę: `new`, `lost` (tylko w wiarygodnym zakresie wolumenu i w TOP N importu), `back`, `url`
+(inny adres), `up`/`down` (zmiana o ≥ 5 pozycji albo przejście progu TOP3/10/20/50/100). To zmiany w bazie Labs między importami — **nie drugi
+rank tracker**: nie liczymy z nich trendów pozycji ani alertów; właściwy monitoring pozycji to moduł „Pozycje” (STEP 14). Historia importów
+domeny (liczby fraz, nowe/utracone, koszt) w `gap_run_targets`.
+
+### 14.13 Strony konkurencji
+
+Agregaty z zaimportowanych fraz aktywnych konkurentów (`gap_competitor_pages`): liczba fraz, TOP3/10/20, wolumen, `etv`, najlepsza pozycja,
+liczba i wolumen fraz będących lukami projektu, frazy wspólne (projekt porównywalnie albo wyżej), główna intencja, grupa. Szczegóły strony:
+frazy strony z widocznością projektu.
+
+### 14.14 Przeliczenie (bez API)
+
+`GapRefresher` przelicza luki projektu z zapisanych danych: po imporcie, w kroku w tle (projekty ze zmienionym **kluczem danych**: ustawienia
+analizy, konkurenci i ich marki, stan zbiorów, wykluczenia, ostatnia data GSC, pomiary SERP, konfiguracja; plus raz dziennie — metryki
+rynkowe) i z `wp osf-seo gap:recalculate`. Przycisk „Przelicz” w panelu tylko unieważnia klucz — przeliczenie wykonuje najbliższy krok tła
+(pełne przeliczenie dużego projektu trwa kilkanaście sekund, 14.19). Nigdy przy renderowaniu strony.
+
+### 14.15 Harmonogram i koszty
+
+Harmonogram odświeżania (domyślnie wyłączony): co `refresh_days` (domyślnie 30) import nieświeżych zbiorów w domyślnym zakresie projektu — tylko
+gdy **koszt oczekiwany** (liczba fraz z poprzedniego importu o tych samych filtrach; dla nowej domeny — maksimum) mieści się w dzisiejszym
+i miesięcznym limicie; inaczej pominięcie z powodem i ponowienie następnego dnia. Limit jest i tak sprawdzany przed każdą stroną (pauza).
+Włączenie wymaga potwierdzenia szacowanego kosztu miesięcznego (plan przeskalowany do 30 dni). Koszt pierwszego importu dla jednego konkurenta
+w domyślnym zakresie: maks. 10 stron = **1,32 USD**, a dla domeny z np. 2 000 frazami 2 strony ≈ 0,26 USD; punkt odniesienia projektu — tyle samo.
+
+### 14.16 UI
+
+Moduł „Luki SEO” (menu projektu): **Przegląd** (liczniki luk, wysoki priorytet, nowe od ostatniego importu, najważniejsze luki fraz i treści,
+stan zbiorów domen z datą danych Labs, ostatnie importy), **Luki fraz** (filtry: typ, konkurent, widoczność, luka treści, status, intencja,
+wolumen, KD, priorytet, odfiltrowane z powodem; sortowanie; zmiana statusu zbiorczo; „Monitoruj pozycję”), **szczegóły luki** (rozbicie
+priorytetu, dowody projektu: pomiar SERP, GSC z wariantami i stronami, punkt odniesienia; pozycja każdego konkurenta z datą Labs i naszym
+pomiarem SERP, grupa i luka treści, historia zbiorów, powiązane Nowe frazy i Szanse SEO, status i notatka), **Luki treści** (grupy z heurystyką
+i pewnością, szczegóły z frazami i stronami konkurentów), **Strony konkurencji**, **Import** (domeny, presety zakresu, punkt odniesienia,
+„Pobierz ponownie”, bezpłatny podgląd kosztu, potwierdzenie, postęp, anulowanie) i **Ustawienia** (progi analizy, domyślny zakres, harmonogram,
+warianty marki projektu i konkurentów). Integracje: „Pozycje” (źródło „z Luk SEO”), „Dane rynkowe” (kategoria Luki SEO), karta konkurenta.
+Komponenty `x-panel.gap-type`, `x-panel.content-gap`, `x-panel.project-visibility`. Klient: tylko odczyt, bez kosztów.
+
+### 14.17 CLI
+
+```
+wp osf-seo gap:plan --project=<id> [--preset=quick|standard|full] [--max-rank=…] [--min-volume=…] [--max-rows=…] [--competitors=…] [--no-baseline] [--force] [--format=json]   # zero żądań
+wp osf-seo gap:run --project=<id> [opcje planu] [--yes] [--queue-only]   # PŁATNE — tylko na polecenie użytkownika
+wp osf-seo gap:status|cancel|recalculate --project=<id> …                 # stan, anulowanie (--run=<id>), przeliczenie (bez API)
+wp osf-seo gap:list|keyword|content|pages --project=<id> …               # luki fraz, szczegóły, luki treści, strony konkurencji (bez API)
+wp osf-seo gap:set-status --project=<id> --ids=… --status=… [--kind=keyword|cluster] [--note=…]
+wp osf-seo gap:settings --project=<id> [--competitor-max-rank=…] [--min-volume=…] [--max-kd=…] [--include=…] [--brand=…] [--enable-schedule --yes|--disable-schedule]
+wp osf-seo gap:brand --project=<id> --competitor=<id> --terms="…"        # warianty marki konkurenta (bez API)
+```
+
+Wyjście po angielsku; `--format=json` bez dodatkowych komunikatów.
+
+### 14.18 Uprawnienia i bezpieczeństwo
+
+- Capability `osf_seo_manage_keyword_gap` (wersja 0.15.0): plan i koszt, import, anulowanie, przeliczenie, ustawienia, harmonogram, warianty
+  marki, status i notatki. Odczyt (luki, grupy, strony, postęp bez kosztów) — każdy, kto widzi projekt.
+- Przebieg, luka, grupa i konkurent z URL-a szukane wyłącznie po (`project_id` z `ProjectContext`, `public_id`); strona konkurenta po
+  (`project_id`, konkurent projektu, klucz adresu) — obce ID → 404 (testy IDOR); zmiany statusu cudzych ID → 0 zmian.
+- Mutacje: nonce + zgodny Origin + capability (trasa `ResolveProject` i kontrola w `GapService`); uruchomienie tylko z potwierdzonym planem
+  (`expected_requests`, `expected_cost`). Frazy, tytuły i URL-e od dostawcy escapowane; linki tylko `http(s)` z `rel="noopener noreferrer"`.
+- Dane logowania DataForSEO jak w STEP 12 (tylko `wp-config.php`/env, Basic Auth budowany w chwili żądania, nigdy w logach ani HTML).
+
+### 14.19 Wydajność (pomiar)
+
+`composer test:performance:gap` (MariaDB 10.11, syntetyczne dane, osobna baza testowa; bez żadnego żądania do DataForSEO):
+
+Dane: 40 wspólnych zbiorów konkurentów × 10 000 fraz (TOP30) z puli 60 000 fraz rynkowych, 20 projektów × 5 konkurentów, punkt odniesienia
+2 000 fraz na projekt (TOP100); projekt nr 1: GSC 5 000 fraz × 30 dni w oknie 90 dni ze stronami, 500 monitorowanych fraz SERP.
+W tabelach: 450 000 wierszy zbiorów (54 MB z indeksami), 537 000 luk fraz 20 projektów (255 MB), 34 000 grup, 30 000 stron konkurencji.
+
+| Operacja | Wynik |
+|---|---|
+| Pełne przeliczenie projektu (5 × 10 000 fraz → 26 753 frazy konkurentów, 26 215 luk, 1 648 grup, 1 500 stron) | **12,1 s**, 2 029 zapytań (wsadowo, bez N+1), szczyt pamięci 90 MB; SQL ~9 s (upsert luk ~2,7 s), PHP ~4,5 s |
+| Przeliczenie bez zmian danych (klucz danych) | 3,2 ms, 7 zapytań |
+| Kolejne projekty na tych samych zbiorach | 11,4 s na projekt |
+| Import 10 000 fraz domeny (10 stron po 1 000, atrapa HTTP) + przeliczenie | 17,1 s (import ~5 s), 2 355 zapytań, 95 MB |
+| Ponowny import ze zmianami (zdarzenia: lost 500, url 740, up 407, down 951) | 16,4 s |
+| Luki fraz — lista domyślna / ostatnia strona (25 630 luk) | **24 / 25 ms** (indeks `project_list` pokrywa filtry; najpierw ID strony, potem szczegóły 50 wierszy) |
+| Luki fraz — sortowanie po wolumenie / filtr konkurenta (EXISTS) | 47 / 46 ms |
+| Luki fraz — wyszukiwanie z min. wolumenem i KD / z polskimi znakami | 102 / 167 ms (`LIKE '%…%'` po frazach projektu) |
+| Liczniki przeglądu / szczegóły luki / lista grup / grupa | 71 / 4 / 9 / 115 ms |
+| Strony konkurencji: lista / jeden konkurent / strona | 3 / 2 / 12 ms |
+| Plan importu bez API (5 domen + punkt odniesienia) | 2 ms |
+
+EXPLAIN (pełny wydruk w wyniku benchmarku): lista i licznik — `range` na `project_list` z „Using index” (bez odczytu wierszy do sortowania);
+szczegóły strony — `eq_ref` po PK; filtr konkurenta — półzłączenie z PK `gap_domain_keywords` (`domain_id`, `market_keyword_id`); zapytania
+przeliczenia — paczki po 1 000 fraz po PK zbiorów i `market_keywords`, GSC po indeksie `project_market_key`.
+
+### 14.20 Bezpieczny smoke test na stagingu (1 konkurent)
+
+Tylko na wyraźne polecenie właściciela, po wdrożeniu i `wp osf-seo db:migrate` (schemat 9):
+
+1. `wp osf-seo status` (0.15.0, schemat 9), `wp osf-seo dataforseo:status` (konfiguracja, limity 1 / 10 USD bez zmian, brak pauzy).
+2. Jeden aktywny konkurent w projekcie (np. z modułu „Konkurenci”); `wp osf-seo gap:plan --project=<id> --preset=quick --no-baseline`
+   — zero żądań; sprawdzić maks. koszt (TOP10, ≥ 50, maks. 2 000 fraz → maks. 2 strony = **0,264 USD**).
+3. `wp osf-seo gap:run --project=<id> --preset=quick --no-baseline` → potwierdzenie → import (1–2 żądania).
+4. Porównać koszt zgłoszony (`market_tasks.cost`, `gap:status`) z szacowanym; sprawdzić `total_count`, liczbę fraz, kompletność zbioru,
+   datę danych Labs, `gap:list`, `gap:keyword`, `gap:content` i panel (widoczność „Nieznana” bez punktu odniesienia jest poprawna).
+5. Dopiero potem ewentualnie punkt odniesienia projektu (`gap:run --preset=quick` bez `--no-baseline`, kolejne ~0,26 USD) i decyzja o
+   domyślnym zakresie oraz limitach kosztów.
+
+### 14.21 Ograniczenia
+
+- **Maks. 10 000 fraz na domenę i zakres** (potwierdzone stronicowanie `limit` + `offset`); większe domeny przycięte do najmocniejszych fraz;
+  nieobecność poniżej wolumenu ostatniej pobranej frazy nie jest wiarygodna.
+- Pozycje konkurentów to migawka bazy Labs (data przy frazie), nie bieżący ranking; dla dokładnej pozycji — monitorowanie w „Pozycjach”.
+- Bez stemmingu: odmiany fraz łączy dopiero wspólny adres, grupa synonimów dostawcy lub strona projektu.
+- Heurystyki (widoczność sporadyczna, luka treści, priorytet) to przybliżenia do kalibracji na prawdziwych projektach (`OSF_SEO_GAP_*`).
+- Pełne przeliczenie projektu z 5 konkurentami × 10 000 fraz trwa ~12 s i ~90 MB pamięci (w tle); większe zbiory wymagają optymalizacji
+  (przyrostowe przeliczenie) przed skalowaniem na setki projektów.
+- Domyślne limity kosztów (1 / 10 USD) pozwalają na ok. 7 pełnych stron dziennie — import 10 000 fraz rozkłada się na 2 dni.
+
+## 15. Bezpieczeństwo
 
 - **Autoryzacja projektów**: `ProjectGuard` → `ProjectContext` albo 404; repozytoria i usługi
   analityczne przyjmują wyłącznie `ProjectContext`.
@@ -1897,9 +2220,12 @@ Wykonuje osoba z dostępem do stagingu — nie agent. Zakłada wdrożony kod STE
   — obce ID → 404; ustawienia, pomiary, frazy i konkurenci wymagają `osf_seo_manage_serp_tracking` (trasa + kontrola w usługach), nonce,
   zgodnego Origin i potwierdzonego planu (`expected_tasks`, `expected_cost`); klient — tylko odczyt, bez kosztów. Tytuły, opisy i URL-e z SERP
   escapowane; linki `http(s)` z `rel="noopener noreferrer nofollow"` (sekcja 13.13).
-- **Repozytorium publiczne**: sekcja 15; skan sekretów przed commitem; `.gitignore` blokuje pliki z sekretami.
+- **Luki SEO** (STEP 15): luka, grupa, przebieg i konkurent z URL-a wyłącznie po (`project_id` z `ProjectContext`, `public_id`) — obce ID → 404;
+  import, ustawienia, harmonogram, marka i statusy wymagają `osf_seo_manage_keyword_gap` (trasa + kontrola w `GapService`), nonce, zgodnego
+  Origin i potwierdzonego planu (`expected_requests`, `expected_cost`); klient — tylko odczyt, bez kosztów (sekcja 14.18).
+- **Repozytorium publiczne**: sekcja 16; skan sekretów przed commitem; `.gitignore` blokuje pliki z sekretami.
 
-## 15. Konfiguracja i sekrety
+## 16. Konfiguracja i sekrety
 
 Stałe w `wp-config.php` (poza repozytorium) mają pierwszeństwo przed zmiennymi środowiskowymi o tej
 samej nazwie. W repozytorium wyłącznie placeholdery.
@@ -1936,6 +2262,12 @@ samej nazwie. W repozytorium wyłącznie placeholdery.
 | `OSF_SEO_SERP_MIN_RECHECK_HOURS` | (opcjonalnie) okno, w którym zlecona fraza nie jest zlecana ponownie (cron + pomiar ręczny), 1–168 h, domyślnie 6 | STEP 14 |
 | `OSF_SEO_SERP_MAX_POSTS_PER_RUN`, `OSF_SEO_SERP_COLLECT_PER_RUN` | (opcjonalnie) maks. zleceń (po 100 zadań, 1–500) i odbiorów (1–10 000) w jednym przebiegu tła, domyślnie 20 / 200 | STEP 14 |
 | `OSF_SEO_SERP_EXPIRE_HOURS` | (opcjonalnie) po ilu godzinach nieodebrane zadanie wygasa, 24–720, domyślnie 72 | STEP 14 |
+| `OSF_SEO_DATAFORSEO_PRICE_GAP_REQUEST`, `…_PRICE_GAP_ITEM` | (opcjonalnie) ceny Labs Ranked Keywords do szacunku (domyślnie 0.012 USD za żądanie, 0.00012 USD za frazę) | STEP 15 |
+| `OSF_SEO_GAP_TTL_DAYS` | (opcjonalnie) świeżość wspólnego zbioru domeny, 7–180 dni, domyślnie 30 | STEP 15 |
+| `OSF_SEO_GAP_MAX_REQUESTS_PER_TICK` | (opcjonalnie) maks. stron Ranked Keywords w jednym kroku tła, 1–100, domyślnie 10 | STEP 15 |
+| `OSF_SEO_GAP_WINDOW_DAYS`, `…_MIN_IMPRESSIONS`, `…_VISIBLE_POSITION`, `…_VISIBLE_SHARE` | (opcjonalnie) widoczność GSC w lukach: okno 28–480 dni (90), min. wyświetleń (10), pozycja „widoczna” (10), min. udział wyświetleń w wolumenie (0.1) | STEP 15 |
+| `OSF_SEO_GAP_SERP_FRESH_DAYS` | (opcjonalnie) jak długo pomiar SERP jest dowodem widoczności, 1–180 dni, domyślnie 30 | STEP 15 |
+| `OSF_SEO_GAP_MAX_CLUSTER_KEYWORDS` | (opcjonalnie) maks. fraz grupowanych w projekcie (wg priorytetu), 100–100 000, domyślnie 20 000 | STEP 15 |
 
 ```php
 // wp-config.php — przykład z placeholderami
@@ -1951,7 +2283,7 @@ define('OSF_SEO_DATAFORSEO_PASSWORD', 'your-dataforseo-api-password');
 - Brak stałych = integracja wyłączona (panel pokazuje nazwy brakujących stałych, `wp osf-seo status`: INFO);
   błędny format klucza = FAIL w `wp osf-seo status`.
 
-## 16. Deployment (do ustalenia)
+## 17. Deployment (do ustalenia)
 
 Stan: CI (`.github/workflows/ci.yml`) uruchamia wyłącznie testy i build — w repozytorium nie ma skryptu deployu.
 Reorganizacja jest w `main`. Wcześniejsza integracja Git Hostingera skopiowała cały root repozytorium do `wp-content`
@@ -1975,7 +2307,7 @@ Warianty docelowe:
   dwa połączenia Git w hPanelu, każde z własnym katalogiem.
 - **C (niezalecany)**: integracja Git Hostingera wprost na `wp-content` — wystawiłaby na serwer cały root repo.
 
-## 17. Roadmapa i stan prac
+## 18. Roadmapa i stan prac
 
 **MVP 1** (tylko GSC, koszt zewnętrznych usług: 0 zł; od STEP 12 — DataForSEO, D3):
 
@@ -2001,14 +2333,15 @@ Warianty docelowe:
 | 17 | DataForSEO: fundament (dostawca za interfejsem, klient, limity kosztów, rejestr zadań) i wzbogacenie fraz danymi rynkowymi (wolumen, historia, CPC, konkurencja Ads, trudność SEO) | ✅ STEP 12 (sekcja 11) |
 | 18 | Nowe frazy: seedy (ręczne, GSC, szanse), wyszukiwanie DataForSEO Labs w tle z planem i limitami kosztów, deduplikacja, widoczność GSC, priorytet odkrycia, praca nad frazą, wykluczenia | ✅ STEP 13 (sekcja 12) |
 | 19 | Pozycje SERP i konkurenci: monitorowane frazy, pomiary Google Organic (Standard, TOP100) z planem, rezerwacją kosztu i harmonogramem, pełne TOP N w historii, zmiany, konkurenci monitorowani i organiczni | ✅ STEP 14 (sekcja 13) |
+| 20 | Luki SEO: wspólne zbiory fraz domen konkurentów (Labs Ranked Keywords) z planem, limitami i importem w tle, punkt odniesienia projektu, widoczność SERP → GSC → Labs, typ i priorytet luki, filtry marki, grupy fraz, luka treści (heurystyka), strony konkurencji, historia zbiorów | ✅ STEP 15 (sekcja 14) |
 
 **MVP 2**: ~~Opportunity Score~~ (STEP 11), Pages/landing pages, zaawansowane filtry, automatyczna synchronizacja, raporty.
 **MVP 3**: własny crawler, audyt techniczny, połączenie crawler + GSC.
 **MVP 4**: panel klienta, raporty, rekomendacje AI.
 **Kolejne etapy** (kolejność orientacyjna): ~~odkrywanie nowych fraz~~ (STEP 13), ~~monitoring konkurencji i ranking SERP~~ (STEP 14),
-luka fraz/treści, strategia i backlog SEO (zaakceptowane nowe frazy jako wejście), retencja/rollupy historii SERP po pomiarze wzrostu.
+~~luka fraz/treści~~ (STEP 15), strategia i backlog SEO (zaakceptowane nowe frazy jako wejście), retencja/rollupy historii SERP po pomiarze wzrostu.
 
-## 18. Porządki w motywie (C1–C5)
+## 19. Porządki w motywie (C1–C5)
 
 Każdy etap to osobny commit z testem (build, `php -l`, smoke test WordPress). Kolejność:
 
@@ -2020,9 +2353,9 @@ Każdy etap to osobny commit z testem (build, `php -l`, smoke test WordPress). K
 | C4 | frontend: `variables.scss`, style i JS bloków, marketingowe obrazy i font, pakiety gsap, swiper, baguettebox, jquery, react, wtyczki block-editora w Vite |
 | C5 | nazewnictwo: `package.json`, `composer.json`, `style.css`, text domain |
 
-## 19. Ryzyka i otwarte kwestie
+## 20. Ryzyka i otwarte kwestie
 
-- **Deployment** nowej struktury nieustalony (sekcja 16) — wdrażać wyłącznie katalog pluginu i motywu (nigdy całe repo do `wp-content`).
+- **Deployment** nowej struktury nieustalony (sekcja 17) — wdrażać wyłącznie katalog pluginu i motywu (nigdy całe repo do `wp-content`).
 - **DataForSEO (STEP 12)**: płatne API — lokalne limity są bezpiecznikiem, nie rozliczeniem (rozliczenie w panelu DataForSEO; tam też warto
   ustawić limit kosztów konta). Ceny i limity zweryfikowane pośrednio (sekcja 11.2) — przed pierwszym użyciem potwierdzić w panelu DataForSEO.
   Kody lokalizacji potwierdzić `wp osf-seo dataforseo:locations --country=PL` (bezpłatne).
@@ -2032,6 +2365,9 @@ Każdy etap to osobny commit z testem (build, `php -l`, smoke test WordPress). K
 - **Pozycje SERP (STEP 14)**: cena Google Organic zweryfikowana pośrednio (13.2) — pierwszy pomiar na stagingu z 1 frazą i porównanie kosztu
   szacowanego ze zgłoszonym (13.15). Koszt rośnie liniowo z liczbą fraz i częstotliwością; historia rośnie bez retencji (~100 wierszy
   i kilka KB na pomiar, 13.14) — decyzja o rollupach/archiwizacji po kilku miesiącach danych.
+- **Luki SEO (STEP 15)**: cena Ranked Keywords zweryfikowana pośrednio (14.2) — pierwszy import na stagingu dla 1 konkurenta w presecie
+  szybkim i porównanie kosztu (14.20). Maks. 10 000 fraz na domenę (14.21). Pełne przeliczenie dużego projektu ~12 s w tle (14.19) —
+  przy setkach projektów potrzebne przeliczenie przyrostowe. Heurystyki (widoczność sporadyczna, luka treści, priorytet) do kalibracji.
 - **OAuth Testing**: tokeny ważne 7 dni — publikacja aplikacji przed produkcją.
 - **Skala `query_page_daily`** — decyzja po pomiarze (sekcja 6.4).
 - **Wydajność raportów przy bardzo dużych property** — czasy rosną liniowo z liczbą wierszy fraz w okresie

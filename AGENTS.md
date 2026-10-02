@@ -17,7 +17,8 @@ Działa jako osobna instalacja WordPress (staging: `https://seo.ohsofresh.top`) 
 - **motywu Sage 11 `seo`** (`themes/seo`) — wyłącznie UI panelu (routing Acorn, kontrolery,
   Blade, Tailwind, Alpine, Chart.js).
 
-Nazwa produktu to Wibble, ale identyfikatory techniczne pozostają **celowo bez zmian**: plugin `osf-seo`,
+Od STEP 15 w nowych tekstach UI i dokumentacji produkt nazywa się **Whack-a-mole** (istniejące teksty „Wibble” / „OSF SEO” zmieniamy
+tylko przy okazji pracy nad danym widokiem, bez osobnego rebrandu). Identyfikatory techniczne pozostają **celowo bez zmian**: plugin `osf-seo`,
 stałe `OSF_SEO_*`, tabele `osf_*`, namespace `OsfSeo\`, opcje/capabilities `osf_seo_*`, komendy `wp osf-seo …`.
 Nie zmieniaj ich mimochodem — techniczny rebrand będzie osobnym, zaplanowanym etapem.
 
@@ -26,13 +27,14 @@ Nie zmieniaj ich mimochodem — techniczny rebrand będzie osobnym, zaplanowanym
   średnia pozycja GSC, strony docelowe, historia),
 - **DataForSEO** — jedyny zatwierdzony płatny dostawca danych SEO (decyzja D3, od STEP 12): wolumen, historia
   wolumenu, CPC, konkurencja Ads, trudność SEO, intencja; od STEP 13 także wyszukiwanie nowych fraz (DataForSEO Labs
-  Related Keywords i Keyword Suggestions, D29), od STEP 14 pomiary pozycji (Google Organic SERP, kolejka Standard, D36).
+  Related Keywords i Keyword Suggestions, D29), od STEP 14 pomiary pozycji (Google Organic SERP, kolejka Standard, D36),
+  od STEP 15 frazy domen konkurentów i projektu do Luk SEO (DataForSEO Labs Ranked Keywords, D43).
   Uzupełnia GSC, nigdy go nie zastępuje.
 
 Płatne API wymagają jawnej decyzji architektonicznej (tabela decyzji w `docs/ARCHITECTURE.md`). Nie dodawaj
 innych płatnych API (Semrush, Ahrefs, Senuto, SeoStation…) ani scrapowania wyników Google bez takiej decyzji.
 Dostawców integruj wyłącznie za interfejsem domenowym (np. `OsfSeo\Market\KeywordMetricsProvider`,
-`OsfSeo\Discovery\KeywordDiscoveryProvider`, `OsfSeo\Serp\SerpProvider`).
+`OsfSeo\Discovery\KeywordDiscoveryProvider`, `OsfSeo\Serp\SerpProvider`, `OsfSeo\Gap\CompetitorKeywordsProvider`).
 
 Architektura, decyzje i roadmapa: **`docs/ARCHITECTURE.md`** — przeczytaj przed większą zmianą
 i aktualizuj przy zmianie decyzji.
@@ -85,7 +87,7 @@ Nowy katalog w roocie wymaga dopisania wyjątku `!/<ścieżka>` w `.gitignore`.
 Motyw powstał z marketingowego motywu `h2otwock` i wciąż zawiera jego kod: bloki ACF
 (`app/Blocks`, `resources/views/blocks`), WooCommerce, CPT `offer`, marketingowy design system
 (`resources/css/variables.scss`), GTM, Leaflet, GSAP, Swiper, jQuery, React.
-**To kod przeznaczony do usunięcia** etapami C1–C5 (`docs/ARCHITECTURE.md`, sekcja 18).
+**To kod przeznaczony do usunięcia** etapami C1–C5 (`docs/ARCHITECTURE.md`, sekcja 19).
 
 - Nie rozwijaj go i nie kopiuj z niego wzorców (anatomia bloków ACF, `x-button`, `c-main`,
   `-smt`, `section-*`, atrybuty GSAP).
@@ -148,6 +150,17 @@ Motyw powstał z marketingowego motywu `h2otwock` i wciąż zawiera jego kod: bl
   (`priority`, `calculate_rectangles`, AI Overview, klikanie PAA) bez decyzji. Pełne TOP N zapisujemy dla wszystkich domen (bez surowego
   JSON-a, bez automatycznego usuwania historii); konkurenci tylko z zapisanych SERP-ów. Limit fraz `OSF_SEO_SERP_MAX_KEYWORDS` jest
   miękki (komunikat, bez obcinania) — nie zakładaj nigdzie 500 fraz. Tabele SERP nie należą do danych GSC (reset property ich nie usuwa).
+- Luki SEO (STEP 15, `src/Gap`, `docs/ARCHITECTURE.md` sekcja 14): **płatne żądania wyłącznie z `GapImporter`** (krok w tle po Nowych frazach
+  albo `wp osf-seo gap:run`) pod wspólną blokadą `MarketSyncService::LOCK` i wspólnymi limitami (żądania w `market_tasks`, `trigger_type = gap`,
+  endpoint `labs_ranked_keywords`). Kontroler i widok tylko planują (bez API) i kolejkują import po potwierdzeniu planu (`expected_requests`,
+  `expected_cost`). Każda zmiana musi zachować: plan bez API z maksymalnym i oczekiwanym kosztem, limit kosztów sprawdzany **przed każdą
+  stroną** (pauza i automatyczne wznowienie, bez obchodzenia limitów), brak ponawiania niepewnego żądania (sieć, 5xx, niepoprawna odpowiedź,
+  przerwane w locie), jeden aktywny przebieg na projekt, harmonogram domyślnie wyłączony i włączany tylko z potwierdzeniem kosztu, wspólne
+  zbiory domen (ponowne użycie świeżego zbioru bez opłaty). **Stronicowanie Ranked Keywords tylko `limit` + `offset` (maks. 10 000 fraz na
+  domenę)** — bez niepotwierdzonych obejść; nieobecność frazy wiarygodna tylko w zakresie `covered_min_volume` (przycięty import, duplikaty
+  między stronami → mniej albo brak „lost” i „Brak widoczności”). Historia zbiorów (new / lost / back / url / up / down) nie jest drugim rank
+  trackerem — monitoring pozycji pozostaje w STEP 14. Pełne przeliczenie luk (`GapRefresher`) nigdy w żądaniu WWW ani przy renderowaniu
+  (panel tylko unieważnia klucz danych). Globalnych limitów kosztów DataForSEO nie zmieniaj bez decyzji właściciela.
 - `$wpdb` traktuje tabelę z kolumnami ascii i utf8mb4 bez kolumny binarnej jako ASCII i odrzuca zapytania z polskimi znakami
   („contains invalid data”) — w nowych tabelach z tekstem użytkownika daj co najmniej jedną kolumnę `*_bin` / binarną albo zapisuj
   tekst przez `insert()`/`update()`. Frazy liczbowe („2024”) jako klucze tablic PHP stają się int — rzutuj na `(string)`.
@@ -184,6 +197,12 @@ Motyw powstał z marketingowego motywu `h2otwock` i wciąż zawiera jego kod: bl
   progi tylko w `DiscoveryConfig`. Wynik 0–100 to „Priorytet” (priorytet odkrycia — sygnał do sprawdzenia), nigdy „wartość biznesowa”
   ani prognoza ruchu; formuła w `DiscoveryScorer` (sekcja 12.7), CPC z małą wagą. Intencja tylko z odpowiedzi dostawcy, bez lokalnej
   heurystyki; strona docelowa tylko z GSC, inaczej „Brak przypisanej strony”. Bez AI i bez wbudowanych seedów czy wykluczeń.
+- Luki SEO: **Keyword Gap** (luki fraz) i **Content Gap** (luki treści) to osobne pojęcia. Pozycja konkurenta pochodzi z bazy DataForSEO Labs
+  (migawka z datą) — w UI zawsze „(Labs)”, nigdy jako nasza Pozycja SERP. Widoczność projektu: świeży pomiar SERP → GSC → punkt odniesienia Labs;
+  **sam brak frazy w GSC nigdy nie oznacza braku widoczności** (wtedy „Nieznana”). Wynik 0–100 to „Priorytet luki” (sygnał do sprawdzenia),
+  formuła w `GapScorer` (sekcja 14.9). Luka treści to heurystyka z powodem i pewnością — etykiety wyłącznie „Potencjalna luka treści”,
+  „Istniejąca strona — do wzmocnienia”, „Bez luki treści”, „Niejasne”; nigdy „projekt potrzebuje nowej strony”. Frazy markowe, wykluczone,
+  w innym języku, poniżej progów — `listed = 0` z powodem (nie usuwamy); status pracy przetrwa przeliczenie. Bez AI, stemmingu i crawla konkurencji.
 
 ⸻
 
@@ -229,7 +248,8 @@ Fundament panelu powstał w STEP 4 (`docs/ARCHITECTURE.md`, sekcje 4.1–4.4). O
    gdy są uzasadnione UI. Nie komplikuj design systemu.
 3. Powtarzalne elementy → komponenty Blade `resources/views/components/panel/*` (`<x-panel.* />`:
    `button`, `card`, `page-header`, `field`, `badge`, `flash`, `empty-state`, `nav-link`, `nonce`, `delta`, `stat`,
-   `score`, `confidence`, `opportunity-status`, `visibility`, `candidate-status`, `serp-rank`, `rank-change`),
+   `score`, `confidence`, `opportunity-status`, `visibility`, `candidate-status`, `serp-rank`, `rank-change`, `gap-type`, `content-gap`,
+   `project-visibility`),
    nie `@apply` ani własne klasy. Własny CSS tylko, gdy utilities nie wystarczają.
 4. Tokeny kolorów (`brand-*`) w bloku `@theme` w `resources/css/panel.css`; bez hexów w Blade;
    bez dark mode w MVP. `panel.css` skanuje tylko pliki panelu (`source(none)` + `@source`),
@@ -307,8 +327,12 @@ wp osf-seo serp:collect|status|list|snapshot …   # odbiór wyników (bezpłatn
 wp osf-seo serp:track|untrack --project=<id> --keywords="a, b" [--from=manual|gsc|discovery]   # monitorowane frazy (bez API)
 wp osf-seo serp:settings --project=<id> [--enable|--disable] [--frequency=…] [--device=…] [--depth=…]   # włączenie = płatny harmonogram
 wp osf-seo competitors:list|add|update|organic --project=<id> …   # konkurenci (bez API)
+wp osf-seo gap:plan --project=<id> [--preset=quick|standard|full] [--max-rank=…] [--min-volume=…] [--max-rows=…] [--competitors=…] [--no-baseline] [--force]   # plan luk: zero żądań
+wp osf-seo gap:run --project=<id> [opcje planu] [--yes] [--queue-only]   # PŁATNE (Labs Ranked Keywords) — tylko na polecenie użytkownika
+wp osf-seo gap:status|cancel|recalculate|list|keyword|content|pages|set-status|settings|brand --project=<id> …   # luki SEO (bez API)
 composer test:performance       # benchmark raportów + EXPLAIN na syntetycznych danych (OSOBNA baza testowa)
 composer test:performance:serp  # benchmark pozycji SERP (100 projektów × 500 fraz, TOP100, historia, 2500 fraz) + EXPLAIN (OSOBNA baza)
+composer test:performance:gap   # benchmark Luk SEO (40 zbiorów × 10 000 fraz, 20 projektów, import 10 000 fraz atrapą HTTP) + EXPLAIN (OSOBNA baza)
 ```
 
 Testy integracyjne czyszczą i usuwają tabele — **nigdy nie wskazuj bazy strony**. Zmienne:
@@ -361,8 +385,8 @@ php -d "mysqli.default_socket=$HOME/Library/Application Support/Local/run/<LOCAL
 ## 13. Deployment
 
 Staging: `https://seo.ohsofresh.top` (Hostinger). Deployment nowej struktury repo jest
-**jeszcze nieustalony** (`docs/ARCHITECTURE.md`, sekcja 16). Nie zmieniaj jego konfiguracji,
+**jeszcze nieustalony** (`docs/ARCHITECTURE.md`, sekcja 17). Nie zmieniaj jego konfiguracji,
 nie łącz się z serwerem i nie używaj żadnych credentials znalezionych w repo.
 Nigdy nie wdrażaj całego repozytorium do `wp-content` (wcześniejszy incydent nadpisał pliki WordPressa) — wdrożenie
 wyłącznie zawężone: `plugins/osf-seo/` → `wp-content/plugins/osf-seo/`, `themes/seo/` → `wp-content/themes/seo/`.
-Agent nie wykonuje płatnego smoke testu DataForSEO (także pomiaru pozycji SERP) ani wdrożenia bez wyraźnego polecenia użytkownika.
+Agent nie wykonuje płatnego smoke testu DataForSEO (także pomiaru pozycji SERP i importu Luk SEO) ani wdrożenia bez wyraźnego polecenia użytkownika.
