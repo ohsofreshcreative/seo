@@ -387,6 +387,74 @@ final class GapAnalysisTest extends GapTestCase
 		self::assertCount($requests, $this->dataForSeoRequests(), 'Dodanie do monitorowania nie wysyła żądań.');
 	}
 
+	public function test_keyword_detail_links_page_level_opportunities_through_query_page_evidence(): void
+	{
+		// Regresja (STEP 16, D54): szanse SEO są zwykle per podstrona (`opportunities.keyword` = NULL), więc powiązanie wyłącznie
+		// po `keyword IN (warianty)` pomijało je w szczegółach luki.
+		$context = $this->gapProject();
+		$this->setRanked('konkurent.pl', [self::ranked('konkurent.pl', 'sklep internetowy', 800, 1)]);
+		$this->gscKeyword($context, 'sklep internetowy', 120, 14.0, 'https://example.pl/sklep/', 2);
+		$this->gscKeyword($context, 'Sklep Internetowy', 30, 16.0, 'https://example.pl/oferta/', 1);
+		$this->gapRun($context, ['baseline' => '0']);
+		$member = $this->opportunity($context, 'near_top', 'https://example.pl/sklep/', null, "https://example.pl/sklep/\nsklep internetowy\nsklep na wordpress", 70);
+		$page = $this->opportunity($context, 'low_ctr', 'https://example.pl/oferta/', null, "https://example.pl/oferta/\noferta sklepu", 50);
+		$keyword = $this->opportunity($context, 'weak_position', null, 'Sklep Internetowy', "Sklep Internetowy", 40);
+		$this->opportunity($context, 'near_top', 'https://example.pl/inna/', null, "https://example.pl/inna/\nsklep internetowy wrocław", 90);
+		$this->opportunity($context, 'decline', 'https://example.pl/sklep/', null, "https://example.pl/sklep/\nsklep internetowy", 95, 'inactive');
+
+		$detail = $this->gaps->keyword($context, (string) $this->gap($context, 'sklep internetowy')['public_id']);
+		$links = array_column($detail['evidence']['opportunities'], 'link', 'public_id');
+
+		self::assertSame([$member => 'member', $page => 'page', $keyword => 'keyword'], $links, 'Członek grupy, ta sama podstrona i szansa frazy; bez innych fraz i szans nieaktywnych.');
+		self::assertSame(['near_top', 'low_ctr', 'weak_position'], array_column($detail['evidence']['opportunities'], 'type'), 'Od najwyższego priorytetu.');
+	}
+
+	/**
+	 * Szansa SEO z wykryciem 28 dni (bez analizy — bezpośredni zapis).
+	 */
+	private function opportunity(ProjectContext $context, string $type, ?string $page, ?string $keyword, string $searchText, int $priority, string $state = 'active'): string
+	{
+		$db = self::db();
+		$now = gmdate('Y-m-d H:i:s');
+		$publicId = \OsfSeo\Support\Ulid::generate();
+		$id = $db->insert($db->table('opportunities'), array_filter([
+			'public_id' => $publicId,
+			'project_id' => $context->projectId(),
+			'fingerprint' => md5($publicId, true),
+			'type' => $type,
+			'property' => 'sc-domain:example.pl',
+			'page_url' => $page,
+			'keyword' => $keyword,
+			'state' => $state,
+			'status' => 'new',
+			'last_priority' => $priority,
+			'first_detected_at' => $now,
+			'last_detected_at' => $now,
+			'created_at' => $now,
+			'updated_at' => $now,
+		], static fn (mixed $value): bool => $value !== null));
+
+		if ($page !== null) {
+			$db->execute("UPDATE `{$db->table('opportunities')}` SET page_hash = UNHEX(%s) WHERE id = %d", [md5($page), $id]);
+		}
+
+		$db->insert($db->table('opportunity_detections'), [
+			'opportunity_id' => $id,
+			'period_days' => 28,
+			'project_id' => $context->projectId(),
+			'priority' => $priority,
+			'confidence' => 2,
+			'impressions' => 100,
+			'clicks' => 1,
+			'latest_date' => '2026-01-14',
+			'search_text' => $searchText,
+			'evidence' => '{}',
+			'analyzed_at' => $now,
+		]);
+
+		return $publicId;
+	}
+
 	public function test_data_key_skips_unchanged_recalculation_and_refreshes_daily_or_after_change(): void
 	{
 		$context = $this->gapProject();

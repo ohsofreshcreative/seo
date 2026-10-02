@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace OsfSeo\Gap;
 
 use OsfSeo\Database\Connection;
+use OsfSeo\Opportunities\OpportunityKeywordIndex;
 use OsfSeo\Support\Clock;
 
 /**
@@ -185,7 +186,8 @@ final class GapReports
 	}
 
 	/**
-	 * Dowody z projektu: warianty frazy w GSC (okno), strony GSC, pomiar SERP (STEP 14), kandydat Nowych fraz, szanse SEO.
+	 * Dowody z projektu: warianty frazy w GSC (okno), strony GSC, pomiar SERP (STEP 14), kandydat Nowych fraz, szanse SEO
+	 * powiązane danymi query × page (fraza w grupie szansy, ta sama podstrona, ta sama fraza — `OpportunityKeywordIndex`).
 	 *
 	 * @param array{0: string, 1: string}|null $window
 	 * @return array{variants: list<array<string, string|null>>, pages: list<array<string, string|null>>, serp: ?array<string, string|null>, candidate: ?array<string, string|null>, opportunities: list<array<string, string|null>>}
@@ -218,10 +220,10 @@ final class GapReports
 			[$projectId, $marketKeywordId],
 		);
 		$texts = array_values(array_unique(array_map(static fn (array $row): string => (string) $row['keyword'], $variants)));
-		$opportunities = $texts === [] ? [] : $this->db->fetchAll(
-			"SELECT public_id, type, status, last_priority, page_url FROM `{$this->db->table('opportunities')}`
-			WHERE project_id = %d AND state = 'active' AND keyword IN (" . Connection::placeholders($texts) . ') ORDER BY last_priority DESC LIMIT 10',
-			[$projectId, ...$texts],
+		$opportunities = (new OpportunityKeywordIndex($this->db))->forKeyword(
+			$projectId,
+			$texts,
+			array_map(static fn (array $row): string => (string) $row['url'], $pages),
 		);
 
 		return ['variants' => $variants, 'pages' => $pages, 'serp' => $serp, 'candidate' => $candidate, 'opportunities' => $opportunities];

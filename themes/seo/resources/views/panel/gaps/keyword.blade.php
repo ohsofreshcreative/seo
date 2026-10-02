@@ -14,6 +14,7 @@
   use OsfSeo\Gap\ContentGap;
   use OsfSeo\Gap\GapScorer;
   use OsfSeo\Gap\GapStatus;
+  use OsfSeo\Opportunities\OpportunityKeywordIndex;
   use OsfSeo\Opportunities\OpportunityType;
 
   $base = PanelUrl::project($project->publicId, 'gaps');
@@ -269,7 +270,7 @@
           <li><a href="{{ DiscoveryController::candidateUrl($project->publicId, $evidence['candidate']['public_id']) }}" class="text-brand-600 hover:underline">Nowe frazy — kandydat</a> <span class="text-xs text-slate-500">(priorytet odkrycia {{ $evidence['candidate']['priority'] ?? '—' }})</span></li>
         @endif
         @foreach ($evidence['opportunities'] as $opportunity)
-          <li><a href="{{ OpportunitiesController::detailUrl($project->publicId, $opportunity['public_id']) }}" class="text-brand-600 hover:underline">Szansa SEO: {{ OpportunityType::tryFrom((string) $opportunity['type'])?->label() ?? $opportunity['type'] }}</a></li>
+          <li><a href="{{ OpportunitiesController::detailUrl($project->publicId, $opportunity['public_id']) }}" class="text-brand-600 hover:underline">Szansa SEO: {{ OpportunityType::tryFrom((string) $opportunity['type'])?->label() ?? $opportunity['type'] }}</a> <span class="text-xs text-slate-500">({{ OpportunityKeywordIndex::linkLabel((string) ($opportunity['link'] ?? '')) }})</span></li>
         @endforeach
         @if ($evidence['candidate'] === null && $evidence['opportunities'] === [])
           <li class="text-slate-500">Brak powiązanych kandydatów Nowych fraz i Szans SEO.</li>
