@@ -104,6 +104,17 @@
           <span class="block text-xs font-normal text-slate-500">widoczność GSC: ostatnie {{ $discovery['window_days'] }} dni, „już widoczna” = średnia pozycja (GSC) ≤ {{ \App\Panel\Format::number($discovery['visible_position']) }}; koszty wliczane do tych samych limitów</span>
         </dd>
       </div>
+      <div class="flex justify-between gap-4 py-3">
+        <dt class="text-slate-500">Pozycje SERP</dt>
+        <dd class="text-right font-medium text-slate-900">
+          zalecany limit {{ \App\Panel\Format::number($serp['config']['max_keywords']) }} monitorowanych fraz na projekt; ta sama fraza nie jest zlecana ponownie przez {{ $serp['config']['min_recheck_hours'] }} h
+          <span class="block text-xs font-normal text-slate-500">
+            szacowany maks. koszt frazy (kolejka Standard):
+            {{ implode(', ', array_map(fn ($depth, $price) => 'TOP' . $depth . ' ' . \App\Panel\Format::usd($price, 5), array_keys($serp['pricing']), $serp['pricing'])) }};
+            maks. {{ $serp['config']['max_posts_per_run'] }} zleceń (po 100 zadań) na przebieg tła, wyniki nieodebrane po {{ $serp['config']['expire_hours'] }} h wygasają; koszty wliczane do tych samych limitów
+          </span>
+        </dd>
+      </div>
     </dl>
   </x-panel.card>
 @endsection

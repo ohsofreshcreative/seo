@@ -12,6 +12,7 @@ use OsfSeo\Database\Migrations\M0004ExtendSyncQueue;
 use OsfSeo\Database\Migrations\M0005CreateOpportunities;
 use OsfSeo\Database\Migrations\M0006CreateMarketData;
 use OsfSeo\Database\Migrations\M0007CreateKeywordDiscovery;
+use OsfSeo\Database\Migrations\M0008CreateSerpTracking;
 use OsfSeo\Support\Logger;
 
 /**
@@ -55,6 +56,7 @@ final class Migrator
 			new M0005CreateOpportunities(),
 			new M0006CreateMarketData(),
 			new M0007CreateKeywordDiscovery(),
+			new M0008CreateSerpTracking(),
 		];
 	}
 

@@ -26,12 +26,13 @@ Nie zmieniaj ich mimochodem — techniczny rebrand będzie osobnym, zaplanowanym
   średnia pozycja GSC, strony docelowe, historia),
 - **DataForSEO** — jedyny zatwierdzony płatny dostawca danych SEO (decyzja D3, od STEP 12): wolumen, historia
   wolumenu, CPC, konkurencja Ads, trudność SEO, intencja; od STEP 13 także wyszukiwanie nowych fraz (DataForSEO Labs
-  Related Keywords i Keyword Suggestions, D29). Uzupełnia GSC, nigdy go nie zastępuje.
+  Related Keywords i Keyword Suggestions, D29), od STEP 14 pomiary pozycji (Google Organic SERP, kolejka Standard, D36).
+  Uzupełnia GSC, nigdy go nie zastępuje.
 
 Płatne API wymagają jawnej decyzji architektonicznej (tabela decyzji w `docs/ARCHITECTURE.md`). Nie dodawaj
 innych płatnych API (Semrush, Ahrefs, Senuto, SeoStation…) ani scrapowania wyników Google bez takiej decyzji.
 Dostawców integruj wyłącznie za interfejsem domenowym (np. `OsfSeo\Market\KeywordMetricsProvider`,
-`OsfSeo\Discovery\KeywordDiscoveryProvider`).
+`OsfSeo\Discovery\KeywordDiscoveryProvider`, `OsfSeo\Serp\SerpProvider`).
 
 Architektura, decyzje i roadmapa: **`docs/ARCHITECTURE.md`** — przeczytaj przed większą zmianą
 i aktualizuj przy zmianie decyzji.
@@ -84,7 +85,7 @@ Nowy katalog w roocie wymaga dopisania wyjątku `!/<ścieżka>` w `.gitignore`.
 Motyw powstał z marketingowego motywu `h2otwock` i wciąż zawiera jego kod: bloki ACF
 (`app/Blocks`, `resources/views/blocks`), WooCommerce, CPT `offer`, marketingowy design system
 (`resources/css/variables.scss`), GTM, Leaflet, GSAP, Swiper, jQuery, React.
-**To kod przeznaczony do usunięcia** etapami C1–C5 (`docs/ARCHITECTURE.md`, sekcja 17).
+**To kod przeznaczony do usunięcia** etapami C1–C5 (`docs/ARCHITECTURE.md`, sekcja 18).
 
 - Nie rozwijaj go i nie kopiuj z niego wzorców (anatomia bloków ACF, `x-button`, `c-main`,
   `-smt`, `section-*`, atrybuty GSAP).
@@ -137,6 +138,16 @@ Motyw powstał z marketingowego motywu `h2otwock` i wciąż zawiera jego kod: bl
   tylko z `osf_seo_manage_keyword_discovery`, brak ponawiania żądania, które mogło zostać opłacone, brak żądań po anulowaniu.
   Kandydat wskazuje `market_keywords` (metryk nie kopiujemy); metryki z odpowiedzi zapisujemy tylko przy braku lub po TTL.
   Kandydaci, źródła i decyzje nie należą do danych GSC (reset property ich nie usuwa — tylko widoczność wraca do „Nieznana”).
+- Pozycje SERP (STEP 14, `src/Serp`, `docs/ARCHITECTURE.md` sekcja 13): **płatne zlecenia wyłącznie z `SerpSubmitter`** (krok w tle
+  po kolejce GSC albo `wp osf-seo serp:run`) pod wspólną blokadą `MarketSyncService::LOCK` i wspólnymi limitami (zlecenia w `market_tasks`,
+  `endpoint = google_organic_serp`). Kontroler i widok tylko planują (bez API) i kolejkują pomiar po potwierdzeniu planu (`expected_tasks`,
+  `expected_cost`). Każda zmiana musi zachować: plan bez API z **szacowanym maksymalnym** kosztem (zgłoszony przez dostawcę rozstrzyga),
+  rezerwację kosztu przy zakolejkowaniu (cały pomiar albo wcale), harmonogram domyślnie wyłączony i włączany tylko z potwierdzeniem,
+  `UNIQUE (project_id, slot_key)`, okno ponownego sprawdzenia frazy, odstęp pomiaru ręcznego, oznaczenie `uncertain` przed wysłaniem
+  i brak ponawiania zlecenia o nieznanym wyniku (odzyskanie po `tag`), brak automatycznego monitorowania wszystkich fraz, brak płatnych opcji
+  (`priority`, `calculate_rectangles`, AI Overview, klikanie PAA) bez decyzji. Pełne TOP N zapisujemy dla wszystkich domen (bez surowego
+  JSON-a, bez automatycznego usuwania historii); konkurenci tylko z zapisanych SERP-ów. Limit fraz `OSF_SEO_SERP_MAX_KEYWORDS` jest
+  miękki (komunikat, bez obcinania) — nie zakładaj nigdzie 500 fraz. Tabele SERP nie należą do danych GSC (reset property ich nie usuwa).
 - `$wpdb` traktuje tabelę z kolumnami ascii i utf8mb4 bez kolumny binarnej jako ASCII i odrzuca zapytania z polskimi znakami
   („contains invalid data”) — w nowych tabelach z tekstem użytkownika daj co najmniej jedną kolumnę `*_bin` / binarną albo zapisuj
   tekst przez `insert()`/`update()`. Frazy liczbowe („2024”) jako klucze tablic PHP stają się int — rzutuj na `(string)`.
@@ -164,6 +175,10 @@ Motyw powstał z marketingowego motywu `h2otwock` i wciąż zawiera jego kod: bl
   „Wolumen” = średnia miesięczna liczba wyszukiwań; „CPC” w USD. Brak danych rynkowych = NULL, w UI „—”, nigdy 0.
 - Tożsamość frazy GSC (`keywords.keyword_hash`, dokładne bajty) jest niezmienna; dane rynkowe mają osobny klucz
   (`MarketKeyword`: NFC, małe litery, spacje). Nie wiąż danych rynkowych z `keywords.id` (ID słownika są jednorazowe).
+- **Pozycja SERP** = `rank_group` najlepszego wyniku **organicznego** rodziny domeny projektu (domena + subdomeny, dopasowanie na granicy
+  etykiet — nigdy podciąg) w ostatnim pomiarze. `rank_absolute` tylko pomocniczo; wyróżniony fragment osobno, nigdy jako #1; „Poza TOP100”
+  ≠ 0. Zmiana tylko względem poprzedniego pomiaru w tym samym kontekście (lokalizacja, język, urządzenie, głębokość), inaczej
+  „Nieporównywalne”; wartość liczbowa nigdy z pustej pozycji. Pozycja SERP i „Średnia pozycja (GSC)” to osobne kolumny i metryki.
 - Nowe frazy: deduplikacja wyłącznie po kluczu rynkowym — bez stemmingu i lematyzacji („strona internetowa” ≠ „strony internetowe”).
   Widoczność GSC kandydata (Nieznana / Brak / Słaba / Już widoczna) liczona po `keywords.market_key` z `SUM(position_sum) / SUM(impressions)`,
   progi tylko w `DiscoveryConfig`. Wynik 0–100 to „Priorytet” (priorytet odkrycia — sygnał do sprawdzenia), nigdy „wartość biznesowa”
@@ -214,7 +229,7 @@ Fundament panelu powstał w STEP 4 (`docs/ARCHITECTURE.md`, sekcje 4.1–4.4). O
    gdy są uzasadnione UI. Nie komplikuj design systemu.
 3. Powtarzalne elementy → komponenty Blade `resources/views/components/panel/*` (`<x-panel.* />`:
    `button`, `card`, `page-header`, `field`, `badge`, `flash`, `empty-state`, `nav-link`, `nonce`, `delta`, `stat`,
-   `score`, `confidence`, `opportunity-status`, `visibility`, `candidate-status`),
+   `score`, `confidence`, `opportunity-status`, `visibility`, `candidate-status`, `serp-rank`, `rank-change`),
    nie `@apply` ani własne klasy. Własny CSS tylko, gdy utilities nie wystarczają.
 4. Tokeny kolorów (`brand-*`) w bloku `@theme` w `resources/css/panel.css`; bez hexów w Blade;
    bez dark mode w MVP. `panel.css` skanuje tylko pliki panelu (`source(none)` + `@source`),
@@ -286,7 +301,14 @@ wp osf-seo discovery:plan --project=<id> --seeds="a, b" [--method=related|sugges
 wp osf-seo discovery:run --project=<id> --seeds="a, b" [opcje planu] [--force] [--yes] [--queue-only]   # PŁATNE — tylko na polecenie użytkownika
 wp osf-seo discovery:status|list|refresh --project=<id> [--format=json]   # stan, kandydaci, przeliczenie widoczności (bez API)
 wp osf-seo discovery:cancel --project=<id> --run=<id>
+wp osf-seo serp:plan --project=<id> [--keywords=…] [--format=json]   # plan pomiaru pozycji: zero żądań, szacowany maks. koszt
+wp osf-seo serp:run --project=<id> [--keywords=…] [--yes] [--queue-only] [--wait=<s>]   # PŁATNE — tylko na polecenie użytkownika
+wp osf-seo serp:collect|status|list|snapshot …   # odbiór wyników (bezpłatny), stan, lista, pełne TOP N
+wp osf-seo serp:track|untrack --project=<id> --keywords="a, b" [--from=manual|gsc|discovery]   # monitorowane frazy (bez API)
+wp osf-seo serp:settings --project=<id> [--enable|--disable] [--frequency=…] [--device=…] [--depth=…]   # włączenie = płatny harmonogram
+wp osf-seo competitors:list|add|update|organic --project=<id> …   # konkurenci (bez API)
 composer test:performance       # benchmark raportów + EXPLAIN na syntetycznych danych (OSOBNA baza testowa)
+composer test:performance:serp  # benchmark pozycji SERP (100 projektów × 500 fraz, TOP100, historia, 2500 fraz) + EXPLAIN (OSOBNA baza)
 ```
 
 Testy integracyjne czyszczą i usuwają tabele — **nigdy nie wskazuj bazy strony**. Zmienne:
@@ -339,8 +361,8 @@ php -d "mysqli.default_socket=$HOME/Library/Application Support/Local/run/<LOCAL
 ## 13. Deployment
 
 Staging: `https://seo.ohsofresh.top` (Hostinger). Deployment nowej struktury repo jest
-**jeszcze nieustalony** (`docs/ARCHITECTURE.md`, sekcja 15). Nie zmieniaj jego konfiguracji,
+**jeszcze nieustalony** (`docs/ARCHITECTURE.md`, sekcja 16). Nie zmieniaj jego konfiguracji,
 nie łącz się z serwerem i nie używaj żadnych credentials znalezionych w repo.
 Nigdy nie wdrażaj całego repozytorium do `wp-content` (wcześniejszy incydent nadpisał pliki WordPressa) — wdrożenie
 wyłącznie zawężone: `plugins/osf-seo/` → `wp-content/plugins/osf-seo/`, `themes/seo/` → `wp-content/themes/seo/`.
-Agent nie wykonuje płatnego smoke testu DataForSEO ani wdrożenia bez wyraźnego polecenia użytkownika.
+Agent nie wykonuje płatnego smoke testu DataForSEO (także pomiaru pozycji SERP) ani wdrożenia bez wyraźnego polecenia użytkownika.

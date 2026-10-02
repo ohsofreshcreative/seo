@@ -28,6 +28,8 @@
             <div class="space-y-1">
               <x-panel.nav-link :href="\App\Panel\PanelUrl::project($currentProject->publicId)" :active="$active === 'overview'">Przegląd</x-panel.nav-link>
               <x-panel.nav-link :href="\App\Panel\PanelUrl::project($currentProject->publicId, 'keywords')" :active="$active === 'keywords'">Frazy</x-panel.nav-link>
+              <x-panel.nav-link :href="\App\Panel\PanelUrl::project($currentProject->publicId, 'positions')" :active="$active === 'positions'">Pozycje</x-panel.nav-link>
+              <x-panel.nav-link :href="\App\Panel\PanelUrl::project($currentProject->publicId, 'competitors')" :active="$active === 'competitors'">Konkurenci</x-panel.nav-link>
               <x-panel.nav-link :href="\App\Panel\PanelUrl::project($currentProject->publicId, 'discovery')" :active="$active === 'discovery'">Nowe frazy</x-panel.nav-link>
               <x-panel.nav-link :href="\App\Panel\PanelUrl::project($currentProject->publicId, 'opportunities')" :active="$active === 'opportunities'">Szanse SEO</x-panel.nav-link>
               <x-panel.nav-link :href="\App\Panel\PanelUrl::project($currentProject->publicId, 'market-data')" :active="$active === 'market-data'">Dane rynkowe</x-panel.nav-link>

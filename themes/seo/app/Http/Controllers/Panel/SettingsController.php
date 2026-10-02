@@ -34,6 +34,10 @@ final class SettingsController
 			// Dane rynkowe (DataForSEO): tylko nazwy brakujących stałych, limity i zużycie — nigdy wartości sekretów.
 			'market' => osf_seo()->get(\OsfSeo\Market\MarketSyncService::class)->status(),
 			'discovery' => osf_seo()->get(\OsfSeo\Discovery\DiscoveryService::class)->config()->effective(),
+			'serp' => [
+				'config' => osf_seo()->get(\OsfSeo\Serp\SerpTrackingService::class)->config()->effective(),
+				'pricing' => osf_seo()->get(\OsfSeo\Serp\SerpTrackingService::class)->pricing(),
+			],
 		]);
 	}
 }

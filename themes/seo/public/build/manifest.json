@@ -1,4 +1,8 @@
 {
+  "_chart-cfkDqzmS.js": {
+    "file": "assets/chart-cfkDqzmS.js",
+    "name": "chart"
+  },
   "_navigation-_Ms0R5o1.css": {
     "file": "assets/navigation-_Ms0R5o1.css",
     "src": "_navigation-_Ms0R5o1.css"
@@ -67,7 +71,7 @@
     ]
   },
   "resources/css/panel.css": {
-    "file": "assets/panel-CYi_fl90.css",
+    "file": "assets/panel-yS_Ml8I4.css",
     "name": "panel",
     "names": [
       "panel.css"
@@ -248,7 +252,7 @@
     "isEntry": true
   },
   "resources/js/panel.js": {
-    "file": "assets/panel-ubu_5-qB.js",
+    "file": "assets/panel-DdqAFyKe.js",
     "name": "panel",
     "src": "resources/js/panel.js",
     "isEntry": true,
@@ -256,13 +260,26 @@
       "_preload-helper-ChGswCUq.js"
     ],
     "dynamicImports": [
+      "resources/js/panel/rank-chart.js",
       "resources/js/panel/chart.js"
     ]
   },
   "resources/js/panel/chart.js": {
-    "file": "assets/chart-C00298p0.js",
+    "file": "assets/chart-BYOcKIlN.js",
     "name": "chart",
     "src": "resources/js/panel/chart.js",
-    "isDynamicEntry": true
+    "isDynamicEntry": true,
+    "imports": [
+      "_chart-cfkDqzmS.js"
+    ]
+  },
+  "resources/js/panel/rank-chart.js": {
+    "file": "assets/rank-chart-B4YC8s0G.js",
+    "name": "rank-chart",
+    "src": "resources/js/panel/rank-chart.js",
+    "isDynamicEntry": true,
+    "imports": [
+      "_chart-cfkDqzmS.js"
+    ]
   }
 }

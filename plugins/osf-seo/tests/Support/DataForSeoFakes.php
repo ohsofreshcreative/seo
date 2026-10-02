@@ -236,4 +236,151 @@ final class DataForSeoFakes
 			]],
 		], 20000, $cost);
 	}
+
+	/**
+	 * Wynik organiczny Google Organic SERP (advanced).
+	 *
+	 * @param array<string, mixed> $extra
+	 * @return array<string, mixed>
+	 */
+	public static function serpOrganic(int $rankGroup, string $domain, ?string $url = null, ?int $rankAbsolute = null, array $extra = []): array
+	{
+		return $extra + [
+			'type' => 'organic',
+			'rank_group' => $rankGroup,
+			'rank_absolute' => $rankAbsolute ?? $rankGroup,
+			'page' => (int) ceil($rankGroup / 10),
+			'position' => 'left',
+			'xpath' => '/html[1]/body[1]/div[' . $rankGroup . ']',
+			'domain' => $domain,
+			'title' => 'Tytuł ' . $domain . ' #' . $rankGroup,
+			'description' => 'Opis wyniku ' . $rankGroup . ' z domeny ' . $domain,
+			'url' => $url ?? 'https://' . $domain . '/strona-' . $rankGroup . '/',
+			'breadcrumb' => 'https://' . $domain . ' › strona',
+			'website_name' => ucfirst(explode('.', $domain)[0]),
+			'checks' => null,
+			'is_image' => false,
+			'is_video' => false,
+			'amp_version' => false,
+			'rating' => null,
+			'price' => null,
+			'links' => null,
+			'related_result' => null,
+			'timestamp' => null,
+		];
+	}
+
+	/**
+	 * Pełne TOP N: domeny z listy na kolejnych pozycjach, reszta — syntetyczne domeny `wynik-{n}.example`.
+	 *
+	 * @param array<int, string> $domains pozycja (rank_group) → domena
+	 * @return list<array<string, mixed>>
+	 */
+	public static function serpTop(array $domains, int $count = 100, int $absoluteOffset = 0): array
+	{
+		$items = [];
+
+		for ($rank = 1; $rank <= $count; $rank++) {
+			$domain = $domains[$rank] ?? 'wynik-' . $rank . '.example';
+			$items[] = self::serpOrganic($rank, $domain, null, $rank + $absoluteOffset);
+		}
+
+		return $items;
+	}
+
+	/**
+	 * Odpowiedź na zlecenie wielu zadań SERP (`task_post`): zadania utworzone z `tag` w `data`.
+	 *
+	 * @param list<string> $tags
+	 * @param array<string, int> $errors tag → kod błędu zadania
+	 * @return array<string, mixed>
+	 */
+	public static function serpTasksCreated(array $tags, float $costPerTask = 0.00465, array $errors = []): array
+	{
+		$tasks = [];
+
+		foreach ($tags as $tag) {
+			$code = $errors[$tag] ?? 20100;
+			$tasks[] = [
+				'id' => self::taskId(),
+				'status_code' => $code,
+				'status_message' => $code === 20100 ? 'Task Created.' : 'Invalid Field.',
+				'time' => '0.01 sec.',
+				'cost' => $code === 20100 ? $costPerTask : 0,
+				'result_count' => 0,
+				'path' => ['v3', 'serp', 'google', 'organic', 'task_post'],
+				'data' => ['api' => 'serp', 'function' => 'task_post', 'se' => 'google', 'se_type' => 'organic', 'tag' => $tag],
+				'result' => null,
+			];
+		}
+
+		$total = array_sum(array_column($tasks, 'cost'));
+
+		return [
+			'version' => '0.1.20260901',
+			'status_code' => 20000,
+			'status_message' => 'Ok.',
+			'time' => '0.2 sec.',
+			'cost' => $total,
+			'tasks_count' => count($tasks),
+			'tasks_error' => count(array_filter($tasks, static fn (array $task): bool => $task['status_code'] >= 40000)),
+			'tasks' => $tasks,
+		];
+	}
+
+	/**
+	 * Lista gotowych zadań (`tasks_ready`).
+	 *
+	 * @param list<array{0: string, 1: ?string}> $ready [id, tag]
+	 * @return array<string, mixed>
+	 */
+	public static function serpTasksReady(array $ready): array
+	{
+		return self::envelope([
+			'result_count' => count($ready),
+			'result' => array_map(static fn (array $row): array => [
+				'id' => $row[0],
+				'se' => 'google',
+				'se_type' => 'organic',
+				'date_posted' => '2026-01-15 10:00:00 +00:00',
+				'tag' => $row[1],
+				'endpoint_regular' => '/v3/serp/google/organic/task_get/regular/' . $row[0],
+				'endpoint_advanced' => '/v3/serp/google/organic/task_get/advanced/' . $row[0],
+				'endpoint_html' => '/v3/serp/google/organic/task_get/html/' . $row[0],
+			], $ready),
+		]);
+	}
+
+	/**
+	 * Wynik zadania Google Organic SERP (`task_get/advanced`).
+	 *
+	 * @param list<array<string, mixed>> $items
+	 * @param list<string> $itemTypes
+	 * @return array<string, mixed>
+	 */
+	public static function serpResult(string $taskId, string $keyword, array $items, string $datetime = '2026-01-15 10:05:00 +00:00', array $itemTypes = ['organic'], ?array $spell = null, float $cost = 0.00465): array
+	{
+		return self::envelope([
+			'id' => $taskId,
+			'cost' => $cost,
+			'result_count' => 1,
+			'data' => ['api' => 'serp', 'function' => 'task_get', 'se' => 'google', 'se_type' => 'organic', 'keyword' => $keyword, 'device' => 'desktop', 'os' => 'windows'],
+			'result' => [[
+				'keyword' => $keyword,
+				'type' => 'organic',
+				'se_domain' => 'google.pl',
+				'location_code' => 2616,
+				'language_code' => 'pl',
+				'check_url' => 'https://www.google.pl/search?q=' . rawurlencode($keyword) . '&hl=pl&gl=PL',
+				'datetime' => $datetime,
+				'spell' => $spell,
+				'refinement_chips' => null,
+				'item_types' => $itemTypes,
+				'se_results_count' => 1250000,
+				'pages_count' => (int) max(1, ceil(count($items) / 10)),
+				'items_count' => count($items),
+				'items' => $items,
+			]],
+		]);
+	}
 }

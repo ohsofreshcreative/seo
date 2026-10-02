@@ -22,12 +22,13 @@ nigdy wartości sekretów.
 10. [Szanse SEO (STEP 11)](#10-szanse-seo-step-11)
 11. [Dane rynkowe (DataForSEO, STEP 12)](#11-dane-rynkowe-dataforseo-step-12)
 12. [Nowe frazy (STEP 13)](#12-nowe-frazy-step-13)
-13. [Bezpieczeństwo](#13-bezpieczeństwo)
-14. [Konfiguracja i sekrety](#14-konfiguracja-i-sekrety)
-15. [Deployment (do ustalenia)](#15-deployment-do-ustalenia)
-16. [Roadmapa i stan prac](#16-roadmapa-i-stan-prac)
-17. [Porządki w motywie (C1–C5)](#17-porządki-w-motywie-c1c5)
-18. [Ryzyka i otwarte kwestie](#18-ryzyka-i-otwarte-kwestie)
+13. [Pozycje SERP i konkurenci (STEP 14)](#13-pozycje-serp-i-konkurenci-step-14)
+14. [Bezpieczeństwo](#14-bezpieczeństwo)
+15. [Konfiguracja i sekrety](#15-konfiguracja-i-sekrety)
+16. [Deployment (do ustalenia)](#16-deployment-do-ustalenia)
+17. [Roadmapa i stan prac](#17-roadmapa-i-stan-prac)
+18. [Porządki w motywie (C1–C5)](#18-porządki-w-motywie-c1c5)
+19. [Ryzyka i otwarte kwestie](#19-ryzyka-i-otwarte-kwestie)
 
 ---
 
@@ -37,7 +38,8 @@ Panel SEO dla stron agencji i jej klientów. Po dodaniu projektu i połączeniu 
 Console system sam pobiera frazy, na które strona pojawia się w Google, zapisuje historię we własnej
 bazie i pokazuje: ranking fraz (średnia pozycja GSC), porównania okresów, wzrosty i spadki,
 szanse SEO, landing pages i wykresy. Od STEP 13 wyszukuje też **nowe frazy**, na które strona jeszcze nie ma widoczności
-(seedy → DataForSEO Labs → deduplikacja → widoczność w GSC → priorytet → decyzja; sekcja 12).
+(seedy → DataForSEO Labs → deduplikacja → widoczność w GSC → priorytet → decyzja; sekcja 12), a od STEP 14 mierzy **Pozycję SERP**
+monitorowanych fraz (pełne TOP100 Google z DataForSEO, historia, konkurenci; sekcja 13) — osobno od średniej pozycji GSC.
 
 Źródła danych: Google Search Console (źródło prawdy o skuteczności strony: kliknięcia, wyświetlenia, CTR, średnia pozycja
 GSC, strony docelowe, historia) oraz — od STEP 12 — **DataForSEO** jako zatwierdzony płatny dostawca danych rynkowych
@@ -52,12 +54,12 @@ API wymaga osobnej decyzji architektonicznej; integracje dostawców wyłącznie 
 |---|---|---|
 | D1 | Jedno repozytorium: motyw + plugin. Root repo = `wp-content/` (`themes/seo`, `plugins/osf-seo`) | Jeden produkt, wspólne wdrażanie; LocalWP bez symlinków; ścieżki 1:1 z serwerem |
 | D2 | Plugin `osf-seo` w czystym PHP (bez Laravela/Acorn, bez Guzzle); motyw = UI (routing Acorn, Blade) | Logika niezależna od motywu, brak konfliktów zależności z `vendor/` motywu |
-| D3 | Źródła danych: Google Search Console API (źródło prawdy o skuteczności strony) oraz **DataForSEO — jedyny zatwierdzony płatny dostawca danych SEO** (od STEP 12). Płatne API wymagają jawnej decyzji architektonicznej w tej tabeli; zgoda na DataForSEO nie obejmuje innych płatnych API | Wibble potrzebuje danych rynkowych o frazach i SERP (wolumen, trudność, CPC, konkurencja, w przyszłości dokładny ranking), których Google Search Console nie udostępnia. Koszt kontrolowany lokalnymi limitami (sekcja 11.6). Pierwotnie (MVP 1): tylko GSC, koszt zewnętrznych usług 0 zł |
+| D3 | Źródła danych: Google Search Console API (źródło prawdy o skuteczności strony) oraz **DataForSEO — jedyny zatwierdzony płatny dostawca danych SEO** (od STEP 12). Płatne API wymagają jawnej decyzji architektonicznej w tej tabeli; zgoda na DataForSEO nie obejmuje innych płatnych API | Wibble potrzebuje danych rynkowych o frazach i SERP (wolumen, trudność, CPC, konkurencja, od STEP 14 obserwowany ranking SERP), których Google Search Console nie udostępnia. Koszt kontrolowany lokalnymi limitami (sekcja 11.6). Pierwotnie (MVP 1): tylko GSC, koszt zewnętrznych usług 0 zł |
 | D4 | OAuth scope: `https://www.googleapis.com/auth/webmasters.readonly` (+ `openid email` do identyfikacji konta) | Tylko odczyt, bez modyfikacji Search Console |
 | D5 | Hosting: Hostinger. Staging: `https://seo.ohsofresh.top`. Bez Redis/persistent object cache w MVP | Cache przez transients/bazę; nic nie zależy od Redis |
 | D6 | Lokalnie system działa bez systemowego crona (WP-Cron); na produkcji podpinamy cron systemowy | Sekcja 9.1 |
 | D7 | Aplikacja OAuth w trybie External/Testing akceptowana do czasu publikacji | Refresh tokeny w trybie Testing wygasają po 7 dniach — publikacja przed produkcją |
-| D8 | Motyw czyszczony etapami do czystego Sage 11 tylko dla OSF SEO (C1–C5), build/test po każdym etapie | Sekcja 17 |
+| D8 | Motyw czyszczony etapami do czystego Sage 11 tylko dla OSF SEO (C1–C5), build/test po każdym etapie | Sekcja 18 |
 | D9 | Panel: standardowe utilities Tailwind, proste konwencje (AGENTS.md, sekcja 8) | Dawne ograniczenia projektu marketingowego nie obowiązują |
 | D10 | Wykresy: Chart.js. React niepotrzebny (do usunięcia w cleanupie) | — |
 | D11 | MVP 1 bez rozbicia fraz na device/country | Nie mnożymy danych bez potrzeby; priorytet: query, page, date, clicks, impressions, CTR, średnia pozycja |
@@ -66,7 +68,7 @@ API wymaga osobnej decyzji architektonicznej; integracje dostawców wyłącznie 
 | D14 | `query_page_daily` eksperymentalnie; pomiar na kilku projektach przed decyzją o retencji/rollupie | Sekcja 6.4 |
 | D15 | Opportunity Score dopiero w MVP 2 | Sekcja 10 (tylko specyfikacja) |
 | D16 | `public_id` (ULID) w URL + `ProjectGuard` | ULID tylko utrudnia enumerację; zabezpieczeniem jest autoryzacja |
-| D17 | Repozytorium publiczne: sekrety wyłącznie w `wp-config.php` / zmiennych środowiskowych | Sekcja 14 |
+| D17 | Repozytorium publiczne: sekrety wyłącznie w `wp-config.php` / zmiennych środowiskowych | Sekcja 15 |
 | D18 | Zmiana property GSC przy istniejących danych = jawny reset (usunięcie danych projektu i ponowny import); bez izolacji danych per property | Prostszy model (klucze faktów bez property), zero ryzyka mieszania danych. Sekcja 7.1 |
 | D19 | Kolejka synchronizacji: własna, na `osf_sync_runs` + WP-Cron / cron systemowy (zamiast Action Scheduler) | Bez zewnętrznej biblioteki w publicznym repo i dodatkowych tabel; jeden runner (GET_LOCK), budżet czasu. Sekcja 9.1 |
 | D20 | Szanse SEO w modelu hybrydowym: dowody wyliczane z danych GSC (wykrycia okresu zastępowane przy analizie), stan pracy trwały; szansa = projekt × stabilny odcisk (property, typ, podstrona/fraza/para adresów) | Lista zadań przetrwa przeliczenia i ponowny import; bez kopiowania faktów GSC. Sekcja 10 |
@@ -85,6 +87,13 @@ API wymaga osobnej decyzji architektonicznej; integracje dostawców wyłącznie 
 | D33 | Priorytet odkrycia 0–100 jako przejrzysta suma ograniczonych składników (popyt i CPC w skali log z limitem, CPC maks. 5 pkt); nazwa „Priorytet”, nigdy „wartość biznesowa” | Wynik wyjaśnialny w UI, żadna metryka nie dominuje; to sygnał do sprawdzenia, nie prognoza. Sekcja 12.7 |
 | D34 | Cache seeda: projekt × dostawca × rynek × metoda z co najmniej tak szerokimi parametrami, TTL 30 dni; pobranie mimo cache tylko z `osf_seo_manage_keyword_discovery` | Brak podwójnej opłaty za ten sam seed (także przy podwójnym kliknięciu — jeden aktywny przebieg i odstęp 60 s). Sekcja 12.9 |
 | D35 | Widoczność GSC kandydata: deterministyczne klasy (nieznana, brak, słaba, już widoczna) po kluczu rynkowym, średnia pozycja ważona wyświetleniami; reset property zachowuje kandydatów i decyzje (widoczność → nieznana) | Pozycja 45 z popytem pozostaje szansą, pozycja 2 ze stałą widocznością nie; decyzje nie znikają przy zmianie property. Sekcja 12.6 |
+| D36 | Pomiary pozycji za interfejsem `SerpProvider`; DataForSEO **Google Organic SERP w kolejce Standard** (zadania po 100 w zleceniu, odbiór `task_get/advanced`, lista gotowych zadań), bez Live, priorytetu i płatnych opcji; domyślnie TOP100; cena konfigurowalna, w UI „szacowany maksymalny koszt”, koszt zgłoszony przez dostawcę rozstrzygający | Standard jest najtańszy, a pozycje nie są potrzebne w czasie rzeczywistym; TOP100 daje konkurentów i wejścia/wyjścia z TOP; cena z dokumentacji zweryfikowana pośrednio. Sekcja 13.2 |
+| D37 | Zapis **pełnego TOP N każdego pomiaru, wszystkich domen**, znormalizowany (`serp_snapshots`, `serp_results` jako liczby + słowniki domen, adresów i opisów), bez surowego JSON-a i bez automatycznego usuwania historii | Konkurent dodany później dostaje historię bez nowych kosztów; konkurenci organiczni z faktów; ~26 B na wynik; przyszła archiwizacja/partycjonowanie zakresami `snapshot_id`. Sekcja 13.3 |
+| D38 | **Pozycja SERP** = `rank_group` najlepszego wyniku organicznego rodziny domeny projektu (domena + subdomeny, granica etykiet); `rank_absolute` zapisany osobno; wyróżniony fragment osobno (nigdy #1); średnia pozycja GSC osobna; pomiary per projekt (bez współdzielenia między projektami) | Jedna jasna definicja pozycji, porównywalna w czasie; GSC bez zmian; prostsza izolacja i koszty projektu. Sekcje 13.1, 13.4 |
+| D39 | Monitorowane są tylko jawnie dodane frazy (ręcznie, z Fraz GSC, z Nowych fraz), bez wzbogacania danymi rynkowymi; limit **miękki** `OSF_SEO_SERP_MAX_KEYWORDS` (domyślnie 500) z komunikatem zamiast obcinania — architektura na tysiące fraz | Koszt rośnie liniowo z liczbą fraz — decyduje człowiek; limit to rekomendacja, nie ograniczenie modelu. Sekcja 13.6 |
+| D40 | Płatne pomiary pod bezpiecznikami DataForSEO: rezerwacja kosztu szacowanego w `market_tasks` już przy zakolejkowaniu (wspólne limity), cały pomiar albo wcale, wysyłka tylko w tle/CLI pod wspólną blokadą, pomiar `uncertain` przed wysłaniem — zlecenie o nieznanym wyniku nie jest ponawiane, odzyskanie po `tag` | Jeden budżet dla wszystkich modułów; żądanie przeglądarki nigdy nie wysyła płatnego żądania; brak podwójnej opłaty po timeoucie. Sekcja 13.7 |
+| D41 | Harmonogram domyślnie wyłączony (tydzień, gdy włączony po potwierdzeniu kosztu); `UNIQUE (project_id, slot_key)` na termin, okno ponownego sprawdzenia 6 h, odstęp pomiaru ręcznego 15 min; przekroczenie limitu = przebieg pominięty z powodem i ponowienie po odnowieniu limitu | Brak nakładania się crona i pomiarów ręcznych; przewidywalny koszt; widoczny powód braku pomiaru. Sekcja 13.8 |
+| D42 | Konkurenci (monitorowani i organiczni) wyłącznie z zapisanych SERP-ów — bez dodatkowych żądań, bez ocen „siły” | Zero kosztu za konkurenta; fakty zamiast punktacji. Sekcja 13.9 |
 
 ## 3. Repozytorium i środowiska
 
@@ -209,6 +218,19 @@ POST /projects/{project}/discovery/runs/{run}/cancel       POST /projects/{proje
 POST /projects/{project}/discovery/exclusions              (wykluczone słowa projektu)
 ```
 
+Zaimplementowane w STEP 14 (`{keyword}`, `{run}`, `{competitor}`, `?snapshot=` = ULID; mutacje, plan i koszty — `osf_seo_manage_serp_tracking`, nonce + Origin):
+
+```
+GET  /projects/{project}/positions                         (lista: ?q, band, change, sort, dir, page)
+GET  /projects/{project}/positions/keywords/{keyword}      (szczegóły frazy: historia, wykres, pełne TOP N; ?snapshot=)
+GET  /projects/{project}/positions/runs/{run}              (pomiar)                 GET  …/runs/{run}/status (JSON postępu; koszt tylko z capability)
+GET  /projects/{project}/positions/check[?ids[]=…]         (podgląd pomiaru, bez API)  POST …/positions/check (expected_tasks, expected_cost)
+POST /projects/{project}/positions/runs/{run}/cancel       GET/POST /projects/{project}/positions/settings (podgląd kosztu / zapis)
+GET  /projects/{project}/positions/add                     POST …/positions/keywords (source=manual|gsc|discovery)   POST …/positions/remove
+GET  /projects/{project}/competitors[?archived=1]          POST /projects/{project}/competitors (dodanie)
+GET  /projects/{project}/competitors/organic               GET/POST /projects/{project}/competitors/{competitor} (szczegóły / edycja, status)
+```
+
 Kolejne etapy:
 
 ```
@@ -227,7 +249,7 @@ plugins/osf-seo/
 │   ├── Auth/            # Capabilities, Roles, RoleManager, ProjectGuard, ProjectContext, ProjectNotFound, AccessDenied
 │   ├── Setup/           # Lifecycle (aktywacja/dezaktywacja), Installer (instalacja i aktualizacje, bez usuwania danych)
 │   ├── Support/         # Config (stałe/env), Logger, Redactor (maskowanie sekretów)
-│   ├── Cli/             # wp osf-seo status, db:*, project:*, google:*, gsc:*, sync:run, opportunities:*, dataforseo:*, discovery:*
+│   ├── Cli/             # wp osf-seo status, db:*, project:*, google:*, gsc:*, sync:run, opportunities:*, dataforseo:*, discovery:*, serp:*, competitors:*
 │   ├── Database/        # Connection ($wpdb + wyjątki, transakcje, GET_LOCK), BulkInsert, Migrator, Migrations/, Schema (spec), SchemaInspector
 │   ├── Projects/        # Project, ProjectRepository, ProjectService, DomainNormalizer, statusy i role
 │   ├── Http/            # HttpTransport (WP HTTP API), HttpResponse — cały ruch do Google
@@ -237,10 +259,10 @@ plugins/osf-seo/
 │   ├── Analytics/       # Metrics, Period, KeywordReport, OverviewReport, Visibility, ReportCache
 │   ├── Opportunities/   # Szanse SEO (STEP 11): OpportunityDetector, CtrModel, OpportunityScorer, ConfidenceModel, Fingerprint, OpportunityExplainer, OpportunityConfig, OpportunityDataSource, OpportunityAnalyzer, OpportunityRepository, OpportunityService, OpportunityScheduler
 │   ├── Market/          # Dane rynkowe (STEP 12): KeywordMetricsProvider (interfejs), MarketKeyword (normalizacja), MarketSyncService, repozytoria, plan, limity kosztów
-│   ├── DataForSeo/      # DataForSeoClient (HTTP, Basic Auth, błędy), DataForSeoResponse, DataForSeoProvider, DataForSeoDiscoveryProvider (Labs), DataForSeoMarkets, KeywordRules
+│   ├── DataForSeo/      # DataForSeoClient (HTTP, Basic Auth, błędy), DataForSeoResponse, DataForSeoProvider, DataForSeoDiscoveryProvider (Labs), DataForSeoSerpProvider (Google Organic), DataForSeoMarkets, KeywordRules
 │   ├── Discovery/       # Nowe frazy (STEP 13): KeywordDiscoveryProvider (interfejs), DiscoveryPlanner, DiscoveryRunner (jedyne płatne żądania), DiscoveryService, DiscoveryRefresher, VisibilityClassifier, DiscoveryScorer, SeedSuggester, SeedList, ExclusionList, repozytoria
 │   ├── Rest/            # (później) endpointy dla panelu — w MVP 1 dane renderowane serwerowo + JSON stanu synchronizacji
-│   ├── Serp/            # (przyszłość) dokładny ranking SERP za osobnym interfejsem dostawcy — średnia pozycja GSC ≠ pozycja SERP
+│   ├── Serp/            # Pozycje SERP i konkurenci (STEP 14): SerpProvider (interfejs), SerpPlanner, SerpSubmitter (jedyne płatne zlecenia), SerpCollector, SerpStore, SerpDictionary, DomainFamily, RankChange, SerpTrackingService, CompetitorService, SerpReports, repozytoria
 │   └── Crawler/         # (MVP 3)
 └── tests/               # PHPUnit: Unit (bez WordPressa), Integration (prawdziwy WP + MySQL/MariaDB)
 ```
@@ -289,6 +311,7 @@ Zaimplementowane w STEP 1 (`plugins/osf-seo/src/Auth`). Kod sprawdza **capabilit
 | `osf_seo_manage_opportunities` | szanse SEO: status, notatka, data wdrożenia, ręczne przeliczenie (od STEP 11, wersja 0.11.0) |
 | `osf_seo_manage_market_data` | płatna synchronizacja danych rynkowych (DataForSEO), podgląd planu, koszty i limity (od STEP 12, wersja 0.12.0) |
 | `osf_seo_manage_keyword_discovery` | wyszukiwanie nowych fraz: plan i koszt, płatne uruchomienie, pobranie mimo cache, anulowanie, decyzje i notatki, wykluczenia, koszty (od STEP 13, wersja 0.13.0) |
+| `osf_seo_manage_serp_tracking` | pozycje SERP: ustawienia i włączenie płatnych pomiarów, plan i koszt, pomiar ręczny, anulowanie, monitorowane frazy, konkurenci, koszty (od STEP 14, wersja 0.14.0) |
 
 | Rola | Capabilities |
 |---|---|
@@ -449,6 +472,31 @@ Tabele danych rynkowych nie należą do `GscDataStore::DATA_TABLES` — reset pr
 - **`osf_discovery_settings`** — PK(`project_id`); `excluded_terms`, `refresh_key` (klucz danych przeliczenia), `refreshed_at`, `updated_by`, `updated_at`.
 
 Tabele wyszukiwania nie należą do `GscDataStore::DATA_TABLES` — reset property ich nie usuwa (sekcja 12.6).
+
+**Pozycje SERP i konkurenci** (od schematu 8, migracja `M0008CreateSerpTracking` — tylko nowe tabele, sekcja 13.3):
+
+- **`osf_serp_contexts`** — `id` SMALLINT; `context_key` BINARY(16) UNIQUE; `engine`, `serp_type`, `location_code`, `language_code`, `device`,
+  `os`, `depth`; `created_at`.
+- **`osf_serp_settings`** — PK(`project_id`); `enabled` (domyślnie 0), `frequency` ENUM(daily, every_3_days, weekly), `device`, `depth`,
+  `enabled_at`/`_by`, `next_run_at`, `retry_after`, `last_run_at`, `last_skip_reason`, `last_skip_at`, `updated_by`, `updated_at`; indeks `due` (`enabled`, `next_run_at`).
+- **`osf_serp_competitors`** — `id`; `public_id` ascii_bin; `project_id`; `name`; `domain`, `domain_key` BINARY(16); `status` ENUM(active,
+  inactive, archived); czasy i autorzy. UNIQUE `project_domain` (`project_id`, `domain_key`), indeks `project_status`.
+- **`osf_serp_tracked_keywords`** — `id`; `public_id` CHAR(26) **utf8mb4_bin**; `project_id`; `market_keyword_id`; `source` ENUM(manual, gsc,
+  discovery); `status` ENUM(active, removed); `added_by`, `added_at`, `removed_at`, `last_requested_at`; stan bieżący: `last_snapshot_id`,
+  `last_context_id`, `last_checked_at`, `last_found`, `last_rank`, `last_rank_absolute`, `last_url_id`, `last_depth`, `last_featured`,
+  `prev_snapshot_id`, `prev_found`, `prev_rank`, `change_type`, `change_value`, `top10_change`. UNIQUE `project_market_keyword`, indeksy
+  `project_rank` (`project_id`, `status`, `last_rank`), `project_requested` (`project_id`, `status`, `last_requested_at`).
+- **`osf_serp_runs`** — przebiegi (`trigger_type`, `slot_key`, `status`, liczby, koszty, błąd); UNIQUE `project_slot` (`project_id`, `slot_key`),
+  indeksy `project_run`, `status_run`.
+- **`osf_serp_snapshots`** — pomiary (ULID = `tag`, projekt, fraza, kontekst, przebieg, `market_task_id`, `provider_task_id`, `status`, koszt,
+  czasy, metadane strony, wynik projektu); indeksy `tracked_history` (`tracked_keyword_id`, `context_id`, `checked_at`), `project_snapshot`,
+  `collect` (`status`, `next_check_at`), `provider_task`, `run`, `market_task`.
+- **`osf_serp_results`** — PK(`snapshot_id`, `item_index`); `result_type`, `rank_group`, `rank_absolute`, `page`, `domain_id`, `url_id`,
+  `snippet_id`, `flags`; indeks `domain_snapshot` (`domain_id`, `snapshot_id`, `rank_group`).
+- **`osf_serp_domains`** (`host_hash` UNIQUE, `host`, `host_rev` + indeks), **`osf_serp_urls`** (`url_hash` UNIQUE, `domain_id`, `url`),
+  **`osf_serp_snippets`** (`snippet_hash` UNIQUE, `title`, `description`, `breadcrumb`, `website_name`, `extra` JSON).
+
+Tabele SERP nie należą do `GscDataStore::DATA_TABLES` — reset property ich nie usuwa.
 
 **Wersja schematu**: opcja `osf_seo_db_version` (autoload), podbijana po każdej udanej migracji.
 
@@ -1563,7 +1611,254 @@ z danymi GSC (rynek Polska/polski).
 - Deduplikacja bez lematyzacji — odmiany frazy to osobni kandydaci (świadomie).
 - Strona docelowa i widoczność wymagają danych GSC (inaczej „Nieznana” / „Brak przypisanej strony”); tło zależy od crona (jak kolejka GSC).
 
-## 13. Bezpieczeństwo
+## 13. Pozycje SERP i konkurenci (STEP 14)
+
+Zaimplementowane w STEP 14 (`plugins/osf-seo/src/Serp`, `src/DataForSeo/DataForSeoSerpProvider.php`, migracja M0008 — schemat 8;
+UI: `PositionsController`, `CompetitorsController`, moduły „Pozycje” i „Konkurenci”; CLI `wp osf-seo serp:*`, `competitors:*`).
+Cel: obserwowana **Pozycja SERP** monitorowanych fraz (pełne wyniki organiczne Google z pomiaru DataForSEO), jej historia i zmiany oraz
+pozycje konkurentów — odczytywane z tych samych zapisanych wyników.
+
+### 13.1 Zasady
+
+- **Pozycja SERP ≠ średnia pozycja GSC.** Pozycja SERP to `rank_group` najlepszego wyniku **organicznego** rodziny domeny projektu
+  (domena + subdomeny, 13.4) w ostatnim pomiarze. `rank_absolute` (miejsce wśród wszystkich elementów strony) zapisujemy, ale nie jest
+  „Pozycją SERP”. **Wyróżniony fragment** zapisujemy i pokazujemy osobno — nigdy jako #1. Średnia pozycja GSC pozostaje osobną metryką
+  (kolumna obok, nigdy zamiennik); dane i semantyka GSC są bez zmian.
+- **Płatne zlecenia wyłącznie z `SerpSubmitter`** — w kroku w tle (`SerpTrackingService::runBackground`, WP-Cron / `sync:run`) albo
+  z `wp osf-seo serp:run`, pod wspólną blokadą płatnych żądań i wspólnymi limitami kosztów DataForSEO (D40). Kontroler, widok i raport
+  nigdy nie wysyłają płatnego żądania: plan i podgląd kosztu są lokalne, „Sprawdź pozycje teraz” tylko kolejkuje potwierdzony plan.
+- **Abstrakcja (D36)**: aplikacja zależy od `SerpProvider` (rynek, endpoint, limit zadań w zleceniu, szacunek kosztu, zlecenie, lista
+  gotowych zadań, odbiór); `DataForSeoSerpProvider` (na `DataForSeoClient` ze STEP 12) jest jedyną implementacją.
+- **Płatne pomiary domyślnie wyłączone.** Wdrożenie niczego nie uruchamia; harmonogram włącza osoba z uprawnieniem po podglądzie kosztu
+  i jawnym potwierdzeniu. Nie monitorujemy automatycznie wszystkich fraz ani wszystkich znalezionych fraz — tylko jawnie dodane (D39).
+- **Pomiary są per projekt** (bez współdzielenia SERP-ów między projektami, D38): fraza monitorowana w dwóch projektach to dwa zadania.
+- Poza zakresem: Keyword Gap, Content Gap, AI, backlinki, crawl konkurencji, generowanie treści, `calculate_rectangles`, płatne ładowanie
+  AI Overview, klikanie „Ludzie pytają też” (bez zgody — każda z tych opcji zwiększa koszt).
+
+### 13.2 Endpoint, tryb i ceny (D36)
+
+| Element | Wartość |
+|---|---|
+| Zlecenie | `POST serp/google/organic/task_post` — kolejka **Standard** (priorytet zwykły), do **100 zadań** w jednym zleceniu, jedno zadanie = jedna fraza |
+| Lista gotowych | `GET serp/google/organic/tasks_ready` (bezpłatna; zadania z ostatnich 3 dni, z `tag`) |
+| Odbiór | `GET serp/google/organic/task_get/advanced/{id}` (bezpłatny; wynik do 30 dni) |
+| Treść zadania | `keyword`, `location_code`, `language_code`, `device` (`desktop`/`mobile`), `os` (`windows`/`android`), `depth`, `max_crawl_pages = ceil(depth/10)`, `tag` = ULID pomiaru, `remove_from_url: ["srsltid"]` — bez `priority`, bez płatnych opcji |
+| Kody | 20100 utworzone; 40601/40602 w kolejce; 40102 brak wyników (= poza TOP); błędy konta (401xx/402xx) wstrzymują płatne wywołania wszystkich modułów |
+| Domyślnie | Google Organic, Polska (2616), polski, desktop, **TOP100**, co tydzień |
+
+Cena (konfigurowalna): pierwsza strona wyników `OSF_SEO_DATAFORSEO_PRICE_SERP_PAGE` = 0,0006 USD + każda kolejna strona
+`OSF_SEO_DATAFORSEO_PRICE_SERP_NEXT_PAGE` = 0,00045 USD (75% ceny strony). Szacowany maksymalny koszt frazy: TOP10 0,0006, TOP20 0,00105,
+TOP50 0,0024, **TOP100 0,00465 USD**. Przykład w FAQ dostawcy podaje inną kwotę dla 100 wyników — dlatego w UI i CLI zawsze
+„szacowany **maksymalny** koszt”, a **rozstrzygający jest koszt zgłoszony przez dostawcę**: zapisujemy go per zadanie (`serp_snapshots.cost`)
+i per zlecenie (`market_tasks.cost`) i porównujemy w smoke teście (13.15). Stałych ceny nie aktualizujemy automatycznie.
+
+### 13.3 Model danych (M0008, D37)
+
+| Tabela | Zawartość |
+|---|---|
+| `serp_contexts` | kontekst pomiaru: wyszukiwarka, typ, lokalizacja, język, urządzenie, system, głębokość (klucz MD5) — zmiana któregokolwiek = nowa seria |
+| `serp_settings` | ustawienia projektu: włączone (domyślnie 0), częstotliwość, urządzenie, głębokość, termin (`next_run_at`), blokada po pominięciu (`retry_after`), ostatni powód pominięcia |
+| `serp_tracked_keywords` | monitorowana fraza projektu (ULID, `market_keyword_id`, źródło, status, `last_requested_at`) + **stan bieżący**: ostatni i poprzedni porównywalny pomiar, pozycja, URL, wyróżniony fragment, typ i wartość zmiany, zmiana TOP10 — lista bez skanowania historii |
+| `serp_runs` | przebieg (harmonogram / ręczny): stan, liczby, koszt szacowany i zgłoszony, błąd; `UNIQUE (project_id, slot_key)` = jeden przebieg na termin |
+| `serp_snapshots` | pomiar = jedno zadanie dostawcy: ULID (`tag`), kontekst, przebieg, zlecenie kosztów, `provider_task_id`, stan, koszt, czasy, metadane strony (domena Google, liczba wyników, typy elementów jako maska bitowa, korekta zapytania) i wynik projektu |
+| `serp_results` | **pełne TOP N każdego pomiaru, wszystkie domeny**: `(snapshot_id, item_index)`, typ (organiczny / wyróżniony fragment), `rank_group`, `rank_absolute`, strona, `domain_id`, `url_id`, `snippet_id`, flagi — same liczby |
+| `serp_domains`, `serp_urls`, `serp_snippets` | słowniki (MD5 → ID): host + odwrócony host (indeks prefiksu rodziny domen), adres, prezentacja wyniku (tytuł, opis, breadcrumb, nazwa witryny, ograniczone dodatki) |
+| `serp_competitors` | konkurenci projektu: ULID, nazwa, domena (znormalizowana), status `active` / `inactive` / `archived`; `UNIQUE (project_id, domain_key)` |
+
+- Bez trwałego surowego JSON-a. Historia bez automatycznego usuwania; klucze rosnące (`snapshot_id`) pozwalają w przyszłości na
+  archiwizację, partycjonowanie zakresami, rollupy (np. tylko TOP10 starszych pomiarów) i retencję — bez zmiany modelu.
+- Wiersz `serp_results` ma ~26 B danych (+ indeks `domain_snapshot` do konkurentów); TOP100 = 100 wierszy na pomiar (13.14).
+- Słowniki: najpierw odczyt istniejących po hashu, wstawiane tylko brakujące (`ON DUPLICATE KEY UPDATE id = id`) — bez marnowania
+  AUTO_INCREMENT przy współbieżności; zapis wyników w jednej transakcji z warunkowym przejęciem pomiaru (zapis tylko raz).
+- `serp_tracked_keywords.public_id` jest `utf8mb4_bin` (tabela z kolumną binarną) — `$wpdb` nie odrzuca zapytań z polskimi znakami.
+- Reset property GSC nie dotyka tabel SERP (nie należą do `GscDataStore::DATA_TABLES`).
+
+### 13.4 Dopasowanie domen (rodzina domeny)
+
+`DomainFamily::normalize`: małe litery, bez `www.`, IDN → punycode, z URL-a host; odrzucone IP, localhost, pojedyncze etykiety.
+Dopasowanie: `host === domena` albo `host` kończy się na `.domena` (granica etykiet — `przyklad.pl` ≠ `nieprzyklad.pl`, bez dopasowania
+podciągu). W SQL rodzina domeny = `host_rev = 'pl.przyklad' OR host_rev LIKE 'pl.przyklad.%'` (zakres indeksu `host_rev`). Konkurent nie
+może być domeną projektu, jej subdomeną ani domeną nadrzędną; subdomena konkurenta może być osobnym konkurentem.
+
+### 13.5 Zmiana pozycji i konteksty
+
+`RankChange` porównuje bieżący pomiar z **poprzednim w tym samym kontekście** (ta sama lokalizacja, język, urządzenie, głębokość):
+#12 → #7 = `up` +5; #4 → #9 = `down` −5; poza TOP → znaleziona = „Weszła do TOP100”; znaleziona → poza TOP = „Wypadła z TOP100”; poza TOP
+w obu = `out`; pierwszy pomiar = `new`; poprzedni pomiar tylko w innym kontekście = **„Nieporównywalne”** (bez liczby). Wartość liczbowa
+nigdy z pustej pozycji. Osobno: wejście do TOP10 i wypadnięcie z TOP10. Stan bieżący jest przeliczany przy zapisie każdego wyniku według
+`checked_at` (spóźniony starszy wynik nie nadpisuje nowszego).
+
+### 13.6 Monitorowane frazy i limit (D39)
+
+- Źródła: ręcznie (tekst), z listy **Frazy** (tylko frazy GSC projektu, dokładny tekst), z **Nowych fraz** (ULID kandydatów projektu).
+  Fraza → klucz rynkowy (`MarketKeyword`: NFC, małe litery, spacje) → wiersz `market_keywords` (tworzony bez danych; **bez wzbogacania** —
+  Wolumen/KD „—”, dopóki nie trafią tam z STEP 12/13). Reguły: maks. 200 znaków, bez operatorów (`site:` itd.) i znaków sterujących.
+- **Limit miękki** `OSF_SEO_SERP_MAX_KEYWORDS` (domyślnie 500, zakres 1–1 000 000) — rekomendacja, nie ograniczenie architektury: przekroczenie
+  = jasny komunikat (limit, obecnie, ile można dodać, ile wybrano) i **brak zmian** (bez cichego obcinania). Tabele, plan, paczki po 100,
+  harmonogram i lista są projektowane na tysiące fraz w projekcie (13.14). Poza tą stałą w kodzie nie ma założenia 500 fraz.
+- Usunięcie z monitorowania jest miękkie (`removed`): historia zostaje, ponowne dodanie przywraca frazę z historią.
+
+### 13.7 Pomiar: plan, rezerwacja, wysyłka, odbiór (D40)
+
+1. **Plan** (`SerpPlanner`, bez API): monitorowane frazy bez zlecenia w ostatnich `OSF_SEO_SERP_MIN_RECHECK_HOURS` (6 h), zadania, zlecenia
+   po 100, szacowany maksymalny koszt, koszt pełnego pomiaru i miesięczny, pozostały limit dzienny i miesięczny, limit blokujący.
+2. **Rezerwacja** (`SerpSubmitter::queue`, bez API, blokada `serp_reserve`): w jednej transakcji zajęcie fraz (`last_requested_at`, warunkowo),
+   kontrola **pełnego** kosztu z limitami (cały pomiar albo wcale — bez arbitralnego częściowego pomiaru), przebieg, pomiary `queued`
+   i po jednym wierszu `market_tasks` (`pending`, koszt szacowany) na zlecenie — **rezerwacja liczy się od razu do wspólnych limitów**,
+   więc dane rynkowe i Nowe frazy nie wydadzą tego budżetu.
+3. **Wysyłka** (`SerpSubmitter::submit`, pod `MarketSyncService::LOCK`): pomiary oznaczane `uncertain` **przed** wysłaniem. Odpowiedź:
+   zadania dopasowane po `tag` → `submitted` (koszt zgłoszony); odrzucone → `failed` bez kosztu; zlecenie → `completed` z kosztem
+   zgłoszonym albo zwolnione (koszt 0). Limit żądań/konto (dostawca nic nie wykonał) → paczka wraca do kolejki; błąd konta wstrzymuje
+   wszystkie płatne wywołania. **Wynik nieznany** (sieć, 5xx, uszkodzona odpowiedź) → **bez ponawiania** (zadania mogły zostać opłacone),
+   koszt szacowany zostaje w limicie, reszta przebiegu jest anulowana (rezerwacje zwolnione).
+4. **Odbiór** (`SerpCollector`, bezpłatny, blokada `serp_collect`): lista gotowych zadań przyspiesza odbiór i **odzyskuje niepewne
+   zlecenia po `tag`**; pozostałe sprawdzane bezpośrednio z narastającym odstępem (10 min … 2 h); po `OSF_SEO_SERP_EXPIRE_HOURS` (72 h)
+   → `expired`; niepewne nieodnalezione przez 72 h → `failed` (`interrupted`, koszt szacowany zostaje). Zadania nieznane (np. innej
+   instalacji na tym samym koncie) są ignorowane. Zapis: słowniki → transakcja (przejęcie, wstawienie wsadowe TOP N, metadane, stan bieżący).
+5. **Anulowanie**: niewysłane paczki → `cancelled`, rezerwacje kosztu i frazy zwolnione; zlecone zadania są odbierane i zostają w kosztach.
+
+### 13.8 Harmonogram, nakładanie się i odstępy (D41)
+
+- Częstotliwość: codziennie / co 3 dni / co tydzień (domyślnie, wyłączone). Krok w tle wybiera projekty z terminem (`enabled`,
+  `next_run_at ≤ teraz`, bez `retry_after`), maks. 25 na przebieg tła, i kolejkuje pełny pomiar z kluczem terminu `auto:<termin>`.
+- **Nakładanie się**: `UNIQUE (project_id, slot_key)` — dwa procesy crona nie utworzą dwóch przebiegów tego samego terminu; zajęcie fraz
+  z oknem 6 h — pomiar ręczny i cron (albo dwa kliknięcia) nie zlecą tej samej frazy dwa razy; wysyłka pod wspólną blokadą płatnych żądań.
+- **Budżet**: gdy pełny pomiar nie mieści się w limicie, harmonogram zapisuje przebieg `skipped` z powodem (`daily_limit`/`monthly_limit`),
+  pokazuje go w panelu i ponawia po odnowieniu limitu (następna doba UTC 00:05 / pierwszy dzień miesiąca) — nie wcześniej.
+- Pomiar ręczny: odstęp 15 min na projekt (CLI bez odstępu), podgląd → potwierdzenie (`expected_tasks`, `expected_cost`) → kolejka;
+  plan większy lub droższy niż podgląd nie zostanie zakolejkowany.
+
+### 13.9 Konkurenci (D42)
+
+- **Monitorowani**: dodawanie (domena + nazwa), edycja, wstrzymanie (`inactive` — znika z pozycji, dane zostają), archiwum, przywrócenie;
+  walidacja (13.4), bez duplikatów. Pozycje konkurenta są **odtwarzane z zapisanych pełnych SERP-ów** (także konkurenta dodanego później —
+  z całej historii), bez dodatkowych żądań: najlepszy wynik rodziny domeny w pomiarze, inne adresy, zmiana względem poprzedniego pomiaru.
+- **Organiczni**: domeny z najnowszych pomiarów monitorowanych fraz (bez rodziny domeny projektu): liczba fraz, TOP3/10/20, średnia najlepszej
+  pozycji (tylko frazy z domeną), frazy wspólne z projektem, liczba adresów — **fakty, bez ocen**; „Dodaj jako konkurenta”.
+
+### 13.10 Koszty
+
+Jeden wiersz `market_tasks` na zlecenie (`endpoint = google_organic_serp`, `keywords_count` = liczba zadań, `trigger_type` `serp_manual` /
+`serp_schedule`). Utrzymanie i odbiór STEP 12 pomijają zlecenia SERP. „Dane rynkowe” pokazują podział **Dane rynkowe / Nowe frazy /
+Pozycje SERP / RAZEM** (dziś i w miesiącu, limity wspólne). Koszt pomiaru: szacowany maksymalny przy planie, zgłoszony po zleceniu.
+
+### 13.11 UI
+
+- **Pozycje** (`/projects/{project}/positions`): karty (TOP3, TOP10, wzrosty, spadki, weszły/wypadły z TOP10, poza TOP, niesprawdzone),
+  filtry (szukaj, pasmo pozycji, zmiana), sortowanie, paginacja po 50; kolumny Fraza, Wolumen, KD, **Pozycja SERP**, Zmiana, URL,
+  **Średnia pozycja (GSC)** (osobno), Konkurenci (najlepsza pozycja aktywnych), Ostatni pomiar; zaznaczanie: „Sprawdź zaznaczone”,
+  „Zakończ monitorowanie”.
+- **Szczegóły frazy**: Pozycja SERP, element strony, wyróżniony fragment, zmiana, średnia GSC, wykres historii (projekt i konkurenci,
+  oś odwrócona, przerwa = poza TOP; Chart.js ładowany tylko tam), tabela historii, wybór pomiaru archiwalnego, **pełne TOP N** z wyróżnieniem
+  projektu i konkurentów, korekta zapytania i elementy strony (bez liczenia ich w pozycji).
+- **Sprawdź pozycje teraz** (`/positions/check`): rynek, urządzenie, głębokość, frazy, zadania i zlecenia, koszt zadania, **szacowany
+  maksymalny koszt**, pozostały limit → potwierdzenie → kolejka → strona pomiaru z postępem i anulowaniem.
+- **Ustawienia** (`/positions/settings`): harmonogram, częstotliwość, urządzenie, głębokość (z ceną), koszt pełnego pomiaru i miesięczny,
+  pozostały limit, ostrzeżenie, gdy pomiar przekracza limit dzienny; włączenie wymaga zaznaczenia potwierdzenia.
+- **Dodaj frazy**, **Frazy** (kolumna „Pozycja SERP” tylko dla monitorowanych + „Monitoruj pozycję” pojedynczo i zbiorczo), **Nowe frazy**
+  („Monitoruj pozycję” na liście i w szczegółach) — bez kosztów i bez żądań.
+- **Konkurenci** (lista, szczegóły, organiczni), **Dane rynkowe** (podział kosztów), **Ustawienia** (cennik i limity SERP).
+- **Klient**: Pozycje, szczegóły, Konkurenci i organiczni tylko do odczytu — bez kosztów, przycisków i zaznaczania.
+
+### 13.12 CLI
+
+```bash
+wp osf-seo serp:plan --project=<id> [--keywords=<ULID|fraza,…>] [--format=json]  # plan: ZERO żądań (dry_run, api_requests: 0)
+wp osf-seo serp:run --project=<id> [--keywords=…] [--yes] [--queue-only] [--wait=<s>]   # PŁATNE: plan → potwierdzenie → wysyłka (--wait: odbiór)
+wp osf-seo serp:collect [--max-seconds=60]                                        # odbiór wyników (bezpłatny)
+wp osf-seo serp:status --project=<id> [--run=<id>] [--format=json]               # ustawienia, liczniki, koszty, ostatnie pomiary
+wp osf-seo serp:list --project=<id> [--band=…] [--change=…] [--sort=…] [--search=…] [--page=<n>] [--format=json]
+wp osf-seo serp:snapshot --project=<id> --keyword=<ULID|fraza> [--snapshot=<ULID>] [--format=json]   # pełne TOP N pomiaru
+wp osf-seo serp:track --project=<id> --keywords="a, b" [--from=manual|gsc|discovery]   # dodanie (bez API)
+wp osf-seo serp:untrack --project=<id> --keywords="a, b"                          # zakończenie monitorowania (historia zostaje)
+wp osf-seo serp:settings --project=<id> [--enable|--disable] [--frequency=…] [--device=…] [--depth=…] [--yes]
+wp osf-seo competitors:list|add|update|organic --project=<id> …                   # konkurenci (bez API)
+```
+
+Wyjście po angielsku; `--format=json` wyłącznie JSON. Komendy zmieniające i płatne wymagają `--user` z `osf_seo_manage_serp_tracking`
+(bez `--user` — dostęp systemowy, jak inne komendy).
+
+### 13.13 Uprawnienia i bezpieczeństwo
+
+- Nowa capability **`osf_seo_manage_serp_tracking`** (wersja 0.14.0; administrator i `osf_seo_admin`): ustawienia i włączenie pomiarów,
+  plan i podgląd kosztu, pomiar ręczny, anulowanie, dodawanie i usuwanie fraz, konkurenci, widok kosztów. Odczyt: dostęp do projektu.
+- Fraza, pomiar, przebieg i konkurent z URL-a szukane wyłącznie po (`project_id` z `ProjectContext`, `public_id`) — obce ID → 404.
+  Mutacje: trasa `ResolveProject:osf_seo_manage_serp_tracking` + kontrola w usługach, nonce i zgodny Origin; powrót po akcji tylko na adres
+  panelu tego projektu.
+- Tytuły, opisy, domeny i URL-e z SERP to dane zewnętrzne — zawsze escapowane; linki tylko `http(s)` z `rel="noopener noreferrer nofollow"`;
+  adresy bez fragmentu i parametru `srsltid`. JSON postępu dla klienta bez kosztów. Logi bez danych logowania i treści żądań.
+
+### 13.14 Wydajność (pomiar)
+
+Benchmark `composer test:performance:serp` (`tests/Performance/serp-benchmark.php`, MariaDB 10.11, osobna baza testowa; dane syntetyczne
+generowane `INSERT … SELECT`): **100 projektów × 500 monitorowanych fraz** z pełnym TOP100 w ostatnim pomiarze, projekt nr 1 z **historią
+52 tygodni** (500 fraz × 52 pomiary), projekt „duży” z **2500 frazami**; 5 konkurentów na projekt; słowniki: 50 202 domen (popularność
+skośna), 1 004 040 adresów, 300 000 opisów.
+
+| Tabela | Wiersze | Dane + indeksy |
+|---|---:|---:|
+| `serp_results` | 7 800 000 | 366 MB + 205 MB (~77 B/wiersz łącznie) |
+| `serp_snapshots` | 78 000 | 13,5 + 13,6 MB |
+| `serp_tracked_keywords` | 52 500 | 10,5 + 13,1 MB |
+| `serp_urls` / `serp_snippets` / `serp_domains` | 1 004 040 / 300 000 / 50 202 | 142 / 86 / 10,5 MB |
+
+| Przypadek | Czas (mediana z 3) |
+|---|---:|
+| Zapis TOP100 (`SerpStore::ingest`, słowniki + wstawienie wsadowe + stan bieżący), domeny i adresy już w słownikach | 20,5 ms (p95 38,6 ms) |
+| Zapis TOP100 z nowymi domenami i adresami (wstawiane do słowników) | 26,0 ms (p95 61,3 ms) |
+| Lista Pozycje: 500 fraz, 5 konkurentów, średnia GSC (10 zapytań, bez N+1) | 17,6 ms |
+| Lista Pozycje: 2500 fraz — strona 1 / ostatnia / wg wolumenu / TOP10 + wyszukiwanie | 44 / 47 / 45 / 20 ms |
+| Liczniki modułu (2500 fraz) | 6,4 ms |
+| Szczegóły frazy: historia 52 pomiarów, konkurenci w historii, pełne TOP100 | 13,2 ms |
+| Pełne TOP100 jednego pomiaru (wyniki + słowniki) | 1,5 ms |
+| Konkurenci: lista 5 konkurentów (500 fraz) / szczegóły konkurenta | 35 / 18 ms |
+| Konkurenci organiczni: 500 fraz / 2500 fraz (bez pamięci podręcznej) | 240 ms / 1194 ms |
+| Konkurenci organiczni: kolejne wejście (pamięć podręczna, klucz = stan pomiarów) | 6,3 ms |
+| Plan pomiaru bez API (2500 fraz, 25 zleceń) | 16,8 ms |
+| Rezerwacja pomiaru 2500 fraz (zajęcie fraz, 25 paczek, wiersze kosztów; bez API) | 187 ms |
+| Harmonogram: projekty z terminem (101 włączonych) / kolumna Pozycja SERP w Frazach (50 fraz) | 0,5 / 2,3 ms |
+
+- Zapis pomiaru: 16–20 zapytań niezależnie od liczby wyników (słowniki: odczyt po hashach paczkami + wstawienie brakujących, wyniki jednym
+  wstawieniem wsadowym, stan bieżący 3 zapytaniami). 100 000 zadań (np. 1000 fraz dziennie przez 100 dni) ≈ 35–45 min pracy tła łącznie.
+- Lista: `t` ref `project_market_keyword` (frazy projektu) → `m`/`u` eq_ref (`STRAIGHT_JOIN`), sortowanie w pamięci po ≤ liczbie fraz projektu,
+  `COUNT(*) OVER()`; filtr pasma: range `project_rank`. Pozycje konkurentów na stronie: range `domain_snapshot` (domeny rodziny × pomiary strony).
+  Średnia GSC: range `project_market_key` → ref `project_keyword_date`.
+- Historia: ref `tracked_history`; pełne TOP N: ref PRIMARY (`snapshot_id`) → słowniki eq_ref. Rodzina domeny: range `host_rev`.
+- **Najwolniejsze zapytanie**: konkurenci organiczni (agregacja ~250 tys. wyników najnowszych pomiarów 2500 fraz: `t` ref → `r` ref PRIMARY,
+  grupowanie po pomiarze i domenie, potem po domenie — bez pełnych skanów, ale z tabelą tymczasową). Wynik strony jest zapamiętywany
+  (transient z kluczem zależnym od stanu pomiarów — nowy pomiar, dodanie lub usunięcie frazy zmienia klucz); pierwsze wejście po pomiarze
+  ~0,24 s dla 500 fraz i ~1,2 s dla 2500 fraz. Przy dziesiątkach tysięcy fraz w projekcie: zestawienie wyliczane w tle po odbiorze wyników.
+- Kod nie zakłada 500 fraz: liczba 500 występuje tylko jako domyślny miękki limit (`OSF_SEO_SERP_MAX_KEYWORDS`) i jako rozmiar paczek SQL.
+
+### 13.15 Bezpieczny smoke test na stagingu (1 konkurent, 1 fraza, TOP100)
+
+Wykonuje osoba z dostępem do stagingu — nie agent. Zakłada wdrożony kod STEP 14 (plugin 0.14.0, schemat 8), stałe DataForSEO w
+`wp-config.php` i projekt na rynku Polska/polski. Pierwszy krok jest zawsze bezpłatny.
+
+1. `wp osf-seo status` (schemat 8, `dataforseo: configured`), `wp osf-seo dataforseo:status --project=<id>` (koszty dziś/miesiąc, limity).
+2. `wp osf-seo competitors:add --project=<id> --domain=<konkurent.pl> --user=<admin>` — 1 konkurent (bez API).
+3. `wp osf-seo serp:track --project=<id> --keywords="<fraza>" --user=<admin>` — 1 fraza (bez API, bez wzbogacania).
+4. **Bezpłatny podgląd**: `wp osf-seo serp:plan --project=<id>` (albo panel → Pozycje → „Sprawdź pozycje teraz”) — oczekiwane: 1 zadanie,
+   1 zlecenie, Google Organic, PL/pl, desktop, TOP100, Standard, **szacowany maksymalny koszt 0,00465 USD**, `api_requests: 0`.
+5. `wp osf-seo serp:run --project=<id> --user=<admin>` — ten sam plan, potwierdzenie, jedno zlecenie (automatyczny harmonogram pozostaje wyłączony).
+6. Po kilku minutach: `wp osf-seo serp:collect`, `wp osf-seo serp:status --project=<id> --format=json` — porównać `estimated_cost` z `cost`
+   (zgłoszonym) pomiaru i zlecenia (`dataforseo:status`, „Dane rynkowe” → Pozycje SERP) oraz z panelem DataForSEO. Rozbieżność zapisać —
+   stałych ceny nie zmieniamy po jednym teście.
+7. Sprawdzić panel: Pozycje (Pozycja SERP obok średniej pozycji GSC), szczegóły frazy (pełne TOP100, projekt i konkurent wyróżnieni,
+   wyróżniony fragment osobno), Konkurenci i organiczni, `serp:snapshot` (pełne TOP100 w CLI).
+8. Opcjonalnie druga fraza: `serp:track` → `serp:plan` (1 zadanie — pierwsza fraza pominięta przez okno 6 h) → `serp:run`. Dopiero po
+   weryfikacji kosztów rozważyć więcej fraz i włączenie harmonogramu (panel → Ustawienia pomiarów, potwierdzenie kosztu miesięcznego).
+
+### 13.16 Ograniczenia
+
+- Cena i parametry zweryfikowane pośrednio (dokumentacja i SDK dostawcy, 13.2); lokalne limity są bezpiecznikiem, nie rozliczeniem.
+- Pozycja SERP to pojedyncza obserwacja z lokalizacji rynku (kraj, nie miasto) i jednego urządzenia; wyniki Google są personalizowane i zmienne.
+- Zapisujemy wyniki organiczne i wyróżnione fragmenty; pozostałe elementy strony (reklamy, mapy, „Ludzie pytają też”, AI Overview) tylko jako
+  maska obecności — bez treści i bez płatnych parametrów.
+- Wolumen i KD monitorowanej frazy pojawiają się, gdy fraza trafi do danych rynkowych STEP 12/13 (brak osobnego wzbogacania).
+- Bez automatycznej retencji historii (świadomie; rozmiar w 13.14). Tło zależy od crona (jak kolejka GSC); `serp:run`/`serp:collect` działają od razu.
+
+## 14. Bezpieczeństwo
 
 - **Autoryzacja projektów**: `ProjectGuard` → `ProjectContext` albo 404; repozytoria i usługi
   analityczne przyjmują wyłącznie `ProjectContext`.
@@ -1598,9 +1893,13 @@ z danymi GSC (rynek Polska/polski).
   płatne uruchomienie, pobranie mimo cache, decyzje i wykluczenia wymagają `osf_seo_manage_keyword_discovery` (trasa + kontrola w
   `DiscoveryService`), nonce, zgodnego Origin i potwierdzonego planu (`expected_requests`, `expected_cost`); klient — tylko odczyt, bez kosztów.
   Frazy od dostawcy escapowane jak dane GSC (sekcja 12.14).
-- **Repozytorium publiczne**: sekcja 14; skan sekretów przed commitem; `.gitignore` blokuje pliki z sekretami.
+- **Pozycje SERP** (STEP 14): fraza, pomiar, przebieg i konkurent z URL-a szukane wyłącznie po (`project_id` z `ProjectContext`, `public_id`)
+  — obce ID → 404; ustawienia, pomiary, frazy i konkurenci wymagają `osf_seo_manage_serp_tracking` (trasa + kontrola w usługach), nonce,
+  zgodnego Origin i potwierdzonego planu (`expected_tasks`, `expected_cost`); klient — tylko odczyt, bez kosztów. Tytuły, opisy i URL-e z SERP
+  escapowane; linki `http(s)` z `rel="noopener noreferrer nofollow"` (sekcja 13.13).
+- **Repozytorium publiczne**: sekcja 15; skan sekretów przed commitem; `.gitignore` blokuje pliki z sekretami.
 
-## 14. Konfiguracja i sekrety
+## 15. Konfiguracja i sekrety
 
 Stałe w `wp-config.php` (poza repozytorium) mają pierwszeństwo przed zmiennymi środowiskowymi o tej
 samej nazwie. W repozytorium wyłącznie placeholdery.
@@ -1632,6 +1931,11 @@ samej nazwie. W repozytorium wyłącznie placeholdery.
 | `OSF_SEO_DISCOVERY_MAX_CANDIDATES` | (opcjonalnie) górna granica limitu kandydatów na wyszukiwanie, 10–5000, domyślnie 1000 | STEP 13 |
 | `OSF_SEO_DISCOVERY_MIN_VOLUME` | (opcjonalnie) domyślny minimalny wolumen, domyślnie 10 | STEP 13 |
 | `OSF_SEO_DISCOVERY_WINDOW_DAYS`, `…_MIN_IMPRESSIONS`, `…_VISIBLE_POSITION`, `…_VISIBLE_SHARE` | (opcjonalnie) widoczność GSC kandydatów: okno 28–480 dni (90), min. wyświetleń (10), średnia pozycja „już widoczna” (10), min. udział wyświetleń w wolumenie (0.1) | STEP 13 |
+| `OSF_SEO_DATAFORSEO_PRICE_SERP_PAGE`, `…_PRICE_SERP_NEXT_PAGE` | (opcjonalnie) ceny Google Organic SERP (Standard) do szacunku: pierwsza strona wyników 0.0006 USD, każda kolejna 0.00045 USD (TOP100 = 0.00465) | STEP 14 |
+| `OSF_SEO_SERP_MAX_KEYWORDS` | (opcjonalnie) zalecany (miękki) limit monitorowanych fraz w projekcie, 1–1 000 000, domyślnie 500 — komunikat zamiast obcinania | STEP 14 |
+| `OSF_SEO_SERP_MIN_RECHECK_HOURS` | (opcjonalnie) okno, w którym zlecona fraza nie jest zlecana ponownie (cron + pomiar ręczny), 1–168 h, domyślnie 6 | STEP 14 |
+| `OSF_SEO_SERP_MAX_POSTS_PER_RUN`, `OSF_SEO_SERP_COLLECT_PER_RUN` | (opcjonalnie) maks. zleceń (po 100 zadań, 1–500) i odbiorów (1–10 000) w jednym przebiegu tła, domyślnie 20 / 200 | STEP 14 |
+| `OSF_SEO_SERP_EXPIRE_HOURS` | (opcjonalnie) po ilu godzinach nieodebrane zadanie wygasa, 24–720, domyślnie 72 | STEP 14 |
 
 ```php
 // wp-config.php — przykład z placeholderami
@@ -1647,7 +1951,7 @@ define('OSF_SEO_DATAFORSEO_PASSWORD', 'your-dataforseo-api-password');
 - Brak stałych = integracja wyłączona (panel pokazuje nazwy brakujących stałych, `wp osf-seo status`: INFO);
   błędny format klucza = FAIL w `wp osf-seo status`.
 
-## 15. Deployment (do ustalenia)
+## 16. Deployment (do ustalenia)
 
 Stan: CI (`.github/workflows/ci.yml`) uruchamia wyłącznie testy i build — w repozytorium nie ma skryptu deployu.
 Reorganizacja jest w `main`. Wcześniejsza integracja Git Hostingera skopiowała cały root repozytorium do `wp-content`
@@ -1671,7 +1975,7 @@ Warianty docelowe:
   dwa połączenia Git w hPanelu, każde z własnym katalogiem.
 - **C (niezalecany)**: integracja Git Hostingera wprost na `wp-content` — wystawiłaby na serwer cały root repo.
 
-## 16. Roadmapa i stan prac
+## 17. Roadmapa i stan prac
 
 **MVP 1** (tylko GSC, koszt zewnętrznych usług: 0 zł; od STEP 12 — DataForSEO, D3):
 
@@ -1696,14 +2000,15 @@ Warianty docelowe:
 | 16 | Szanse SEO: wykrywanie (niski CTR, blisko TOP, słaba pozycja, spadki, możliwa kanibalizacja), priorytet i pewność, grupowanie po podstronach, praca nad szansą, automatyczne przeliczanie | ✅ STEP 11 (sekcja 10; obserwacja po wdrożeniu — wersja podstawowa) |
 | 17 | DataForSEO: fundament (dostawca za interfejsem, klient, limity kosztów, rejestr zadań) i wzbogacenie fraz danymi rynkowymi (wolumen, historia, CPC, konkurencja Ads, trudność SEO) | ✅ STEP 12 (sekcja 11) |
 | 18 | Nowe frazy: seedy (ręczne, GSC, szanse), wyszukiwanie DataForSEO Labs w tle z planem i limitami kosztów, deduplikacja, widoczność GSC, priorytet odkrycia, praca nad frazą, wykluczenia | ✅ STEP 13 (sekcja 12) |
+| 19 | Pozycje SERP i konkurenci: monitorowane frazy, pomiary Google Organic (Standard, TOP100) z planem, rezerwacją kosztu i harmonogramem, pełne TOP N w historii, zmiany, konkurenci monitorowani i organiczni | ✅ STEP 14 (sekcja 13) |
 
 **MVP 2**: ~~Opportunity Score~~ (STEP 11), Pages/landing pages, zaawansowane filtry, automatyczna synchronizacja, raporty.
 **MVP 3**: własny crawler, audyt techniczny, połączenie crawler + GSC.
 **MVP 4**: panel klienta, raporty, rekomendacje AI.
-**Kolejne etapy** (kolejność orientacyjna): ~~odkrywanie nowych fraz~~ (STEP 13), monitoring konkurencji i dokładny ranking SERP (DataForSEO SERP —
-osobne pojęcie od średniej pozycji GSC), luka fraz/treści, strategia i backlog SEO (zaakceptowane nowe frazy jako wejście).
+**Kolejne etapy** (kolejność orientacyjna): ~~odkrywanie nowych fraz~~ (STEP 13), ~~monitoring konkurencji i ranking SERP~~ (STEP 14),
+luka fraz/treści, strategia i backlog SEO (zaakceptowane nowe frazy jako wejście), retencja/rollupy historii SERP po pomiarze wzrostu.
 
-## 17. Porządki w motywie (C1–C5)
+## 18. Porządki w motywie (C1–C5)
 
 Każdy etap to osobny commit z testem (build, `php -l`, smoke test WordPress). Kolejność:
 
@@ -1715,15 +2020,18 @@ Każdy etap to osobny commit z testem (build, `php -l`, smoke test WordPress). K
 | C4 | frontend: `variables.scss`, style i JS bloków, marketingowe obrazy i font, pakiety gsap, swiper, baguettebox, jquery, react, wtyczki block-editora w Vite |
 | C5 | nazewnictwo: `package.json`, `composer.json`, `style.css`, text domain |
 
-## 18. Ryzyka i otwarte kwestie
+## 19. Ryzyka i otwarte kwestie
 
-- **Deployment** nowej struktury nieustalony (sekcja 15) — wdrażać wyłącznie katalog pluginu i motywu (nigdy całe repo do `wp-content`).
+- **Deployment** nowej struktury nieustalony (sekcja 16) — wdrażać wyłącznie katalog pluginu i motywu (nigdy całe repo do `wp-content`).
 - **DataForSEO (STEP 12)**: płatne API — lokalne limity są bezpiecznikiem, nie rozliczeniem (rozliczenie w panelu DataForSEO; tam też warto
   ustawić limit kosztów konta). Ceny i limity zweryfikowane pośrednio (sekcja 11.2) — przed pierwszym użyciem potwierdzić w panelu DataForSEO.
   Kody lokalizacji potwierdzić `wp osf-seo dataforseo:locations --country=PL` (bezpłatne).
 - **Nowe frazy (STEP 13)**: ceny Labs zweryfikowane pośrednio (sekcja 12.2); priorytet odkrycia i progi widoczności to przybliżenie do kalibracji
   na prawdziwych projektach (stałe `OSF_SEO_DISCOVERY_*`). Koszt wyszukiwania zależy od liczby zwróconych elementów — pierwszy przebieg na stagingu
   z 1–2 seedami i małym limitem (sekcja 12.16).
+- **Pozycje SERP (STEP 14)**: cena Google Organic zweryfikowana pośrednio (13.2) — pierwszy pomiar na stagingu z 1 frazą i porównanie kosztu
+  szacowanego ze zgłoszonym (13.15). Koszt rośnie liniowo z liczbą fraz i częstotliwością; historia rośnie bez retencji (~100 wierszy
+  i kilka KB na pomiar, 13.14) — decyzja o rollupach/archiwizacji po kilku miesiącach danych.
 - **OAuth Testing**: tokeny ważne 7 dni — publikacja aplikacji przed produkcją.
 - **Skala `query_page_daily`** — decyzja po pomiarze (sekcja 6.4).
 - **Wydajność raportów przy bardzo dużych property** — czasy rosną liniowo z liczbą wierszy fraz w okresie

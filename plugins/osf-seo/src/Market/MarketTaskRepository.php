@@ -28,6 +28,12 @@ final class MarketTaskRepository
 	/** `trigger_type` żądań wyszukiwania nowych fraz (STEP 13). */
 	public const TRIGGER_DISCOVERY = 'discovery';
 
+	/** Wzbogacanie fraz wolumenem (Standard) — jedyne zadania odbierane przez `MarketSyncService::collect()`. */
+	public const ENDPOINT_VOLUME = 'google_ads_search_volume';
+
+	/** Pomiary pozycji SERP (STEP 14): jeden wiersz = jedno zlecenie (do 100 zadań); zadania śledzi `serp_snapshots`. */
+	public const ENDPOINT_SERP = 'google_organic_serp';
+
 	/** Po ilu dniach usuwamy listę fraz zakończonego zadania (wiersz z kosztem zostaje). */
 	private const KEYWORDS_RETENTION_DAYS = 30;
 
@@ -116,6 +122,19 @@ final class MarketTaskRepository
 		$this->db->update($this->table(), $data, ['id' => $id]);
 	}
 
+	/**
+	 * Rezerwacja zwolniona: zaplanowane zlecenie nie zostało wysłane (anulowanie, błąd, przy którym dostawca nic nie
+	 * wykonał) — koszt 0, nie liczy się do limitów.
+	 */
+	public function release(int $id, string $reason): void
+	{
+		$this->db->execute(
+			"UPDATE `{$this->table()}` SET status = 'failed', error_code = %s, estimated_cost = 0, cost = NULL, completed_at = %s, updated_at = %s
+			WHERE id = %d AND status = 'pending'",
+			[$reason, $this->now(), $this->now(), $id],
+		);
+	}
+
 	public function markExpired(int $id): void
 	{
 		$this->db->update($this->table(), [
@@ -144,9 +163,9 @@ final class MarketTaskRepository
 	public function duePending(int $limit): array
 	{
 		return $this->db->fetchAll(
-			"SELECT * FROM `{$this->table()}` WHERE status = 'pending' AND provider_task_id IS NOT NULL AND next_check_at <= %s
+			"SELECT * FROM `{$this->table()}` WHERE status = 'pending' AND provider_task_id IS NOT NULL AND next_check_at <= %s AND endpoint = %s
 			ORDER BY next_check_at, id LIMIT %d",
-			[$this->now(), max(1, $limit)],
+			[$this->now(), self::ENDPOINT_VOLUME, max(1, $limit)],
 		);
 	}
 
@@ -171,11 +190,12 @@ final class MarketTaskRepository
 		return is_array($keywords) ? array_values(array_filter($keywords, 'is_string')) : [];
 	}
 
+	/** Zadania wolumenu w toku (zlecenia SERP mają własny stan w module pozycji). */
 	public function pendingCount(?int $projectId = null): int
 	{
 		return (int) $this->db->fetchValue(
-			"SELECT COUNT(*) FROM `{$this->table()}` WHERE status = 'pending'" . ($projectId === null ? '' : ' AND project_id = %d'),
-			$projectId === null ? [] : [$projectId],
+			"SELECT COUNT(*) FROM `{$this->table()}` WHERE status = 'pending' AND endpoint <> %s" . ($projectId === null ? '' : ' AND project_id = %d'),
+			$projectId === null ? [self::ENDPOINT_SERP] : [self::ENDPOINT_SERP, $projectId],
 		);
 	}
 
@@ -212,22 +232,32 @@ final class MarketTaskRepository
 	}
 
 	/**
-	 * Zużycie od podanej chwili z podziałem: wzbogacanie fraz danymi rynkowymi (STEP 12) i wyszukiwanie nowych fraz
-	 * (STEP 13, `trigger_type = discovery`). Limity kosztów są wspólne — to tylko podział do wglądu.
+	 * Zużycie od podanej chwili z podziałem: wzbogacanie fraz danymi rynkowymi (STEP 12), wyszukiwanie nowych fraz
+	 * (STEP 13, `trigger_type = discovery`) i pomiary pozycji SERP (STEP 14, endpoint `google_organic_serp`; zadania =
+	 * zadania SERP w zleceniach) oraz suma. Limity kosztów są wspólne — to tylko podział do wglądu.
 	 *
-	 * @return array{enrichment: array{tasks: int, cost: float}, discovery: array{tasks: int, cost: float}}
+	 * @return array{enrichment: array{tasks: int, cost: float}, discovery: array{tasks: int, cost: float}, serp: array{tasks: int, cost: float}, total: array{tasks: int, cost: float}}
 	 */
 	public function usageByPurpose(string $since, ?int $projectId = null): array
 	{
-		$result = ['enrichment' => ['tasks' => 0, 'cost' => 0.0], 'discovery' => ['tasks' => 0, 'cost' => 0.0]];
+		$empty = ['tasks' => 0, 'cost' => 0.0];
+		$result = ['enrichment' => $empty, 'discovery' => $empty, 'serp' => $empty, 'total' => $empty];
 
 		foreach ($this->db->fetchAll(
-			"SELECT trigger_type = %s AS discovery, COUNT(*) AS tasks, COALESCE(SUM(COALESCE(cost, estimated_cost)), 0) AS cost
-			FROM `{$this->table()}` WHERE created_at >= %s" . ($projectId === null ? '' : ' AND project_id = %d') . ' GROUP BY discovery',
-			$projectId === null ? [self::TRIGGER_DISCOVERY, $since] : [self::TRIGGER_DISCOVERY, $since, $projectId],
+			"SELECT CASE WHEN endpoint = %s THEN 'serp' WHEN trigger_type = %s THEN 'discovery' ELSE 'enrichment' END AS purpose,
+				SUM(CASE WHEN endpoint = %s THEN keywords_count ELSE 1 END) AS tasks, COALESCE(SUM(COALESCE(cost, estimated_cost)), 0) AS cost
+			FROM `{$this->table()}` WHERE created_at >= %s" . ($projectId === null ? '' : ' AND project_id = %d') . ' GROUP BY purpose',
+			$projectId === null
+				? [self::ENDPOINT_SERP, self::TRIGGER_DISCOVERY, self::ENDPOINT_SERP, $since]
+				: [self::ENDPOINT_SERP, self::TRIGGER_DISCOVERY, self::ENDPOINT_SERP, $since, $projectId],
 		) as $row) {
-			$result[(int) $row['discovery'] === 1 ? 'discovery' : 'enrichment'] = ['tasks' => (int) $row['tasks'], 'cost' => round((float) $row['cost'], 6)];
+			$result[(string) $row['purpose']] = ['tasks' => (int) $row['tasks'], 'cost' => round((float) $row['cost'], 6)];
 		}
+
+		$result['total'] = [
+			'tasks' => $result['enrichment']['tasks'] + $result['discovery']['tasks'] + $result['serp']['tasks'],
+			'cost' => round($result['enrichment']['cost'] + $result['discovery']['cost'] + $result['serp']['cost'], 6),
+		];
 
 		return $result;
 	}
@@ -250,15 +280,16 @@ final class MarketTaskRepository
 	/**
 	 * Utrzymanie:
 	 * - zadanie bez identyfikatora dostawcy starsze niż godzina (proces przerwany między wysłaniem a zapisem odpowiedzi)
-	 *   → `failed` (`interrupted`); koszt szacowany zostaje w limicie, bo nie wiadomo, czy dostawca je opłacił,
+	 *   → `failed` (`interrupted`); koszt szacowany zostaje w limicie, bo nie wiadomo, czy dostawca je opłacił.
+	 *   Nie dotyczy zleceń SERP — ich rezerwacje (zaplanowane paczki) i niepewne zlecenia obsługuje moduł pozycji,
 	 * - lista fraz zakończonych zadań jest potrzebna tylko do odbioru wyniku — po 30 dniach ją usuwamy.
 	 */
 	public function maintenance(): int
 	{
 		$interrupted = $this->db->execute(
 			"UPDATE `{$this->table()}` SET status = 'failed', error_code = 'interrupted', completed_at = %s, updated_at = %s
-			WHERE status = 'pending' AND provider_task_id IS NULL AND created_at < %s",
-			[$this->now(), $this->now(), $this->clock->now()->modify('-1 hour')->format('Y-m-d H:i:s')],
+			WHERE status = 'pending' AND provider_task_id IS NULL AND created_at < %s AND endpoint <> %s",
+			[$this->now(), $this->now(), $this->clock->now()->modify('-1 hour')->format('Y-m-d H:i:s'), self::ENDPOINT_SERP],
 		);
 
 		return $interrupted + $this->db->execute(

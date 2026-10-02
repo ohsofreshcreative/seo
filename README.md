@@ -1,12 +1,12 @@
 # Wibble
 
 Wewnętrzne narzędzie SEO agencji OhSoFresh (dawniej **OSF SEO**): projekty klientów połączone z Google Search Console,
-automatyczne wykrywanie fraz, porównania okresów, wzrosty i spadki, szanse SEO, dashboardy, dane rynkowe fraz
-oraz wyszukiwanie nowych fraz, na które strona jeszcze nie ma widoczności.
+automatyczne wykrywanie fraz, porównania okresów, wzrosty i spadki, szanse SEO, dashboardy, dane rynkowe fraz,
+wyszukiwanie nowych fraz, na które strona jeszcze nie ma widoczności, oraz pomiary pozycji w Google (Pozycja SERP) z konkurentami.
 
 Źródła danych: **Google Search Console API** (źródło prawdy o skuteczności strony) i **DataForSEO** — zatwierdzony płatny
-dostawca danych rynkowych (wolumen, historia wolumenu, CPC, konkurencja Ads, trudność SEO, intencja) i nowych fraz
-(DataForSEO Labs), ze wspólnymi lokalnymi limitami kosztów.
+dostawca danych rynkowych (wolumen, historia wolumenu, CPC, konkurencja Ads, trudność SEO, intencja), nowych fraz
+(DataForSEO Labs) i pomiarów pozycji (Google Organic SERP), ze wspólnymi lokalnymi limitami kosztów.
 
 > **Nazwy techniczne:** plugin `osf-seo`, stałe `OSF_SEO_*`, tabele `osf_*`, namespace `OsfSeo\` i komendy `wp osf-seo …`
 > celowo pozostają bez zmian — techniczny rebrand będzie osobnym etapem.
@@ -18,7 +18,9 @@ dostawca danych rynkowych (wolumen, historia wolumenu, CPC, konkurencja Ads, tru
 > słaba pozycja, spadki, możliwa kanibalizacja — z priorytetem, pewnością i pracą nad szansą) oraz dane rynkowe fraz
 > z DataForSEO (STEP 12: wolumen, trudność SEO, CPC, konkurencja Ads; limity kosztów) oraz moduł „Nowe frazy”
 > (STEP 13: seedy z GSC, szans lub wpisane ręcznie → DataForSEO Labs w tle z planem i kosztem przed uruchomieniem →
-> deduplikacja, widoczność w GSC, priorytet odkrycia, decyzje i wykluczenia). Plan i postęp:
+> deduplikacja, widoczność w GSC, priorytet odkrycia, decyzje i wykluczenia) oraz moduły „Pozycje” i „Konkurenci”
+> (STEP 14: monitorowane frazy, pomiary Google TOP100 w kolejce Standard z podglądem kosztu i harmonogramem — domyślnie
+> wyłączonym, pełne wyniki w historii, Pozycja SERP osobno od średniej pozycji GSC, konkurenci monitorowani i organiczni). Plan i postęp:
 > [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 >
 > **Repozytorium jest publiczne.** Nie commituj żadnych sekretów (sekcja „Konfiguracja”).
@@ -156,6 +158,17 @@ wp osf-seo discovery:run --project=<public_id> --seeds="fraza 1, fraza 2" --dept
 wp osf-seo discovery:status --project=<public_id> [--run=<id>]  # postęp, ostatnie przebiegi, koszty
 wp osf-seo discovery:list --project=<public_id> [--status=open] [--visibility=gap] [--format=json]
 wp osf-seo discovery:refresh --project=<public_id>              # przeliczenie widoczności GSC i priorytetu (bez API)
+
+# Pozycje SERP i konkurenci (DataForSEO Google Organic — płatne; zawsze najpierw plan; szczegóły: docs/ARCHITECTURE.md, sekcja 13)
+wp osf-seo serp:track --project=<public_id> --keywords="fraza 1, fraza 2"   # monitorowanie (bez API, bez kosztów)
+wp osf-seo competitors:add --project=<public_id> --domain=konkurent.pl      # konkurent (bez API)
+wp osf-seo serp:plan --project=<public_id>                       # plan i szacowany maksymalny koszt, zero żądań
+wp osf-seo serp:run --project=<public_id>                        # płatne: plan → potwierdzenie → zlecenie (kolejka Standard)
+wp osf-seo serp:collect                                          # odbiór wyników (bezpłatny; w tle robi to też sync:run)
+wp osf-seo serp:list --project=<public_id> [--band=top10] [--format=json]   # Pozycja SERP, zmiana, średnia pozycja GSC
+wp osf-seo serp:snapshot --project=<public_id> --keyword="fraza 1"          # pełne TOP100 ostatniego pomiaru
+wp osf-seo competitors:organic --project=<public_id>             # domeny najczęściej obecne w wynikach (fakty)
+wp osf-seo serp:settings --project=<public_id> --enable --frequency=weekly   # płatny harmonogram (potwierdzenie kosztu)
 ```
 
 Synchronizacja działa w tle przez WP-Cron (lokalnie wystarczy ruch na stronie); na serwerze zalecany cron
@@ -196,8 +209,12 @@ define('OSF_SEO_DATAFORSEO_MONTHLY_COST_LIMIT', 10.00);
 - Nowe frazy: wyszukiwanie uruchamia się wyłącznie jawnie (panel → projekt → Nowe frazy → „Sprawdź koszt” → „Uruchom wyszukiwanie”
   albo `wp osf-seo discovery:run`) i liczy się do tych samych limitów kosztów co dane rynkowe. Opcjonalnie: `OSF_SEO_DISCOVERY_TTL_DAYS`
   (cache seeda, 30 dni), `OSF_SEO_DISCOVERY_MAX_SEEDS` (20), `OSF_SEO_DISCOVERY_MAX_CANDIDATES` (1000), `OSF_SEO_DISCOVERY_MIN_VOLUME` (10).
+- Pozycje SERP: płatne pomiary są domyślnie wyłączone; pomiar ręczny („Sprawdź pozycje teraz” albo `wp osf-seo serp:run`) i harmonogram
+  zawsze pokazują najpierw szacowany maksymalny koszt (TOP100 ≈ 0,00465 USD za frazę; koszt zgłoszony przez DataForSEO jest rozstrzygający)
+  i liczą się do tych samych limitów. Opcjonalnie: `OSF_SEO_SERP_MAX_KEYWORDS` (zalecany limit fraz w projekcie, 500 — komunikat zamiast
+  obcinania), `OSF_SEO_SERP_MIN_RECHECK_HOURS` (6), `OSF_SEO_DATAFORSEO_PRICE_SERP_PAGE` / `…_NEXT_PAGE` (cennik do szacunku).
 
-Pełna lista stałych: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md), sekcja 14.
+Pełna lista stałych: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md), sekcja 15.
 
 ## Bezpieczeństwo
 

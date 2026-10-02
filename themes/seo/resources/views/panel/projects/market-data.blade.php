@@ -20,8 +20,10 @@
     'labs_bulk_keyword_difficulty' => 'Trudność SEO (Labs, Live)',
     'labs_related_keywords' => 'Nowe frazy: powiązane (Labs, Live)',
     'labs_keyword_suggestions' => 'Nowe frazy: zawierające seed (Labs, Live)',
+    'google_organic_serp' => 'Pozycje SERP (Google Organic, Standard)',
   ];
-  $triggerLabels = ['auto' => 'automatycznie', 'discovery' => 'wyszukiwanie fraz'];
+  $triggerLabels = ['auto' => 'automatycznie', 'discovery' => 'wyszukiwanie fraz', 'serp_manual' => 'pomiar ręczny', 'serp_schedule' => 'harmonogram pozycji'];
+  $purposes = ['enrichment' => 'Dane rynkowe (wzbogacanie fraz)', 'discovery' => 'Nowe frazy', 'serp' => 'Pozycje SERP'];
   $breakdown = $status['usage_breakdown'] ?? null;
   $taskStatuses = ['pending' => 'czeka na wynik', 'completed' => 'zakończone', 'failed' => 'błąd', 'expired' => 'przeterminowane'];
 @endphp
@@ -127,12 +129,36 @@
             <dd class="text-right font-medium tabular-nums text-slate-900">{{ Format::usd($budget['spent_month'], 4) }} / {{ Format::usd($budget['monthly_limit']) }}</dd>
           </div>
           @if ($breakdown !== null)
-            <div class="flex justify-between gap-4 py-3">
-              <dt class="text-slate-500">Projekt — w tym miesiącu</dt>
-              <dd class="text-right tabular-nums text-slate-900">
-                <span class="block">wzbogacanie fraz: {{ Format::usd($breakdown['month']['enrichment']['cost'], 4) }} ({{ Format::number($breakdown['month']['enrichment']['tasks']) }})</span>
-                <span class="block">wyszukiwanie nowych fraz: {{ Format::usd($breakdown['month']['discovery']['cost'], 4) }} ({{ Format::number($breakdown['month']['discovery']['tasks']) }})</span>
-                <span class="block text-xs text-slate-500">dziś: {{ Format::usd($breakdown['today']['enrichment']['cost'] + $breakdown['today']['discovery']['cost'], 4) }}; limity są wspólne</span>
+            <div class="py-3">
+              <dt class="text-slate-500">Projekt — podział kosztów</dt>
+              <dd class="mt-2">
+                <table class="min-w-full text-sm tabular-nums">
+                  <thead>
+                    <tr class="text-left text-xs text-slate-500">
+                      <th class="py-1 pr-3 font-medium">Moduł</th>
+                      <th class="py-1 pr-3 text-right font-medium">Dziś</th>
+                      <th class="py-1 pr-3 text-right font-medium">Ten miesiąc</th>
+                      <th class="py-1 text-right font-medium" title="Zadania wolumenu i żądania Labs; dla pozycji — zadania SERP (frazy)">Zadania</th>
+                    </tr>
+                  </thead>
+                  <tbody class="divide-y divide-slate-100">
+                    @foreach ($purposes as $key => $label)
+                      <tr>
+                        <td class="py-1 pr-3 text-slate-700">{{ $label }}</td>
+                        <td class="py-1 pr-3 text-right">{{ Format::usd($breakdown['today'][$key]['cost'], 4) }}</td>
+                        <td class="py-1 pr-3 text-right">{{ Format::usd($breakdown['month'][$key]['cost'], 4) }}</td>
+                        <td class="py-1 text-right">{{ Format::number($breakdown['month'][$key]['tasks']) }}</td>
+                      </tr>
+                    @endforeach
+                    <tr class="font-semibold text-slate-900">
+                      <td class="py-1 pr-3">RAZEM</td>
+                      <td class="py-1 pr-3 text-right">{{ Format::usd($breakdown['today']['total']['cost'], 4) }}</td>
+                      <td class="py-1 pr-3 text-right">{{ Format::usd($breakdown['month']['total']['cost'], 4) }}</td>
+                      <td class="py-1 text-right">{{ Format::number($breakdown['month']['total']['tasks']) }}</td>
+                    </tr>
+                  </tbody>
+                </table>
+                <p class="mt-1 text-xs text-slate-500">Limity dzienny i miesięczny są wspólne dla wszystkich modułów. Zaplanowane pomiary pozycji liczą się od razu (rezerwacja kosztu szacowanego).</p>
               </dd>
             </div>
           @endif
@@ -214,7 +240,7 @@
                 <td class="py-2 pr-4 text-slate-900">{{ $taskLabels[$task['endpoint']] ?? $task['endpoint'] }} <span class="text-xs text-slate-500">· {{ $triggerLabels[$task['trigger_type']] ?? 'ręcznie' }}</span></td>
                 <td class="py-2 pr-4 text-right">{{ Format::number((int) $task['keywords_count']) }}</td>
                 <td @class(['py-2 pr-4', 'text-amber-700' => in_array($task['status'], ['failed', 'expired'], true), 'text-slate-600' => ! in_array($task['status'], ['failed', 'expired'], true)])>
-                  {{ $taskStatuses[$task['status']] ?? $task['status'] }}
+                  {{ $task['endpoint'] === 'google_organic_serp' && $task['status'] === 'pending' ? 'zaplanowane (rezerwacja)' : ($task['endpoint'] === 'google_organic_serp' && $task['status'] === 'completed' ? 'zlecone' : ($taskStatuses[$task['status']] ?? $task['status'])) }}
                   @if ($task['error_code'] && ProviderErrorCategory::tryFrom($task['error_code']))
                     <span class="block text-xs">{{ ProviderErrorCategory::from($task['error_code'])->label() }}</span>
                   @endif
