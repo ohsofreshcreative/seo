@@ -36,6 +36,10 @@ final class DataForSeoConfig
 
 	public const PRICE_SERP_NEXT_PAGE = 'OSF_SEO_DATAFORSEO_PRICE_SERP_NEXT_PAGE';
 
+	public const PRICE_GAP_REQUEST = 'OSF_SEO_DATAFORSEO_PRICE_GAP_REQUEST';
+
+	public const PRICE_GAP_ITEM = 'OSF_SEO_DATAFORSEO_PRICE_GAP_ITEM';
+
 	/** Google Ads Search Volume, kolejka Standard: cena zadania (do 1000 fraz). */
 	public const DEFAULT_PRICE_VOLUME_TASK = 0.06;
 
@@ -56,6 +60,12 @@ final class DataForSeoConfig
 
 	/** Każda kolejna strona w tym samym zadaniu: 0,75 × cena pierwszej (model od 19.09.2025). */
 	public const DEFAULT_PRICE_SERP_NEXT_PAGE = 0.00045;
+
+	/** DataForSEO Labs Ranked Keywords (Live): cena żądania. */
+	public const DEFAULT_PRICE_GAP_REQUEST = 0.012;
+
+	/** DataForSEO Labs Ranked Keywords: cena za każdy zwrócony element. */
+	public const DEFAULT_PRICE_GAP_ITEM = 0.00012;
 
 	public function __construct(private readonly Config $config = new Config())
 	{
@@ -129,6 +139,16 @@ final class DataForSeoConfig
 	public function priceSerpNextPage(): float
 	{
 		return $this->price(self::PRICE_SERP_NEXT_PAGE, self::DEFAULT_PRICE_SERP_NEXT_PAGE);
+	}
+
+	public function priceGapRequest(): float
+	{
+		return $this->price(self::PRICE_GAP_REQUEST, self::DEFAULT_PRICE_GAP_REQUEST);
+	}
+
+	public function priceGapItem(): float
+	{
+		return $this->price(self::PRICE_GAP_ITEM, self::DEFAULT_PRICE_GAP_ITEM);
 	}
 
 	/**
