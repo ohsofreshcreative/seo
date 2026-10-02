@@ -2170,7 +2170,7 @@ W tabelach: 450 000 wierszy zbiorów (54 MB z indeksami), 537 000 luk fraz 20 pr
 | Przeliczenie bez zmian danych (klucz danych) | 3,2 ms, 7 zapytań |
 | Kolejne projekty na tych samych zbiorach | 11,4 s na projekt |
 | Import 10 000 fraz domeny (10 stron po 1 000, atrapa HTTP) + przeliczenie | 17,1 s (import ~5 s), 2 355 zapytań, 95 MB |
-| Ponowny import ze zmianami (zdarzenia: lost 500, url 740, up 407, down 951) | 16,4 s |
+| Ponowny import ze zmianami (zdarzenia: lost 439, url 740, up 407, down 951; 61 z 500 usuniętych fraz tuż nad granicą wolumenu → niepotwierdzone) | 16,4 s |
 | Luki fraz — lista domyślna / ostatnia strona (25 630 luk) | **24 / 25 ms** (indeks `project_list` pokrywa filtry; najpierw ID strony, potem szczegóły 50 wierszy) |
 | Luki fraz — sortowanie po wolumenie / filtr konkurenta (EXISTS) | 47 / 46 ms |
 | Luki fraz — wyszukiwanie z min. wolumenem i KD / z polskimi znakami | 102 / 167 ms (`LIKE '%…%'` po frazach projektu) |
@@ -2181,6 +2181,9 @@ W tabelach: 450 000 wierszy zbiorów (54 MB z indeksami), 537 000 luk fraz 20 pr
 EXPLAIN (pełny wydruk w wyniku benchmarku): lista i licznik — `range` na `project_list` z „Using index” (bez odczytu wierszy do sortowania);
 szczegóły strony — `eq_ref` po PK; filtr konkurenta — półzłączenie z PK `gap_domain_keywords` (`domain_id`, `market_keyword_id`); zapytania
 przeliczenia — paczki po 1 000 fraz po PK zbiorów i `market_keywords`, GSC po indeksie `project_market_key`.
+
+Powtórzenie po review importu (claimImport, wykrywanie niespójnych stron, zapas wolumenu): import +5 zapytań (2 360), czasy w granicach
+zmienności środowiska (import 20,6 s, pełne przeliczenie 14,4 s przy niezmienionym kodzie przeliczenia), EXPLAIN bez zmian.
 
 ### 14.20 Bezpieczny smoke test na stagingu (1 konkurent)
 
