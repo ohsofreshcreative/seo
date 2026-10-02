@@ -58,6 +58,13 @@ final class GapSettingsRepository
 		);
 	}
 
+	/** Wymuszenie przeliczenia w najbliższym kroku tła (klucz danych przestaje pasować). */
+	public function invalidate(int $projectId): void
+	{
+		$this->ensure($projectId);
+		$this->db->execute("UPDATE `{$this->table()}` SET data_key = NULL WHERE project_id = %d", [$projectId]);
+	}
+
 	public function recordSkip(int $projectId, string $reason, ?string $nextRefreshAt): void
 	{
 		$this->ensure($projectId);

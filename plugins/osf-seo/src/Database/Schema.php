@@ -952,7 +952,7 @@ final class Schema
 				'primary' => ['id'],
 				'unique' => ['public_id' => ['public_id'], 'project_market_keyword' => ['project_id', 'market_keyword_id']],
 				'indexes' => [
-					'project_list' => ['project_id', 'listed', 'gap_type', 'priority'],
+					'project_list' => ['project_id', 'listed', 'active', 'gap_type', 'status', 'priority'],
 					'project_volume' => ['project_id', 'listed', 'search_volume'],
 					'project_cluster' => ['project_id', 'cluster_id'],
 				],

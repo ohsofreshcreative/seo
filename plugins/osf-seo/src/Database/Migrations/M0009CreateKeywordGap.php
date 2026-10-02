@@ -268,7 +268,7 @@ final class M0009CreateKeywordGap implements Migration
 			PRIMARY KEY (`id`),
 			UNIQUE KEY `public_id` (`public_id`),
 			UNIQUE KEY `project_market_keyword` (`project_id`, `market_keyword_id`),
-			KEY `project_list` (`project_id`, `listed`, `gap_type`, `priority`),
+			KEY `project_list` (`project_id`, `listed`, `active`, `gap_type`, `status`, `priority`),
 			KEY `project_volume` (`project_id`, `listed`, `search_volume`),
 			KEY `project_cluster` (`project_id`, `cluster_id`)
 		) {$options}");

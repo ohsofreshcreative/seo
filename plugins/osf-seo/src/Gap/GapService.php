@@ -161,8 +161,8 @@ final class GapService
 			}
 
 			if ($plan->requests() === 0 && ! in_array(PlannedTarget::WAITING, array_map(static fn (PlannedTarget $target): string => $target->state, $plan->targets), true)) {
-				// Wszystko z pamięci — bez przebiegu; luki przeliczamy od razu (bezpłatnie).
-				$this->safeRefresh($context->projectId(), true);
+				// Wszystko z pamięci — bez przebiegu; luki przeliczamy bezpłatnie (z panelu w tle, z CLI od razu).
+				$trigger === self::TRIGGER_MANUAL ? $this->requestRecalculation($context->projectId()) : $this->safeRefresh($context->projectId(), true);
 
 				return new GapStartResult(GapStartResult::NOTHING_TO_DO, $plan);
 			}
@@ -315,6 +315,18 @@ final class GapService
 		$context->assertCan(Capabilities::MANAGE_KEYWORD_GAP);
 
 		return $this->refresher->refresh($context->projectId(), $force);
+	}
+
+	/**
+	 * Przeliczenie w tle (panel): pełne przeliczenie dużego projektu trwa kilka–kilkanaście sekund, więc nie wykonujemy
+	 * go w żądaniu WWW — najbliższy krok tła przeliczy projekt bez czekania na interwał.
+	 *
+	 * @throws \OsfSeo\Auth\AccessDenied
+	 */
+	public function scheduleRecalculation(ProjectContext $context): void
+	{
+		$context->assertCan(Capabilities::MANAGE_KEYWORD_GAP);
+		$this->requestRecalculation($context->projectId());
 	}
 
 	/**
@@ -741,8 +753,8 @@ final class GapService
 	}
 
 	/**
-	 * Harmonogram (krok tła): projekty z włączonym odświeżaniem, których termin minął. Cały maksymalny koszt musi zmieścić
-	 * się w dzisiejszym i miesięcznym limicie — inaczej odświeżenie jest pomijane z powodem i ponawiane następnego dnia.
+	 * Harmonogram (krok tła): projekty z włączonym odświeżaniem, których termin minął. Oczekiwany koszt musi zmieścić się
+	 * w dzisiejszym i miesięcznym limicie — inaczej odświeżenie jest pomijane z powodem i ponawiane następnego dnia.
 	 *
 	 * @return array<int, string>
 	 */
@@ -772,8 +784,10 @@ final class GapService
 					continue;
 				}
 
-				if ($plan->estimatedCost() > $plan->remainingToday() + 1e-6 || $plan->estimatedCost() > $plan->remainingMonth() + 1e-6) {
-					$this->settings->recordSkip($projectId, $plan->estimatedCost() > $plan->remainingMonth() + 1e-6 ? 'monthly_limit' : 'daily_limit', $tomorrow);
+				// Oczekiwany koszt (liczba fraz z poprzedniego importu, dla nowych domen — maksimum) musi zmieścić się w dzisiejszym
+				// i miesięcznym limicie; limit i tak jest sprawdzany przed każdą stroną importu.
+				if ($plan->expectedCost() > $plan->remainingToday() + 1e-6 || $plan->expectedCost() > $plan->remainingMonth() + 1e-6) {
+					$this->settings->recordSkip($projectId, $plan->expectedCost() > $plan->remainingMonth() + 1e-6 ? 'monthly_limit' : 'daily_limit', $tomorrow);
 					$result[$projectId] = 'over_budget';
 
 					continue;
@@ -814,6 +828,12 @@ final class GapService
 	/**
 	 * @return array{skipped: bool, keywords: int, listed: int, clusters: int, pages: int}|null
 	 */
+	private function requestRecalculation(int $projectId): void
+	{
+		$this->settings->invalidate($projectId);
+		delete_transient(self::REFRESH_TRANSIENT);
+	}
+
 	private function safeRefresh(int $projectId, bool $force): ?array
 	{
 		try {

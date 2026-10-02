@@ -97,7 +97,7 @@
         · ostatnio pominięte: {{ $skipReasons[$settings->lastSkipReason] ?? $settings->lastSkipReason }} ({{ Format::datetime($settings->lastSkipAt) }})
       @endif
     </p>
-    <p class="mt-1 text-xs text-slate-500">Co {{ $settings->refreshDays }} dni import nieświeżych zbiorów domen w domyślnym zakresie — w tle, tylko gdy cały maksymalny koszt mieści się w dzisiejszym i miesięcznym limicie. Szacowany maksymalny koszt: <strong class="font-medium text-slate-700">{{ Format::usd($monthly, 2) }} miesięcznie</strong> (zbiory wspólne z innymi projektami bywają darmowe).</p>
+    <p class="mt-1 text-xs text-slate-500">Co {{ $settings->refreshDays }} dni import nieświeżych zbiorów domen w domyślnym zakresie — w tle, tylko gdy oczekiwany koszt (liczba fraz z poprzedniego importu) mieści się w dzisiejszym i miesięcznym limicie. Szacowany maksymalny koszt: <strong class="font-medium text-slate-700">{{ Format::usd($monthly, 2) }} miesięcznie</strong> (zbiory wspólne z innymi projektami bywają darmowe).</p>
     @if ($settings->scheduleEnabled)
       <form method="post" action="{{ $base }}/schedule" class="mt-4">
         <x-panel.nonce />

@@ -277,6 +277,13 @@ final class GapAnalysisTest extends GapTestCase
 		self::assertTrue($this->refresher->refresh($context->projectId())['skipped']);
 		$this->clock->advance(86400);
 		self::assertFalse($this->refresher->refresh($context->projectId())['skipped'], 'Raz dziennie (metryki rynkowe).');
+
+		// „Przelicz” w panelu: bez przeliczenia w żądaniu WWW — najbliższy krok tła przelicza projekt.
+		$this->gaps->scheduleRecalculation($context);
+		self::assertNull($this->gapSettings->get($context->projectId())->dataKey);
+		add_filter('wp_doing_cron', '__return_true');
+		self::assertArrayHasKey($context->projectId(), $this->gaps->runBackground(60.0)['refreshed']);
+		self::assertTrue($this->refresher->refresh($context->projectId())['skipped']);
 	}
 
 	public function test_dataset_history_events_new_lost_back_url_and_rank_changes(): void

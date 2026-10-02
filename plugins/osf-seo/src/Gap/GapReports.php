@@ -24,6 +24,9 @@ final class GapReports
 		'first_seen' => 'g.first_seen_at',
 	];
 
+	/** Kolumny sortowania, które mogą być NULL (brak danych zawsze na końcu). */
+	private const NULLABLE_SORTS = ['volume', 'difficulty', 'competitor_rank'];
+
 	public function __construct(
 		private readonly Connection $db,
 		private readonly Clock $clock,
@@ -41,19 +44,20 @@ final class GapReports
 		$column = self::SORT_COLUMNS[$filters->sort] ?? 'g.priority';
 		$direction = $filters->direction === 'asc' ? 'ASC' : 'DESC';
 		// NULL-e zawsze na końcu, potem stabilny porządek (priorytet, id).
-		$order = "{$column} IS NULL, {$column} {$direction}, g.priority DESC, g.id ASC";
+		$order = (in_array($filters->sort, self::NULLABLE_SORTS, true) ? "{$column} IS NULL, " : '') . "{$column} {$direction}, g.priority DESC, g.id ASC";
+		$keywordJoin = $filters->q !== '' || $filters->sort === 'keyword' ? "JOIN `{$this->db->table('market_keywords')}` m ON m.id = g.market_keyword_id " : '';
+		// Najpierw identyfikatory strony (indeks project_list pokrywa filtry domyślnej listy), potem szczegóły tylko 50 wierszy.
 		$rows = $this->db->fetchAll(
 			"SELECT STRAIGHT_JOIN g.*, m.keyword, c.name AS competitor_name, c.public_id AS competitor_public_id, u.url AS best_url,
 				t.url AS target_url, cl.public_id AS cluster_public_id, cl.label AS cluster_label
-			FROM `{$this->table()}` g
+			FROM (SELECT g.id FROM `{$this->table()}` g {$keywordJoin}WHERE {$where} ORDER BY {$order} LIMIT %d OFFSET %d) page
+			JOIN `{$this->table()}` g ON g.id = page.id
 			JOIN `{$this->db->table('market_keywords')}` m ON m.id = g.market_keyword_id
 			LEFT JOIN `{$this->db->table('serp_competitors')}` c ON c.id = g.best_competitor_id
 			LEFT JOIN `{$this->db->table('serp_urls')}` u ON u.id = g.best_url_id
 			LEFT JOIN `{$this->db->table('serp_urls')}` t ON t.id = g.target_url_id
 			LEFT JOIN `{$this->db->table('gap_clusters')}` cl ON cl.id = g.cluster_id
-			WHERE {$where}
-			ORDER BY {$order}
-			LIMIT %d OFFSET %d",
+			ORDER BY {$order}",
 			[...$params, $filters->perPage, ($filters->page - 1) * $filters->perPage],
 		);
 		$total = (int) $this->db->fetchValue(

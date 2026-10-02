@@ -176,22 +176,18 @@ final class GapsController
 		return redirect()->to(self::runUrl($context->publicId(), $run));
 	}
 
-	/** Bezpłatne przeliczenie luk z zapisanych danych (GSC, pomiary SERP, zbiory domen, ustawienia). */
+	/** Bezpłatne przeliczenie luk z zapisanych danych (GSC, pomiary SERP, zbiory domen, ustawienia) — w tle. */
 	public function recalculate(Request $request): Response
 	{
 		$context = $this->context($request);
 
 		try {
-			$report = $this->service()->recalculate($context);
+			$this->service()->scheduleRecalculation($context);
 		} catch (AccessDenied) {
 			return PanelResponse::forbidden();
 		}
 
-		Flash::success(sprintf(
-			'Przeliczono bez kosztów: %s, %s.',
-			Format::number($report['listed']) . ' ' . Text::plural($report['listed'], 'fraza na liście', 'frazy na liście', 'fraz na liście'),
-			Format::number($report['clusters']) . ' ' . Text::plural($report['clusters'], 'grupa', 'grupy', 'grup'),
-		));
+		Flash::success('Przeliczenie zaplanowane — luki odświeżą się w tle w najbliższym kroku przetwarzania (bez kosztów).');
 
 		return redirect()->to(PanelUrl::project($context->publicId(), 'gaps'));
 	}

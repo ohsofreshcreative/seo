@@ -187,6 +187,36 @@ final class GapImportTest extends GapTestCase
 		self::assertTrue($this->gapDomains->find($this->gaps->market($context), 'konkurent.pl')->complete);
 	}
 
+	public function test_schedule_is_off_by_default_and_refreshes_stale_datasets_within_budget(): void
+	{
+		$context = $this->gapProject();
+		$this->setRanked('konkurent.pl', self::rows('konkurent.pl', 5));
+		$this->setRanked('example.pl', [self::ranked('example.pl', 'fraza example', 100, 3)]);
+		add_filter('wp_doing_cron', '__return_true');
+
+		$this->gaps->runBackground(60.0);
+		self::assertSame([], $this->rankedBodies(), 'Harmonogram domyślnie wyłączony — wdrożenie niczego nie pobiera.');
+
+		$this->gapRun($context);
+		$requests = count($this->rankedBodies());
+		$this->gaps->setSchedule($context, true, true);
+		self::assertSame('fresh', $this->gaps->runBackground(60.0)['scheduled'][$context->projectId()], 'Świeże zbiory — bez żądań.');
+		self::assertCount($requests, $this->rankedBodies());
+
+		$this->clock->advance(31 * 86400);
+		self::assertSame(GapStartResult::QUEUED, $this->gaps->runBackground(60.0)['scheduled'][$context->projectId()]);
+		$this->gaps->runBackground(60.0);
+		$run = $this->gapRuns->recent($context->projectId(), 1)[0];
+		self::assertSame([GapRun::COMPLETED, GapService::TRIGGER_SCHEDULE], [$run->status, $run->trigger]);
+		self::assertCount($requests + 2, $this->rankedBodies(), 'Odświeżenie obu zbiorów (oczekiwany koszt z poprzedniego importu).');
+
+		$this->clock->advance(31 * 86400);
+		putenv(MarketDataConfig::DAILY_COST_LIMIT . '=0.001');
+		self::assertSame('over_budget', $this->gaps->runBackground(60.0)['scheduled'][$context->projectId()]);
+		self::assertSame('daily_limit', $this->gapSettings->get($context->projectId())->lastSkipReason);
+		self::assertCount($requests + 2, $this->rankedBodies(), 'Oczekiwany koszt ponad limit — odświeżenie pominięte z powodem.');
+	}
+
 	public function test_monthly_budget_blocks_start_and_nothing_is_queued(): void
 	{
 		putenv(MarketDataConfig::MONTHLY_COST_LIMIT . '=1');
