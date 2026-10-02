@@ -16,6 +16,7 @@ use OsfSeo\Auth\WpRoleStore;
 use OsfSeo\Cli\DbCommand;
 use OsfSeo\Cli\CompetitorCommand;
 use OsfSeo\Cli\DiscoveryCommand;
+use OsfSeo\Cli\GapCommand;
 use OsfSeo\Cli\SerpCommand;
 use OsfSeo\Cli\GoogleCommand;
 use OsfSeo\Cli\GscCommand;
@@ -30,6 +31,7 @@ use OsfSeo\Database\SchemaInspector;
 use OsfSeo\DataForSeo\DataForSeoClient;
 use OsfSeo\DataForSeo\DataForSeoConfig;
 use OsfSeo\DataForSeo\DataForSeoDiscoveryProvider;
+use OsfSeo\DataForSeo\DataForSeoRankedKeywordsProvider;
 use OsfSeo\DataForSeo\DataForSeoSerpProvider;
 use OsfSeo\DataForSeo\DataForSeoProvider;
 use OsfSeo\Discovery\DiscoveryCandidateRepository;
@@ -42,6 +44,16 @@ use OsfSeo\Discovery\DiscoveryService;
 use OsfSeo\Discovery\DiscoverySettingsRepository;
 use OsfSeo\Discovery\KeywordDiscoveryProvider;
 use OsfSeo\Discovery\SeedSuggester;
+use OsfSeo\Gap\CompetitorKeywordsProvider;
+use OsfSeo\Gap\GapConfig;
+use OsfSeo\Gap\GapDomainRepository;
+use OsfSeo\Gap\GapImporter;
+use OsfSeo\Gap\GapPlanner;
+use OsfSeo\Gap\GapRefresher;
+use OsfSeo\Gap\GapReports;
+use OsfSeo\Gap\GapRunRepository;
+use OsfSeo\Gap\GapService;
+use OsfSeo\Gap\GapSettingsRepository;
 use OsfSeo\Serp\CompetitorRepository;
 use OsfSeo\Serp\CompetitorService;
 use OsfSeo\Serp\SerpCollector;
@@ -110,7 +122,7 @@ use OsfSeo\Support\SystemSleeper;
 final class Plugin
 {
 	/** Musi być zgodna z nagłówkiem `Version` w osf-seo.php (pilnuje tego test). */
-	public const VERSION = '0.14.0';
+	public const VERSION = '0.15.0';
 
 	public const MIN_PHP = '8.2';
 
@@ -407,6 +419,60 @@ final class Plugin
 			new ReportCache(),
 		));
 
+		// Luki SEO (STEP 15): DataForSEO Labs Ranked Keywords za interfejsem CompetitorKeywordsProvider; płatne żądania
+		// wyłącznie z GapImporter (pod wspólną blokadą i limitami kosztów DataForSEO).
+		$container->singleton(GapConfig::class, static fn (Container $c): GapConfig => new GapConfig($c->get(Config::class)));
+		$container->singleton(CompetitorKeywordsProvider::class, static fn (Container $c): CompetitorKeywordsProvider => new DataForSeoRankedKeywordsProvider(
+			$c->get(DataForSeoClient::class),
+			$c->get(DataForSeoConfig::class),
+		));
+		$container->singleton(GapDomainRepository::class, static fn (Container $c): GapDomainRepository => new GapDomainRepository($c->get(Connection::class), $c->get(Clock::class)));
+		$container->singleton(GapRunRepository::class, static fn (Container $c): GapRunRepository => new GapRunRepository($c->get(Connection::class), $c->get(Clock::class)));
+		$container->singleton(GapSettingsRepository::class, static fn (Container $c): GapSettingsRepository => new GapSettingsRepository($c->get(Connection::class), $c->get(Clock::class)));
+		$container->singleton(GapReports::class, static fn (Container $c): GapReports => new GapReports($c->get(Connection::class), $c->get(Clock::class)));
+		$container->singleton(GapRefresher::class, static fn (Container $c): GapRefresher => new GapRefresher(
+			$c->get(Connection::class),
+			$c->get(CompetitorKeywordsProvider::class),
+			$c->get(GapDomainRepository::class),
+			$c->get(GapSettingsRepository::class),
+			$c->get(CompetitorRepository::class),
+			$c->get(DiscoverySettingsRepository::class),
+			new SerpDictionary($c->get(Connection::class), $c->get(Clock::class)),
+			$c->get(MarketKeyBackfill::class),
+			$c->get(GapConfig::class),
+			$c->get(Clock::class),
+		));
+		$container->singleton(GapService::class, static fn (Container $c): GapService => new GapService(
+			$c->get(CompetitorKeywordsProvider::class),
+			new GapPlanner($c->get(CompetitorKeywordsProvider::class), $c->get(GapDomainRepository::class), $c->get(CompetitorRepository::class), $c->get(MarketSyncService::class), $c->get(Clock::class)),
+			new GapImporter(
+				$c->get(CompetitorKeywordsProvider::class),
+				$c->get(GapRunRepository::class),
+				$c->get(GapDomainRepository::class),
+				$c->get(MarketMetricsRepository::class),
+				$c->get(MarketTaskRepository::class),
+				new SerpDictionary($c->get(Connection::class), $c->get(Clock::class)),
+				$c->get(MarketSyncService::class),
+				$c->get(MarketDataConfig::class),
+				$c->get(GapConfig::class),
+				$c->get(Clock::class),
+				$c->get(Logger::class),
+			),
+			$c->get(GapRefresher::class),
+			$c->get(GapRunRepository::class),
+			$c->get(GapDomainRepository::class),
+			$c->get(GapSettingsRepository::class),
+			$c->get(GapReports::class),
+			$c->get(CompetitorRepository::class),
+			$c->get(GapConfig::class),
+			$c->get(MarketSyncService::class),
+			$c->get(MarketDataConfig::class),
+			$c->get(ProjectGuard::class),
+			$c->get(Connection::class),
+			$c->get(Clock::class),
+			$c->get(Logger::class),
+		));
+
 		$container->singleton(KeywordReport::class, static fn (Container $c): KeywordReport => new KeywordReport(
 			$c->get(Connection::class),
 			$c->get(Config::class),
@@ -465,6 +531,8 @@ final class Plugin
 			$scheduler->onAfterRun(static fn (): array => $c->get(MarketSyncService::class)->runBackground((float) $c->get(SyncConfig::class)->timeBudget()));
 			// Wyszukiwanie nowych fraz: żądania aktywnych przebiegów i przeliczenie kandydatów — osobny krok, błąd nie dotyka GSC.
 			$scheduler->onAfterRun(static fn (): array => $c->get(DiscoveryService::class)->runBackground((float) $c->get(SyncConfig::class)->timeBudget()));
+			// Luki SEO: strony aktywnych importów, harmonogram (domyślnie wyłączony) i przeliczenie luk — osobny krok, błąd nie dotyka GSC.
+			$scheduler->onAfterRun(static fn (): array => $c->get(GapService::class)->runBackground((float) $c->get(SyncConfig::class)->timeBudget()));
 			// Pozycje SERP: odbiór wyników (bezpłatny), pomiary z harmonogramu i wysyłka paczek — osobny krok, błąd nie dotyka GSC.
 			$scheduler->onAfterRun(static fn (): array => $c->get(SerpTrackingService::class)->runBackground((float) $c->get(SyncConfig::class)->timeBudget()));
 
@@ -538,6 +606,7 @@ final class Plugin
 			DiscoveryCommand::register($this);
 			SerpCommand::register($this);
 			CompetitorCommand::register($this);
+			GapCommand::register($this);
 			SyncCommand::register($this);
 		}
 	}

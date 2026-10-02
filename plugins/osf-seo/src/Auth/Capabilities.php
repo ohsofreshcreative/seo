@@ -39,6 +39,9 @@ final class Capabilities
 	/** Pozycje SERP i konkurenci: konkurenci, monitorowane frazy, ustawienia śledzenia, płatne pomiary, koszty. */
 	public const MANAGE_SERP_TRACKING = 'osf_seo_manage_serp_tracking';
 
+	/** Luki SEO: płatny import fraz konkurencji (także wymuszony), koszty, ustawienia, warianty marki, status i notatki luk. */
+	public const MANAGE_KEYWORD_GAP = 'osf_seo_manage_keyword_gap';
+
 	/**
 	 * @return list<string>
 	 */
@@ -55,6 +58,7 @@ final class Capabilities
 			self::MANAGE_MARKET_DATA,
 			self::MANAGE_KEYWORD_DISCOVERY,
 			self::MANAGE_SERP_TRACKING,
+			self::MANAGE_KEYWORD_GAP,
 		];
 	}
 }
