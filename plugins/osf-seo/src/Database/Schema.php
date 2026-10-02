@@ -863,6 +863,7 @@ final class Schema
 					'rows_lost' => 'int unsigned',
 					'rows_changed' => 'int unsigned',
 					'last_volume' => 'int unsigned',
+					'unreliable' => 'varchar(32)',
 					'inflight_task_id' => 'bigint unsigned',
 					'estimated_cost' => 'decimal(12,6)',
 					'cost' => 'decimal(12,6)',

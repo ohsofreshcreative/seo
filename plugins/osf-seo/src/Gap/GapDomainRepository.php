@@ -14,8 +14,10 @@ use OsfSeo\Support\Clock;
  * (`gap_domain_events`).
  *
  * Import strona po stronie wyłącznie dopisuje i aktualizuje wiersze — nic nie jest usuwane. Fraza znika z zakresu
- * (`present = 0`, zdarzenie `lost`) dopiero po imporcie, który wiarygodnie objął jej wolumen; import przerwany albo
- * z wykrytym dublowaniem fraz między stronami niczego nie oznacza jako utraconego. Pierwszy import zbioru nie zapisuje
+ * (`present = 0`, zdarzenie `lost`) dopiero po zakończonym imporcie, który wiarygodnie objął jej wolumen (z zapasem);
+ * blisko granicy wolumenu staje się niepotwierdzona (`present = 2`, bez zdarzenia). Import przerwany, wstrzymany albo
+ * niespójny (dublowanie fraz między stronami, zmiana liczby fraz u dostawcy, krótka strona…) niczego nie oznacza jako
+ * utraconego, a zbiór zachowuje dane i wiarygodność poprzedniego udanego importu. Pierwszy import zbioru nie zapisuje
  * zdarzeń (to stan wyjściowy, nie zmiana).
  */
 final class GapDomainRepository
@@ -123,12 +125,22 @@ final class GapDomainRepository
 		return $result;
 	}
 
-	public function startImport(int $domainId, int $runId): void
+	/**
+	 * Przejęcie importu zbioru przez przebieg — atomowo: nie uda się, gdy zbiór importuje właśnie inny przebieg (dwa
+	 * projekty z tą samą domeną nie zapłacą dwa razy ani nie przeplotą zapisów). Zwraca, czy przebieg importuje zbiór.
+	 */
+	public function claimImport(int $domainId, int $runId): bool
 	{
 		$this->db->execute(
-			"UPDATE `{$this->table()}` SET status = 'importing', import_run_id = %d, updated_at = %s WHERE id = %d",
-			[$runId, $this->now(), $domainId],
+			"UPDATE `{$this->table()}` SET status = 'importing', import_run_id = %d, updated_at = %s
+			WHERE id = %d AND (status <> 'importing' OR import_run_id IS NULL OR import_run_id = %d)",
+			[$runId, $this->now(), $domainId, $runId],
 		);
+
+		return (int) $this->db->fetchValue(
+			"SELECT COUNT(*) FROM `{$this->table()}` WHERE id = %d AND status = 'importing' AND import_run_id = %d",
+			[$domainId, $runId],
+		) === 1;
 	}
 
 	/**
@@ -190,7 +202,7 @@ final class GapDomainRepository
 			if ($old !== null && (int) $old['seen_run_id'] !== $runId) {
 				$oldRank = (int) $old['rank_group'];
 
-				if ((int) $old['present'] === 1 && $oldRank !== $rank) {
+				if ((int) $old['present'] === GapDomain::ROW_PRESENT && $oldRank !== $rank) {
 					$prevRank = $oldRank;
 					$changedOn = $today;
 				}
@@ -267,17 +279,18 @@ final class GapDomainRepository
 
 	/**
 	 * Zakończenie importu (wszystkie strony zakresu albo limit fraz): kompletność, granica wiarygodnej nieobecności,
-	 * frazy utracone z zakresu, statystyki i świeżość zbioru.
+	 * frazy utracone z zakresu, statystyki i świeżość zbioru. Import niespójny (`$unreliable`) zapisuje pobrane frazy, ale
+	 * nie oznacza żadnej jako utraconej ani niepotwierdzonej i nie daje wiarygodnej nieobecności.
 	 *
-	 * @return array{rows_unique: int, rows_lost: int, complete: bool, covered_min_volume: ?int, stats: array<string, int|float>}
+	 * @return array{rows_unique: int, rows_lost: int, rows_unconfirmed: int, complete: bool, covered_min_volume: ?int, stats: array<string, int|float>}
 	 */
-	public function finishImport(GapDomain $domain, int $runId, Coverage $coverage, int $totalCount, int $duplicates, ?int $lastVolume, int $ttlDays): array
+	public function finishImport(GapDomain $domain, int $runId, Coverage $coverage, int $totalCount, ?string $unreliable, ?int $lastVolume, int $ttlDays): array
 	{
 		$truncated = $totalCount > $coverage->maxRows;
-		$reliable = $duplicates === 0;
+		$reliable = $unreliable === null;
 		$complete = ! $truncated && $reliable;
 		$coveredMin = $complete ? $coverage->minVolume : ($reliable && $lastVolume !== null ? max($coverage->minVolume, $lastVolume + 1) : null);
-		$lost = $coveredMin === null ? 0 : $this->markLost($domain, $runId, $coverage->maxRank, $coveredMin);
+		[$lost, $unconfirmed] = $coveredMin === null ? [0, 0] : $this->markLost($domain, $runId, $coverage->maxRank, $coveredMin);
 		$now = $this->clock->now();
 		$stats = $this->stats($domain->id, $runId);
 
@@ -297,17 +310,18 @@ final class GapDomainRepository
 			'updated_at' => $now->format('Y-m-d H:i:s'),
 		], ['id' => $domain->id]);
 
-		return ['rows_unique' => (int) $stats['rows'], 'rows_lost' => $lost, 'complete' => $complete, 'covered_min_volume' => $coveredMin, 'stats' => $stats];
+		return ['rows_unique' => (int) $stats['rows'], 'rows_lost' => $lost, 'rows_unconfirmed' => $unconfirmed, 'complete' => $complete, 'covered_min_volume' => $coveredMin, 'stats' => $stats];
 	}
 
 	/**
-	 * Import przerwany (limit kosztów, anulowanie, błąd): dotychczasowe dane zostają. Zbiór z wcześniejszym udanym
-	 * importem zachowuje jego zakres i kompletność; pierwszy import zapisuje to, co pobrał (frazy o największym wolumenie),
-	 * i od razu jest nieaktualny (kolejny plan pobierze go ponownie).
+	 * Import przerwany (limit kosztów, anulowanie, błąd): dotychczasowe dane zostają, nic nie jest oznaczane jako utracone.
+	 * Zbiór z wcześniejszym udanym importem zachowuje jego zakres, kompletność, granicę wiarygodnej nieobecności i świeżość;
+	 * pierwszy import zapisuje to, co pobrał (frazy o największym wolumenie), i od razu jest nieaktualny (kolejny plan
+	 * pobierze go ponownie).
 	 *
 	 * @return array{rows_unique: int, stats: array<string, int|float>}
 	 */
-	public function abortImport(GapDomain $domain, int $runId, Coverage $coverage, ?int $totalCount, int $duplicates, ?int $lastVolume): array
+	public function abortImport(GapDomain $domain, int $runId, Coverage $coverage, ?int $totalCount, ?string $unreliable, ?int $lastVolume): array
 	{
 		$now = $this->now();
 		$stats = $this->stats($domain->id, $runId);
@@ -321,7 +335,7 @@ final class GapDomainRepository
 				'coverage_min_volume' => $coverage->minVolume,
 				'coverage_max_rows' => $coverage->maxRows,
 				'complete' => 0,
-				'covered_min_volume' => $duplicates === 0 && $lastVolume !== null && (int) $stats['rows'] > 0 ? max($coverage->minVolume, $lastVolume + 1) : null,
+				'covered_min_volume' => $unreliable === null && $lastVolume !== null && (int) $stats['rows'] > 0 ? max($coverage->minVolume, $lastVolume + 1) : null,
 				'total_count' => $totalCount,
 				'rows_present' => $this->present($domain->id),
 				'labs_updated_at' => $this->labsUpdated($domain, $runId),
@@ -400,8 +414,13 @@ final class GapDomainRepository
 	 */
 	private function event(array $old, int $rank, ?int $url): ?string
 	{
-		if ((int) $old['present'] === 0) {
+		if ((int) $old['present'] === GapDomain::ROW_LOST) {
 			return 'back';
+		}
+
+		if ((int) $old['present'] === GapDomain::ROW_UNCONFIRMED) {
+			// Bez zapisanej utraty nie ma „powrotu”, a pozycja sprzed niepotwierdzonego importu nie jest punktem odniesienia.
+			return null;
 		}
 
 		$oldRank = (int) $old['rank_group'];
@@ -428,29 +447,46 @@ final class GapDomainRepository
 		return 101;
 	}
 
-	private function markLost(GapDomain $domain, int $runId, int $maxRank, int $coveredMin): int
+	/**
+	 * Frazy zbioru niewidziane w zakończonym, wiarygodnym imporcie (w jego zakresie pozycji i wolumenu): z wolumenem
+	 * z zapasem nad granicą → utracone (`lost`); tuż nad granicą → niepotwierdzone, bez zdarzenia (mogły wypaść z filtra
+	 * wolumenu, a nie z pozycji).
+	 *
+	 * @return array{0: int, 1: int} utracone, niepotwierdzone
+	 */
+	private function markLost(GapDomain $domain, int $runId, int $maxRank, int $coveredMin): array
 	{
-		$where = "dk.domain_id = %d AND dk.present = 1 AND dk.seen_run_id <> %d AND dk.rank_group <= %d AND m.search_volume >= %d";
-		$params = [$domain->id, $runId, $maxRank, $coveredMin];
+		$where = 'dk.domain_id = %d AND dk.present = %d AND dk.seen_run_id <> %d AND dk.rank_group <= %d AND m.search_volume >= %d';
+		$reliable = GapDomain::reliableVolume($coveredMin);
+		$lost = [$domain->id, GapDomain::ROW_PRESENT, $runId, $maxRank, $reliable];
+		$unconfirmed = [$domain->id, GapDomain::ROW_PRESENT, $runId, $maxRank, $coveredMin];
 		$today = $this->today();
 
-		return (int) $this->db->transaction(function () use ($domain, $where, $params, $runId, $today): int {
+		return $this->db->transaction(function () use ($domain, $where, $lost, $unconfirmed, $runId, $today): array {
 			if ($domain->wasImported()) {
 				$this->db->execute(
 					"INSERT INTO `{$this->eventsTable()}` (domain_id, market_keyword_id, run_id, event, rank_old, rank_new, url_old, url_new, observed_on)
 					SELECT dk.domain_id, dk.market_keyword_id, %d, 'lost', dk.rank_group, NULL, dk.url_id, NULL, %s
 					FROM `{$this->rowsTable()}` dk JOIN `{$this->db->table('market_keywords')}` m ON m.id = dk.market_keyword_id
 					WHERE {$where} ON DUPLICATE KEY UPDATE event = event",
-					[$runId, $today, ...$params],
+					[$runId, $today, ...$lost],
 				);
 			}
 
-			return $this->db->execute(
+			$marked = $this->db->execute(
 				"UPDATE `{$this->rowsTable()}` dk JOIN `{$this->db->table('market_keywords')}` m ON m.id = dk.market_keyword_id
-				SET dk.present = 0, dk.prev_rank = dk.rank_group, dk.changed_on = %s
+				SET dk.present = %d, dk.prev_rank = dk.rank_group, dk.changed_on = %s
 				WHERE {$where}",
-				[$today, ...$params],
+				[GapDomain::ROW_LOST, $today, ...$lost],
 			);
+			$doubtful = $this->db->execute(
+				"UPDATE `{$this->rowsTable()}` dk JOIN `{$this->db->table('market_keywords')}` m ON m.id = dk.market_keyword_id
+				SET dk.present = %d
+				WHERE {$where}",
+				[GapDomain::ROW_UNCONFIRMED, ...$unconfirmed],
+			);
+
+			return [(int) $marked, (int) $doubtful];
 		});
 	}
 

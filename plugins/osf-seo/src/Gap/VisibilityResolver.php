@@ -11,8 +11,10 @@ namespace OsfSeo\Gap;
  * 2. GSC (okno 90 dni, pozycja ważona wyświetleniami): co najmniej 10 wyświetleń → średnia pozycja; pozycja ≤ 10 przy
  *    wyświetleniach < 10% wolumenu okresu → widoczność sporadyczna (słaba),
  * 3. punkt odniesienia Labs (zbiór fraz domeny projektu): fraza w zbiorze → pozycja Labs,
- * 4. brak widoczności tylko z dowodem nieobecności: Labs wiarygodnie bez frazy ORAZ GSC ma dane projektu z mniej niż
- *    10 wyświetleniami. Sam brak frazy w GSC nigdy nie oznacza braku widoczności — wtedy „Nieznana”.
+ * 4. brak widoczności tylko z dowodem nieobecności: Labs wiarygodnie bez frazy (`GapDomain::provesNoVisibility()`:
+ *    import obejmujący pełne TOP100, spójny, wolumen frazy z zapasem nad granicą zakresu i limitu fraz) ORAZ GSC ma
+ *    dane projektu z mniej niż 10 wyświetleniami. Sam brak frazy w GSC ani w niekompletnym zbiorze nigdy nie oznacza
+ *    braku widoczności — wtedy „Nieznana”.
  */
 final class VisibilityResolver
 {

@@ -162,7 +162,7 @@ abstract class GapTestCase extends SerpTestCase
 		);
 		$this->gaps = new GapService(
 			$this->rankedProvider,
-			new GapPlanner($this->rankedProvider, $this->gapDomains, $this->competitorRepository, $this->market, $this->clock),
+			new GapPlanner($this->rankedProvider, $this->gapDomains, $this->gapRuns, $this->competitorRepository, $this->market, $this->clock),
 			new GapImporter(
 				$this->rankedProvider,
 				$this->gapRuns,

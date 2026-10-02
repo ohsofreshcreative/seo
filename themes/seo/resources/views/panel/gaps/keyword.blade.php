@@ -173,11 +173,14 @@
         @if ($baseline === null)
           <p class="mt-1 text-sm text-slate-500">Nie pobrano fraz domeny projektu.</p>
         @elseif ($baseline['row'] === null || $baseline['row']['present'] !== '1')
-          <p class="mt-1 text-sm text-slate-900">Domena projektu nie rankuje na tę frazę w bazie Labs (TOP{{ $baseline['dataset']->coverage?->maxRank ?? 100 }})
-            @if (! $baseline['dataset']->absenceReliable($int($row['search_volume'])))
-              <span class="block text-xs text-amber-700">Wynik niepewny: zbiór domeny projektu nie obejmuje wiarygodnie fraz o tym wolumenie (limit fraz).</span>
-            @endif
-          </p>
+          @php($doubt = $baseline['dataset']->absenceDoubt($int($row['search_volume'])))
+          @if ($doubt === null)
+            <p class="mt-1 text-sm text-slate-900">Domena projektu nie rankuje na tę frazę w bazie Labs (TOP{{ $baseline['dataset']->coverage?->maxRank ?? 100 }}).</p>
+          @else
+            <p class="mt-1 text-sm text-slate-900">Brak frazy w zbiorze domeny projektu — to nie dowodzi braku widoczności.
+              <span class="block text-xs text-amber-700">Niepewne: {{ $doubt }}.</span>
+            </p>
+          @endif
         @else
           <p class="mt-1 text-sm text-slate-900">
             Pozycja #{{ $baseline['row']['rank_group'] }} <span class="text-xs text-slate-500">(Labs, {{ Format::date($baseline['row']['serp_on']) }})</span>
@@ -218,6 +221,8 @@
               <td class="py-2 pr-4"><span class="font-medium text-slate-900">{{ $entry['competitor']->name }}</span><span class="block text-xs text-slate-500">{{ $entry['competitor']->domain }}</span></td>
               @if ($entry['dataset'] === null || $entry['dataset']->importedAt === null)
                 <td colspan="4" class="py-2 pr-4 text-slate-500">nie pobrano fraz domeny</td>
+              @elseif ($hit !== null && $hit['present'] === '2')
+                <td colspan="4" class="py-2 pr-4 text-slate-500">brak w ostatnim imporcie (wcześniej #{{ $hit['rank_group'] }}) — niepotwierdzone: wolumen blisko granicy zakresu</td>
               @elseif ($hit === null || $hit['present'] !== '1')
                 <td colspan="4" class="py-2 pr-4 text-slate-500">nie rankuje w zakresie TOP{{ $entry['dataset']->coverage?->maxRank }}{{ $hit !== null ? ' (wcześniej #' . $hit['rank_group'] . ')' : '' }}</td>
               @else

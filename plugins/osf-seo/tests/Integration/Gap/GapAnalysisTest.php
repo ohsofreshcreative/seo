@@ -9,6 +9,7 @@ use OsfSeo\Auth\ProjectContext;
 use OsfSeo\Auth\ProjectNotFound;
 use OsfSeo\Auth\Roles;
 use OsfSeo\Discovery\ExclusionList;
+use OsfSeo\Gap\GapDomain;
 use OsfSeo\Gap\GapFilters;
 use OsfSeo\Gap\GapNotFound;
 use OsfSeo\Gap\GapStatus;
@@ -68,6 +69,73 @@ final class GapAnalysisTest extends GapTestCase
 		$this->clock->advance(31 * 86400);
 		$this->gaps->recalculate($context);
 		self::assertSame(['none', 'labs', 'missing'], [$this->gap($context, 'pozycjonowanie stron')['visibility'], $this->gap($context, 'pozycjonowanie stron')['visibility_source'], $this->gap($context, 'pozycjonowanie stron')['gap_type']]);
+	}
+
+	public function test_baseline_absence_means_no_visibility_only_in_a_reliable_full_top100_dataset(): void
+	{
+		$context = $this->gapProject();
+		$this->setRanked('konkurent.pl', [
+			self::ranked('konkurent.pl', 'fraza mocna', 5000, 3),
+			self::ranked('konkurent.pl', 'fraza graniczna', 12, 4),
+			self::ranked('konkurent.pl', 'fraza obecna', 800, 2),
+		]);
+		$this->setRanked('example.pl', [self::ranked('example.pl', 'fraza obecna', 800, 40)]);
+		$this->gscKeyword($context, 'inna fraza projektu', 100, 5.0);
+
+		$this->gapRun($context);
+
+		self::assertSame(['none', 'labs'], [$this->gap($context, 'fraza mocna')['visibility'], $this->gap($context, 'fraza mocna')['visibility_source']], 'Pełne TOP100, kompletny import, wolumen z zapasem nad filtrem.');
+		self::assertSame('unknown', $this->gap($context, 'fraza graniczna')['visibility'], 'Wolumen 12 przy filtrze 10 — fraza mogła nie przejść filtra.');
+		self::assertSame(['low', 'labs'], [$this->gap($context, 'fraza obecna')['visibility'], $this->gap($context, 'fraza obecna')['visibility_source']]);
+
+		// Domena projektu pobrana tylko w TOP30 (jako konkurent innego projektu) — brak frazy nie wyklucza pozycji 31–100.
+		$third = $this->gapProject(['konkurent.pl' => 'Konkurent'], 'trzeci.pl');
+		$this->gscKeyword($third, 'inna fraza projektu', 100, 5.0);
+		$fourth = $this->gapProject(['trzeci.pl' => 'Trzeci'], 'czwarty.pl');
+		$this->setRanked('trzeci.pl', [self::ranked('trzeci.pl', 'fraza obecna', 800, 25)]);
+		$this->gapRun($fourth, ['baseline' => '0']);
+		$top30 = $this->gapDomains->find($this->gaps->market($third), 'trzeci.pl');
+		self::assertSame(30, $top30->coverage->maxRank);
+		self::assertTrue($top30->absenceReliable(5000), 'Wiarygodny dla TOP30…');
+		self::assertFalse($top30->provesNoVisibility(5000), '…ale nie dla braku widoczności.');
+
+		$this->refresher->refresh($third->projectId(), true);
+
+		self::assertSame('unknown', $this->gap($third, 'fraza mocna')['visibility']);
+		self::assertSame(['low', 'labs'], [$this->gap($third, 'fraza obecna')['visibility'], $this->gap($third, 'fraza obecna')['visibility_source']], 'Fraza obecna w zbiorze — pozycja Labs.');
+		self::assertStringContainsString('TOP30', (string) $top30->absenceDoubt(5000));
+	}
+
+	public function test_truncated_or_inconsistent_baseline_gives_unknown_instead_of_no_visibility(): void
+	{
+		$context = $this->gapProject();
+		$this->setRanked('konkurent.pl', [
+			self::ranked('konkurent.pl', 'fraza bardzo popularna', 50000, 2),
+			self::ranked('konkurent.pl', 'fraza srednia', 4500, 3),
+			self::ranked('konkurent.pl', 'fraza niska', 900, 5),
+		]);
+		$this->setRanked('example.pl', array_map(static fn (int $i): array => self::ranked('example.pl', sprintf('baza %03d', $i), 10000 - 60 * $i, 20), range(0, 149)));
+		$this->gscKeyword($context, 'inna fraza projektu', 100, 5.0);
+
+		$this->gapRun($context, ['max_rows' => '100']);
+		$baseline = $this->gapDomains->find($this->gaps->market($context), 'example.pl');
+
+		self::assertSame([false, 4061, 100], [$baseline->complete, $baseline->coveredMinVolume, $baseline->coverage->maxRank], 'Punkt odniesienia przycięty limitem fraz po 100 frazach (ostatnia: 4060).');
+		self::assertSame('none', $this->gap($context, 'fraza bardzo popularna')['visibility'], 'Wolumen 50 000 ≥ 6092 (granica z zapasem).');
+		self::assertSame('unknown', $this->gap($context, 'fraza srednia')['visibility'], 'Wolumen 4500 nad granicą przycięcia, ale bez zapasu.');
+		self::assertSame('unknown', $this->gap($context, 'fraza niska')['visibility'], 'Poniżej granicy przycięcia — mogła się nie zmieścić w limicie.');
+
+		// Pierwszy import punktu odniesienia z nieczytelnym wynikiem — brak frazy niczego nie dowodzi.
+		$other = $this->gapProject(['konkurent.pl' => 'Konkurent'], 'piaty.pl');
+		$this->gscKeyword($other, 'inna fraza projektu', 100, 5.0);
+		$items = [self::ranked('piaty.pl', 'fraza obca', 300, 7), self::ranked('piaty.pl', 'fraza nieczytelna', 200, 9)];
+		$items[1]['ranked_serp_element']['serp_item']['rank_group'] = null;
+		$this->rankedOverrides['piaty.pl'] = [['status' => 200, 'json' => DataForSeoFakes::rankedResult('piaty.pl', $items, 2, 0.01224)]];
+		$this->gapRun($other, ['max_rows' => '100']);
+		$unreliable = $this->gapDomains->find($this->gaps->market($other), 'piaty.pl');
+
+		self::assertNull($unreliable->coveredMinVolume);
+		self::assertSame('unknown', $this->gap($other, 'fraza bardzo popularna')['visibility']);
 	}
 
 	public function test_missing_gsc_row_alone_never_means_no_visibility(): void
@@ -325,20 +393,22 @@ final class GapAnalysisTest extends GapTestCase
 	public function test_truncated_import_never_marks_lost_below_reliable_volume(): void
 	{
 		$context = $this->gapProject();
-		$rows = array_map(static fn (int $i): array => self::ranked('konkurent.pl', sprintf('fraza %03d', $i), 1000 - $i, 5), range(0, 149));
+		$rows = array_map(static fn (int $i): array => self::ranked('konkurent.pl', sprintf('fraza %03d', $i), 10000 - 60 * $i, 5), range(0, 149));
 		$this->setRanked('konkurent.pl', $rows);
 		$this->gapRun($context, ['baseline' => '0']);
 
 		$this->clock->advance(31 * 86400);
-		unset($rows[20]);
+		unset($rows[20], $rows[70]);
 		$this->setRanked('konkurent.pl', array_values($rows));
 		$run = $this->gapRun($context, ['baseline' => '0', 'max_rows' => '100']);
 		$dataset = $this->gapDomains->find($this->gaps->market($context), 'konkurent.pl');
 
 		self::assertFalse($dataset->complete);
-		self::assertSame(901, $dataset->coveredMinVolume, 'Ostatnia pobrana fraza ma wolumen 900 (jedna fraza wypadła, więc to setna od góry).');
-		self::assertSame(['lost' => 1], $this->gapDomains->eventCounts($dataset->id, $run->id), 'Tylko fraza z wiarygodnego zakresu.');
-		self::assertSame('0', $this->datasetRow('konkurent.pl', 'fraza 020')['present']);
+		self::assertSame(3941, $dataset->coveredMinVolume, 'Ostatnia pobrana fraza ma wolumen 3940 (dwie frazy wypadły, więc to setna od góry).');
+		self::assertSame(5912, GapDomain::reliableVolume(3941));
+		self::assertSame(['lost' => 1], $this->gapDomains->eventCounts($dataset->id, $run->id), 'Tylko fraza z wiarygodnego zakresu (z zapasem).');
+		self::assertSame('0', $this->datasetRow('konkurent.pl', 'fraza 020')['present'], 'Wolumen 8800 ≥ 5912 — utracona.');
+		self::assertSame('2', $this->datasetRow('konkurent.pl', 'fraza 070')['present'], 'Wolumen 5800 tuż nad granicą — niepotwierdzona, bez zdarzenia.');
 		self::assertSame('1', $this->datasetRow('konkurent.pl', 'fraza 140')['present'], 'Poza zakresem przyciętego importu — bez zmian.');
 	}
 

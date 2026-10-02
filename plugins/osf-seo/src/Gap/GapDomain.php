@@ -9,7 +9,13 @@ namespace OsfSeo\Gap;
  * kompletność i świeżość opisują ostatni udany import.
  *
  * Brak frazy w zbiorze jest wiarygodnym dowodem nieobecności domeny tylko wtedy, gdy import był kompletny albo — przy
- * przycięciu limitem fraz (kolejność wolumenu malejąco) — dla fraz o wolumenie co najmniej `covered_min_volume`.
+ * przycięciu limitem fraz (kolejność wolumenu malejąco) — dla fraz o wolumenie co najmniej `covered_min_volume`, w obu
+ * przypadkach z zapasem wolumenu (`GapConfig::ABSENCE_VOLUME_MARGIN`). „Brak widoczności” projektu wymaga ponadto
+ * zbioru obejmującego pełne TOP100 — brak frazy w węższym zakresie (np. TOP30) nie wyklucza pozycji 31–100.
+ *
+ * Fraza w zbiorze (`gap_domain_keywords.present`): 1 — w zakresie ostatniego importu, 0 — utracona (wiarygodnie poza
+ * zakresem, zdarzenie `lost`), 2 — niepotwierdzona (brak w ostatnim imporcie przy wolumenie blisko granicy filtra:
+ * nie jest już dowodem pozycji, ale nie zapisujemy utraty).
  */
 final class GapDomain
 {
@@ -20,6 +26,12 @@ final class GapDomain
 	public const READY = 'ready';
 
 	public const PARTIAL = 'partial';
+
+	public const ROW_LOST = 0;
+
+	public const ROW_PRESENT = 1;
+
+	public const ROW_UNCONFIRMED = 2;
 
 	public function __construct(
 		public readonly int $id,
@@ -96,10 +108,38 @@ final class GapDomain
 			&& ($this->complete || $this->coverage->maxRows >= $requested->maxRows);
 	}
 
-	/** Czy brak frazy o tej pozycji granicznej i wolumenie oznacza, że domena na nią nie rankuje (w zakresie importu). */
+	/** Najmniejszy wolumen, przy którym brak frazy jest wiarygodny (granica zakresu z zapasem; bez filtra wolumenu — 0). */
+	public static function reliableVolume(int $coveredMinVolume): int
+	{
+		return $coveredMinVolume <= 0 ? 0 : (int) ceil($coveredMinVolume * GapConfig::ABSENCE_VOLUME_MARGIN);
+	}
+
+	/** Czy brak frazy o tym wolumenie oznacza, że domena na nią nie rankuje w zakresie pozycji importu. */
 	public function absenceReliable(?int $volume): bool
 	{
-		return $this->wasImported() && $this->coveredMinVolume !== null && $volume !== null && $volume >= $this->coveredMinVolume;
+		return $this->wasImported() && $this->coveredMinVolume !== null && $volume !== null && $volume >= self::reliableVolume($this->coveredMinVolume);
+	}
+
+	/** Czy brak frazy dowodzi braku widoczności domeny (wiarygodna nieobecność w pełnym TOP100). */
+	public function provesNoVisibility(?int $volume): bool
+	{
+		return $this->absenceDoubt($volume) === null;
+	}
+
+	/** Powód, dla którego brak frazy w zbiorze NIE dowodzi braku widoczności (null — dowodzi). */
+	public function absenceDoubt(?int $volume): ?string
+	{
+		return match (true) {
+			! $this->wasImported() || $this->coverage === null => 'nie zaimportowano fraz domeny',
+			$this->coverage->maxRank < GapConfig::BASELINE_MAX_RANK => sprintf('zbiór obejmuje tylko TOP%d — pozycja poniżej nie jest wykluczona', $this->coverage->maxRank),
+			$this->coveredMinVolume === null => 'ostatni import nie daje wiarygodnej nieobecności fraz (niespójne strony wyników)',
+			$volume === null => 'nieznany wolumen frazy',
+			$volume < self::reliableVolume($this->coveredMinVolume) => sprintf(
+				'wolumen frazy poniżej wiarygodnej granicy zbioru (%s; zakres importu, limit fraz i zapas na zmianę wolumenu)',
+				'≥ ' . number_format(self::reliableVolume($this->coveredMinVolume), 0, ',', ' '),
+			),
+			default => null,
+		};
 	}
 
 	public function statusLabel(): string
@@ -124,6 +164,7 @@ final class GapDomain
 			'coverage' => $this->coverage?->toArray(),
 			'complete' => $this->complete,
 			'covered_min_volume' => $this->coveredMinVolume,
+			'reliable_min_volume' => $this->coveredMinVolume === null ? null : self::reliableVolume($this->coveredMinVolume),
 			'total_count' => $this->totalCount,
 			'rows_present' => $this->rowsPresent,
 			'labs_updated_at' => $this->labsUpdatedAt,

@@ -259,23 +259,25 @@ final class GapService
 		$started = microtime(true);
 		$touched = [];
 
-		// Utrzymanie jest tanie i obejmuje też przebiegi już nieaktywne (żądanie w locie anulowanego przebiegu).
-		$report['maintenance'] = $this->importer->maintenance();
+		// Utrzymanie (żądania przerwane, wygasłe wstrzymania, domknięcie anulowanych) i strony importu — wyłącznie pod
+		// wspólną blokadą płatnych żądań: proces, który właśnie zapisuje stronę (CLI `gap:run`), nie może zostać uznany
+		// za przerwany ani domknięty w trakcie. Bez blokady (trwa inny płatny krok) utrzymanie czeka na kolejny krok.
+		if ($this->db->acquireLock(MarketSyncService::LOCK, 0)) {
+			try {
+				$report['maintenance'] = $this->importer->maintenance();
 
-		if ($this->runs->hasActive()) {
-			if ($this->provider->isConfigured() && $this->market->paused() === null && $this->db->acquireLock(MarketSyncService::LOCK, 0)) {
-				try {
+				if ($this->runs->hasActive() && $this->provider->isConfigured() && $this->market->paused() === null) {
 					$report['processed'] = $this->importer->process($this->config->maxRequestsPerTick(), $budgetSeconds);
-				} finally {
-					$this->db->releaseLock(MarketSyncService::LOCK);
 				}
+			} finally {
+				$this->db->releaseLock(MarketSyncService::LOCK);
+			}
 
-				foreach ($report['processed']['finished'] as $runId => $status) {
-					$run = $this->runs->findById((int) $runId);
+			foreach ($report['processed']['finished'] ?? [] as $runId => $status) {
+				$run = $this->runs->findById((int) $runId);
 
-					if ($run !== null) {
-						$touched[$run->projectId] = true;
-					}
+				if ($run !== null) {
+					$touched[$run->projectId] = true;
 				}
 			}
 		}
@@ -340,8 +342,16 @@ final class GapService
 		$cancelled = $this->runs->cancel($run->id);
 
 		if ($cancelled) {
-			// Rozpoczęty import zbioru (bez żądania w locie) domykamy od razu jako niepełny; żądanie w locie domknie krok tła.
-			$this->importer->closeOpenTargets();
+			// Rozpoczęty import zbioru domykamy od razu jako niepełny, jeśli żaden proces nie wysyła właśnie żądań; inaczej
+			// domknie go ten proces (po bieżącej stronie) albo utrzymanie w kolejnym kroku tła — nigdy w trakcie zapisu strony.
+			if ($this->db->acquireLock(MarketSyncService::LOCK, 0)) {
+				try {
+					$this->importer->closeOpenTargets();
+				} finally {
+					$this->db->releaseLock(MarketSyncService::LOCK);
+				}
+			}
+
 			$this->logger->info('Keyword gap run {run} cancelled by user {user}.', ['run' => $run->publicId, 'user' => $context->userId()]);
 		}
 

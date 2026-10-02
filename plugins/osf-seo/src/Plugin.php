@@ -444,7 +444,7 @@ final class Plugin
 		));
 		$container->singleton(GapService::class, static fn (Container $c): GapService => new GapService(
 			$c->get(CompetitorKeywordsProvider::class),
-			new GapPlanner($c->get(CompetitorKeywordsProvider::class), $c->get(GapDomainRepository::class), $c->get(CompetitorRepository::class), $c->get(MarketSyncService::class), $c->get(Clock::class)),
+			new GapPlanner($c->get(CompetitorKeywordsProvider::class), $c->get(GapDomainRepository::class), $c->get(GapRunRepository::class), $c->get(CompetitorRepository::class), $c->get(MarketSyncService::class), $c->get(Clock::class)),
 			new GapImporter(
 				$c->get(CompetitorKeywordsProvider::class),
 				$c->get(GapRunRepository::class),

@@ -52,16 +52,38 @@ final class PlanningTest extends TestCase
 		self::assertFalse(self::dataset(['complete' => '0', 'coverage_max_rows' => '2000'])->satisfies(new Coverage(30, 10, 10000), $now), 'Przycięty limitem 2000.');
 	}
 
-	public function test_absence_is_reliable_only_within_covered_volume(): void
+	public function test_absence_is_reliable_only_within_covered_volume_with_margin(): void
 	{
-		self::assertTrue(self::dataset()->absenceReliable(10));
+		self::assertSame(15, GapDomain::reliableVolume(10));
+		self::assertSame(0, GapDomain::reliableVolume(0), 'Bez filtra wolumenu nie ma granicy.');
+		self::assertTrue(self::dataset()->absenceReliable(15));
+		self::assertFalse(self::dataset()->absenceReliable(14), 'Tuż nad filtrem wolumen mógł spaść poniżej filtra — to nie utrata pozycji.');
+		self::assertFalse(self::dataset()->absenceReliable(10), 'Fraza na samej granicy filtra.');
 		self::assertFalse(self::dataset()->absenceReliable(9), 'Poniżej filtra wolumenu import nie mógł jej zwrócić.');
 		self::assertFalse(self::dataset()->absenceReliable(null));
 		$truncated = self::dataset(['complete' => '0', 'covered_min_volume' => '91']);
-		self::assertTrue($truncated->absenceReliable(91));
-		self::assertFalse($truncated->absenceReliable(90));
+		self::assertTrue($truncated->absenceReliable(137));
+		self::assertFalse($truncated->absenceReliable(136));
+		self::assertFalse($truncated->absenceReliable(91), 'Przycięty limitem fraz: granica + zapas.');
+		self::assertTrue(self::dataset(['coverage_min_volume' => '0', 'covered_min_volume' => '0'])->absenceReliable(0));
 		self::assertFalse(self::dataset(['covered_min_volume' => null])->absenceReliable(5000), 'Wykryte dublowanie stron — brak wiarygodności.');
 		self::assertFalse(self::dataset(['imported_at' => null])->absenceReliable(5000));
+	}
+
+	public function test_no_visibility_requires_reliable_absence_in_full_top100(): void
+	{
+		$top100 = self::dataset(['coverage_max_rank' => '100']);
+		self::assertTrue($top100->provesNoVisibility(5000));
+		self::assertNull($top100->absenceDoubt(5000));
+		self::assertFalse(self::dataset()->provesNoVisibility(5000), 'Zbiór TOP30 (np. pobrany jako konkurent innego projektu) nie wyklucza pozycji 31–100.');
+		self::assertStringContainsString('TOP30', (string) self::dataset()->absenceDoubt(5000));
+		self::assertFalse(self::dataset(['coverage_max_rank' => '100', 'covered_min_volume' => null])->provesNoVisibility(5000), 'Import niespójny.');
+		self::assertFalse($top100->provesNoVisibility(null), 'Nieznany wolumen.');
+		self::assertFalse($top100->provesNoVisibility(12), 'Wolumen poniżej granicy z zapasem.');
+		$truncated = self::dataset(['coverage_max_rank' => '100', 'complete' => '0', 'covered_min_volume' => '881']);
+		self::assertFalse($truncated->provesNoVisibility(1000), 'Przycięty limitem 10 000 fraz: fraza poniżej granicy + zapasu mogła się nie zmieścić.');
+		self::assertTrue($truncated->provesNoVisibility(1322));
+		self::assertFalse(self::dataset(['coverage_max_rank' => '100', 'imported_at' => null, 'coverage_min_volume' => null])->provesNoVisibility(5000), 'Brak importu.');
 	}
 
 	public function test_request_parsing_presets_and_safe_row_limit(): void

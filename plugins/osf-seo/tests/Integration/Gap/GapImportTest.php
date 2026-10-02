@@ -151,6 +151,8 @@ final class GapImportTest extends GapTestCase
 		self::assertSame(10, $same->targets[0]->knownTotal);
 		self::assertSame(1, $same->targets[0]->expectedRequests, 'Te same filtry — oczekiwana liczba stron z ostatniego importu.');
 
+		// `force` zlecony później niż ostatni import zbioru — pobiera ponownie (dane innego projektu są starsze niż zlecenie).
+		$this->clock->advance(60);
 		$forced = $this->gapRun($second, ['baseline' => '0', 'force' => '1']);
 		self::assertSame(GapRun::COMPLETED, $forced->status);
 		self::assertCount($requests + 1, $this->rankedBodies());

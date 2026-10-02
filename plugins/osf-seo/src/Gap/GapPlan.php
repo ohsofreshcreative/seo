@@ -51,13 +51,13 @@ final class GapPlan
 	/** Najwięcej płatnych żądań (górna granica). */
 	public function requests(): int
 	{
-		return array_sum(array_map(static fn (PlannedTarget $target): int => $target->maxRequests, $this->imports()));
+		return array_sum(array_map(static fn (PlannedTarget $target): int => $target->mayImport() ? $target->maxRequests : 0, $this->targets));
 	}
 
 	/** Maksymalny koszt (USD) — potwierdzany przez użytkownika. */
 	public function estimatedCost(): float
 	{
-		return round(array_sum(array_map(static fn (PlannedTarget $target): float => $target->maxCost, $this->imports())), 6);
+		return round(array_sum(array_map(static fn (PlannedTarget $target): float => $target->mayImport() ? $target->maxCost : 0.0, $this->targets)), 6);
 	}
 
 	public function expectedRequests(): int

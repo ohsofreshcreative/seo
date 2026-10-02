@@ -15,12 +15,15 @@ use OsfSeo\Support\Clock;
  * Plan importu bez wywołań API: aktywni konkurenci projektu (wyłącznie skonfigurowani — konkurenci organiczni z SERP
  * nigdy nie uruchamiają płatnego importu), opcjonalnie domena projektu (punkt odniesienia TOP100), stan wspólnych zbiorów
  * domen i budżet. Zbiór świeży o wystarczającym zakresie jest pomijany (bezpłatnie z pamięci), chyba że `force`.
+ * Zbiór importowany właśnie przez przebieg innego projektu z zakresem obejmującym żądany „czeka” (zwykle bezpłatnie) —
+ * jego koszt wchodzi jednak do maksimum planu, bo gdy tamten import się nie uda, ten przebieg pobierze zbiór sam.
  */
 final class GapPlanner
 {
 	public function __construct(
 		private readonly CompetitorKeywordsProvider $provider,
 		private readonly GapDomainRepository $domains,
+		private readonly GapRunRepository $runs,
 		private readonly CompetitorRepository $competitors,
 		private readonly MarketSyncService $market,
 		private readonly Clock $clock,
@@ -124,8 +127,9 @@ final class GapPlanner
 
 	private function target(string $role, ?Competitor $competitor, string $label, string $domain, Coverage $coverage, ?GapDomain $dataset, bool $force, string $now): PlannedTarget
 	{
+		$importing = $dataset === null ? null : $this->importingCoverage($dataset);
 		$state = match (true) {
-			$dataset !== null && $dataset->status === GapDomain::IMPORTING => PlannedTarget::WAITING,
+			$importing !== null && $importing->includes($coverage) => PlannedTarget::WAITING,
 			! $force && $dataset !== null && $dataset->satisfies($coverage, $now) => PlannedTarget::CACHED,
 			default => PlannedTarget::IMPORT,
 		};
@@ -138,6 +142,7 @@ final class GapPlanner
 		$expectedRequests = ImportPages::requests($expectedRows, $this->provider->maxItemsPerRequest());
 		$request = $this->provider->estimateCost(0);
 		$import = $state === PlannedTarget::IMPORT;
+		$mayImport = $state !== PlannedTarget::CACHED;
 
 		return new PlannedTarget(
 			role: $role,
@@ -149,10 +154,23 @@ final class GapPlanner
 			state: $state,
 			dataset: $dataset,
 			knownTotal: $known,
-			maxRequests: $import ? $maxRequests : 0,
-			maxCost: $import ? round($maxRequests * $request + ($this->provider->estimateCost($maxRows) - $request), 6) : 0.0,
+			maxRequests: $mayImport ? $maxRequests : 0,
+			maxCost: $mayImport ? round($maxRequests * $request + ($this->provider->estimateCost($maxRows) - $request), 6) : 0.0,
 			expectedRequests: $import ? $expectedRequests : 0,
 			expectedCost: $import ? round($expectedRequests * $request + ($this->provider->estimateCost($expectedRows) - $request), 6) : 0.0,
 		);
+	}
+
+	/** Zakres trwającego importu zbioru przez inny przebieg (null — zbiór nie jest importowany). */
+	private function importingCoverage(GapDomain $dataset): ?Coverage
+	{
+		if ($dataset->status !== GapDomain::IMPORTING || $dataset->importRunId === null) {
+			return null;
+		}
+
+		$run = $this->runs->findById($dataset->importRunId);
+		$role = $run === null || ! $run->isActive() ? null : $this->runs->targetRole($run->id, $dataset->id);
+
+		return $role === null ? null : $run->targetCoverage($role, $this->provider->maxRowsPerDomain());
 	}
 }

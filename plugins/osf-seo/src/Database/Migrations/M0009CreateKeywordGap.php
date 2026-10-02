@@ -181,6 +181,7 @@ final class M0009CreateKeywordGap implements Migration
 			`rows_lost` INT UNSIGNED NOT NULL DEFAULT 0,
 			`rows_changed` INT UNSIGNED NOT NULL DEFAULT 0,
 			`last_volume` INT UNSIGNED NULL DEFAULT NULL,
+			`unreliable` VARCHAR(32) CHARACTER SET ascii COLLATE ascii_bin NULL DEFAULT NULL,
 			`inflight_task_id` BIGINT UNSIGNED NULL DEFAULT NULL,
 			`estimated_cost` DECIMAL(12,6) NOT NULL DEFAULT 0,
 			`cost` DECIMAL(12,6) NOT NULL DEFAULT 0,

@@ -48,6 +48,13 @@ final class GapConfig
 	/** Punkt odniesienia projektu: pełne TOP100 (słaba widoczność projektu to pozycje 11–100). */
 	public const BASELINE_MAX_RANK = 100;
 
+	/**
+	 * Zapas wolumenu dla wiarygodnej nieobecności: filtr dostawcy działa na wolumenie z bazy Labs w chwili importu, a nasz
+	 * wolumen frazy bywa z innego miesiąca lub źródła. Brak frazy blisko granicy (wolumen < granica × zapas) może oznaczać
+	 * spadek wolumenu poniżej filtra, a nie utratę pozycji — wtedy nie zapisujemy „lost” ani „Brak widoczności”.
+	 */
+	public const ABSENCE_VOLUME_MARGIN = 1.5;
+
 	/** Presety zakresu (Szybki / Standard / Pełny): najgorsza pozycja, minimalny wolumen, maks. fraz na domenę. */
 	public const PRESETS = [
 		'quick' => [10, 50, 2000],

@@ -29,6 +29,15 @@ use OsfSeo\Support\Logger;
  * Błędy: limit żądań dostawcy → strona wraca do kolejki (do 3 prób, nic nie zostało opłacone); błąd konta → wstrzymanie
  * (wspólne z danymi rynkowymi); sieć/5xx/uszkodzona odpowiedź → domena kończy się jako niepełna BEZ ponawiania (żądanie
  * mogło zostać opłacone). Limit kosztów → przebieg wstrzymany (pobrane strony zostają), wznawia się, gdy limit pozwoli.
+ *
+ * Wiarygodność: strona niespójna z poprzednimi (dublowanie fraz, zmiana liczby fraz u dostawcy, krótka strona, odwrócona
+ * kolejność wolumenu, nieczytelne wyniki, pusta odpowiedź dla zbioru z frazami) oznacza import jako niewiarygodny dla
+ * nieobecności. Odświeżenie przerwane, wstrzymane albo niewiarygodne nie zapisuje utraty fraz, a zbiór zachowuje zakres,
+ * kompletność i świeżość poprzedniego udanego importu (dane z pobranych stron zostają jako nowsze obserwacje).
+ *
+ * Współdzielone zbiory: zbiór importuje naraz tylko jeden przebieg (atomowe przejęcie, `claimImport`); przebieg innego
+ * projektu z tą samą domeną czeka i po zakończeniu korzysta ze zbioru bez opłaty, jeśli zakres wystarcza — przy `force`
+ * także, gdy zbiór zaimportowano już po zleceniu przebiegu.
  */
 final class GapImporter
 {
@@ -86,7 +95,7 @@ final class GapImporter
 
 				$coverage = $this->targetCoverage($run, (string) $target['role']);
 
-				if ((int) $target['pages_done'] === 0 && ! $run->forced && $dataset->satisfies($coverage, $this->runs->now())) {
+				if ((int) $target['pages_done'] === 0 && $this->reusable($run, $dataset, $coverage)) {
 					// Inny projekt zaimportował ten zbiór w międzyczasie — bez żądań.
 					$this->runs->targetCached($run->id, $domainId);
 					$report['projects'][$run->projectId] = $run->projectId;
@@ -116,6 +125,22 @@ final class GapImporter
 					$report['projects'][$run->projectId] = $run->projectId;
 
 					continue 2;
+				}
+
+				if (! $dataset->isImportingBy($run->id)) {
+					if ((int) $target['pages_done'] > 0) {
+						// Import zbioru domknięto z zewnątrz w trakcie — bez kolejnych stron (pobrane zostają).
+						$this->abort($run->id, $target, 'interrupted');
+
+						continue;
+					}
+
+					if (! $this->domains->claimImport($domainId, $run->id)) {
+						// Ten sam zbiór importuje właśnie inny przebieg (inny projekt) — czekamy bez żądania.
+						continue 2;
+					}
+
+					$dataset = $this->domains->findById($domainId) ?? $dataset;
 				}
 
 				$outcome = $this->request($run, $market, $target, $dataset, $coverage, $offset, $limit, $estimate, $budget);
@@ -193,11 +218,17 @@ final class GapImporter
 	/** Zakres importu domeny (konkurent: zakres przebiegu; projekt: TOP100 z tym samym wolumenem i limitem fraz). */
 	public function targetCoverage(GapRun $run, string $role): Coverage
 	{
-		$maxRows = min($run->coverage->maxRows, $this->provider->maxRowsPerDomain());
+		return $run->targetCoverage($role, $this->provider->maxRowsPerDomain());
+	}
 
-		return $role === PlannedTarget::ROLE_PROJECT
-			? new Coverage(GapConfig::BASELINE_MAX_RANK, $run->coverage->minVolume, $maxRows)
-			: new Coverage($run->coverage->maxRank, $run->coverage->minVolume, $maxRows);
+	/**
+	 * Świeży zbiór o wystarczającym zakresie — bez żądań. Przy `force` tylko zbiór zaimportowany po zleceniu przebiegu
+	 * (np. przez przebieg innego projektu, na który ten czekał) — dane są wtedy co najmniej tak świeże, jak żądane.
+	 */
+	private function reusable(GapRun $run, GapDomain $dataset, Coverage $coverage): bool
+	{
+		return $dataset->satisfies($coverage, $this->runs->now())
+			&& (! $run->forced || ($dataset->importedAt !== null && $dataset->importedAt >= $run->createdAt));
 	}
 
 	/**
@@ -208,11 +239,6 @@ final class GapImporter
 	{
 		$domainId = $dataset->id;
 		$domain = $dataset->domain;
-
-		if ($offset === 0 && ! $dataset->isImportingBy($run->id)) {
-			$this->domains->startImport($domainId, $run->id);
-		}
-
 		$taskId = $this->tasks->create($run->provider, $this->provider->endpoint(), self::TRIGGER, $run->projectId, $market, [$domain], $estimate);
 		$budget->spend($estimate);
 		$this->runs->markStarted($run->id);
@@ -229,40 +255,82 @@ final class GapImporter
 		$stored = $this->store($market, $dataset, $run->id, $batch, $taskId);
 		$nextOffset = $offset + $limit;
 		$lastVolume = $stored['last_volume'];
-		// Fraza zapisana już na wcześniejszej stronie tego importu = przesunięcie stron u dostawcy → nieobecność niewiarygodna.
-		$duplicates = $stored['duplicates'] + (int) ($target['error_code'] === 'duplicates');
+		// Raz wykryta niespójność stron zostaje do końca importu (nieobecność fraz w nim nie jest wiarygodna).
+		$unreliable = $target['unreliable'] ?? null;
+		$unreliable ??= $this->inconsistency($target, $dataset, $batch, $offset, $limit, $stored);
 		$finished = $batch->received < $limit
 			|| $nextOffset >= $batch->totalCount
 			|| $nextOffset >= min($coverage->maxRows, $this->provider->maxRowsPerDomain());
 
-		$this->runs->targetPage($run->id, $domainId, $batch->received, $cost, $nextOffset, $batch->totalCount, $lastVolume, $duplicates);
+		$this->runs->targetPage($run->id, $domainId, $batch->received, $cost, $nextOffset, $batch->totalCount, $lastVolume, $unreliable);
 		$this->runs->addProgress($run->id, 1, $cost, count($batch->items));
 
-		if ($finished) {
-			$fresh = $this->domains->findById($domainId) ?? $dataset;
-			$result = $this->domains->finishImport(
-				$fresh,
-				$run->id,
-				$coverage,
-				max($batch->totalCount, $offset + $batch->received),
-				$duplicates,
-				$lastVolume ?? ($target['last_volume'] === null ? null : (int) $target['last_volume']),
-				$this->config->ttlDays(),
-			);
-			$events = $this->domains->eventCounts($domainId, $run->id);
-			$this->runs->targetFinished(
-				$run->id,
-				$domainId,
-				GapRunRepository::TARGET_DONE,
-				$result['rows_unique'],
-				(int) ($events['new'] ?? 0),
-				$result['rows_lost'],
-				(int) (($events['up'] ?? 0) + ($events['down'] ?? 0) + ($events['url'] ?? 0)),
-				$result['stats'] + ['complete' => $result['complete'] ? 1 : 0, 'covered_min_volume' => (int) $result['covered_min_volume'], 'total_count' => $batch->totalCount],
-			);
+		if (! $finished) {
+			return ['cost' => $cost, 'account_error' => false, 'error' => null];
 		}
 
+		$fresh = $this->domains->findById($domainId) ?? $dataset;
+
+		if ($unreliable !== null && $fresh->wasImported()) {
+			// Odświeżenie niespójne: jak przerwane — bez utraty fraz, zbiór zachowuje poprzedni wiarygodny stan.
+			$this->abort($run->id, $this->runs->target($run->id, $domainId) ?? $target, $unreliable);
+
+			return ['cost' => $cost, 'account_error' => false, 'error' => null];
+		}
+
+		$result = $this->domains->finishImport(
+			$fresh,
+			$run->id,
+			$coverage,
+			max($batch->totalCount, $offset + $batch->received),
+			$unreliable,
+			$lastVolume ?? ($target['last_volume'] === null ? null : (int) $target['last_volume']),
+			$this->config->ttlDays(),
+		);
+		$events = $this->domains->eventCounts($domainId, $run->id);
+		$this->runs->targetFinished(
+			$run->id,
+			$domainId,
+			GapRunRepository::TARGET_DONE,
+			$result['rows_unique'],
+			(int) ($events['new'] ?? 0),
+			$result['rows_lost'],
+			(int) (($events['up'] ?? 0) + ($events['down'] ?? 0) + ($events['url'] ?? 0)),
+			$result['stats'] + [
+				'complete' => $result['complete'] ? 1 : 0,
+				'covered_min_volume' => (int) $result['covered_min_volume'],
+				'unconfirmed' => $result['rows_unconfirmed'],
+				'total_count' => $batch->totalCount,
+			],
+			$unreliable,
+		);
+
 		return ['cost' => $cost, 'account_error' => false, 'error' => null];
+	}
+
+	/**
+	 * Powód, dla którego strona podważa wiarygodność nieobecności fraz w imporcie (null — strona spójna z poprzednimi).
+	 * Przy przesunięciu danych u dostawcy między stronami (`offset`) frazy mogą zostać pominięte — ich brak nie może wtedy
+	 * oznaczać utraty pozycji ani braku widoczności.
+	 *
+	 * @param array<string, string|null> $target
+	 * @param array{duplicates: int, first_volume: ?int, last_volume: ?int} $stored
+	 */
+	private function inconsistency(array $target, GapDomain $dataset, RankedKeywordsBatch $batch, int $offset, int $limit, array $stored): ?string
+	{
+		$previousTotal = (int) $target['pages_done'] > 0 && $target['total_count'] !== null ? (int) $target['total_count'] : null;
+		$previousVolume = (int) $target['pages_done'] > 0 && $target['last_volume'] !== null ? (int) $target['last_volume'] : null;
+
+		return match (true) {
+			$stored['duplicates'] > 0 => 'duplicates',
+			$previousTotal !== null && $batch->totalCount !== $previousTotal => 'total_changed',
+			$batch->received < $limit && $offset + $batch->received < $batch->totalCount => 'short_page',
+			$previousVolume !== null && $stored['first_volume'] !== null && $stored['first_volume'] > $previousVolume => 'order',
+			($batch->skipped['invalid'] ?? 0) + ($batch->skipped['invalid_rank'] ?? 0) > 0 => 'unreadable',
+			// Pusta odpowiedź dla zbioru z frazami — utrata wszystkiego dopiero po potwierdzeniu kolejnym pustym importem.
+			$offset === 0 && $batch->received === 0 && $dataset->rowsPresent > 0 && ! $this->runs->lastImportEmpty($dataset->id) => 'empty',
+			default => null,
+		};
 	}
 
 	/**
@@ -311,6 +379,7 @@ final class GapImporter
 		$dataset = $this->domains->findById($domainId);
 		$pages = (int) $target['pages_done'];
 		$result = ['rows_unique' => 0, 'stats' => []];
+		$events = [];
 
 		if ($dataset !== null && $dataset->isImportingBy($runId)) {
 			$run = $this->runs->findById($runId);
@@ -322,12 +391,23 @@ final class GapImporter
 				$runId,
 				$coverage,
 				$target['total_count'] === null ? null : (int) $target['total_count'],
-				$target['error_code'] === 'duplicates' ? 1 : 0,
+				$target['unreliable'] ?? null,
 				$target['last_volume'] === null ? null : (int) $target['last_volume'],
 			);
+			$events = $this->domains->eventCounts($domainId, $runId);
 		}
 
-		$this->runs->targetFinished($runId, $domainId, $pages > 0 ? GapRunRepository::TARGET_PARTIAL : GapRunRepository::TARGET_FAILED, $result['rows_unique'], 0, 0, 0, $result['stats'], $errorCode);
+		$this->runs->targetFinished(
+			$runId,
+			$domainId,
+			$pages > 0 ? GapRunRepository::TARGET_PARTIAL : GapRunRepository::TARGET_FAILED,
+			$result['rows_unique'],
+			(int) ($events['new'] ?? 0),
+			0,
+			(int) (($events['up'] ?? 0) + ($events['down'] ?? 0) + ($events['url'] ?? 0)),
+			$result['stats'],
+			$errorCode,
+		);
 	}
 
 	/** Domknięcie rozpoczętych importów zbiorów w przebiegach anulowanych lub zakończonych z zewnątrz (bez żądań). */
@@ -346,12 +426,12 @@ final class GapImporter
 	/**
 	 * Zapis strony: metryki do wspólnych fraz rynkowych, adresy do słownika, pozycje do zbioru domeny.
 	 *
-	 * @return array{duplicates: int, last_volume: ?int}
+	 * @return array{duplicates: int, first_volume: ?int, last_volume: ?int}
 	 */
 	private function store(Market $market, GapDomain $dataset, int $runId, RankedKeywordsBatch $batch, int $taskId): array
 	{
 		if ($batch->items === []) {
-			return ['duplicates' => 0, 'last_volume' => null];
+			return ['duplicates' => 0, 'first_volume' => null, 'last_volume' => null];
 		}
 
 		$keywords = [];
@@ -401,6 +481,16 @@ final class GapImporter
 			}
 		}
 
+		$firstVolume = null;
+
+		foreach ($batch->items as $item) {
+			if ($item->keyword->searchVolume !== null) {
+				$firstVolume = $item->keyword->searchVolume;
+
+				break;
+			}
+		}
+
 		$result = $this->domains->storePage($dataset, $runId, $entries);
 		$titles = [];
 
@@ -415,7 +505,7 @@ final class GapImporter
 
 		$this->domains->storePages($dataset->id, array_map(static fn (array $title): string => $title[1], $titles));
 
-		return ['duplicates' => $result['duplicates'], 'last_volume' => $lastVolume];
+		return ['duplicates' => $result['duplicates'], 'first_volume' => $firstVolume, 'last_volume' => $lastVolume];
 	}
 
 	private function offset(int $seconds): string

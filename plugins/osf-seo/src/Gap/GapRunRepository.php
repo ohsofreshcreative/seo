@@ -202,15 +202,44 @@ final class GapRunRepository
 		);
 	}
 
-	public function targetPage(int $runId, int $domainId, int $received, float $cost, int $nextOffset, int $totalCount, ?int $lastVolume, int $duplicates): void
+	/**
+	 * Zapis strony domeny przebiegu. `$unreliable` — powód, dla którego nieobecność fraz w tym imporcie przestaje być
+	 * wiarygodna (np. dublowanie fraz między stronami); raz ustawiony zostaje do końca importu (osobno od `error_code`,
+	 * który nadpisują ponowienia).
+	 */
+	public function targetPage(int $runId, int $domainId, int $received, float $cost, int $nextOffset, int $totalCount, ?int $lastVolume, ?string $unreliable): void
 	{
 		$this->db->execute(
 			"UPDATE `{$this->targetsTable()}` SET inflight_task_id = NULL, pages_done = pages_done + 1, rows_received = rows_received + %d,
 				cost = cost + %f, next_offset = %d, total_count = %d, last_volume = " . ($lastVolume === null ? 'last_volume' : '%d') . ', attempts = 0,
-				next_attempt_at = NULL, error_code = ' . ($duplicates > 0 ? "'duplicates'" : 'error_code') . '
+				next_attempt_at = NULL, unreliable = ' . ($unreliable === null ? 'unreliable' : 'COALESCE(unreliable, %s)') . '
 			WHERE run_id = %d AND domain_id = %d',
-			array_values(array_filter([$received, $cost, $nextOffset, $totalCount, $lastVolume, $runId, $domainId], static fn (mixed $value): bool => $value !== null)),
+			array_values(array_filter([$received, $cost, $nextOffset, $totalCount, $lastVolume, $unreliable, $runId, $domainId], static fn (mixed $value): bool => $value !== null)),
 		);
+	}
+
+	/**
+	 * Domena przebiegu (bieżący stan).
+	 *
+	 * @return array<string, string|null>|null
+	 */
+	public function target(int $runId, int $domainId): ?array
+	{
+		return $this->db->fetchRow("SELECT * FROM `{$this->targetsTable()}` WHERE run_id = %d AND domain_id = %d", [$runId, $domainId]);
+	}
+
+	/** Czy ostatni zakończony import zbioru zwrócił zero fraz (potwierdzenie pustej odpowiedzi kolejnym importem). */
+	public function lastImportEmpty(int $domainId): bool
+	{
+		return ($this->lastImports([$domainId])[$domainId]['total_count'] ?? null) === '0';
+	}
+
+	/** Rola domeny w przebiegu (konkurent albo domena projektu) — zakres trwającego importu zbioru. */
+	public function targetRole(int $runId, int $domainId): ?string
+	{
+		$role = $this->db->fetchValue("SELECT role FROM `{$this->targetsTable()}` WHERE run_id = %d AND domain_id = %d", [$runId, $domainId]);
+
+		return $role === null ? null : (string) $role;
 	}
 
 	/**

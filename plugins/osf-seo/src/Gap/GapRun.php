@@ -27,6 +27,9 @@ final class GapRun
 
 	public const ACTIVE = [self::QUEUED, self::RUNNING, self::PAUSED];
 
+	/** Powody niewiarygodnej nieobecności fraz w imporcie zbioru (`gap_run_targets.unreliable`). */
+	public const UNRELIABLE_REASONS = ['duplicates', 'total_changed', 'short_page', 'order', 'unreadable', 'empty'];
+
 	public function __construct(
 		public readonly int $id,
 		public readonly string $publicId,
@@ -109,6 +112,19 @@ final class GapRun
 		};
 	}
 
+	/**
+	 * Zakres importu domeny w tym przebiegu (konkurent: zakres przebiegu; domena projektu: TOP100 z tym samym wolumenem
+	 * i limitem fraz).
+	 */
+	public function targetCoverage(string $role, int $maxRowsPerDomain): Coverage
+	{
+		$maxRows = min($this->coverage->maxRows, $maxRowsPerDomain);
+
+		return $role === PlannedTarget::ROLE_PROJECT
+			? new Coverage(GapConfig::BASELINE_MAX_RANK, $this->coverage->minVolume, $maxRows)
+			: new Coverage($this->coverage->maxRank, $this->coverage->minVolume, $maxRows);
+	}
+
 	public static function reasonLabel(string $reason): string
 	{
 		return match ($reason) {
@@ -119,6 +135,11 @@ final class GapRun
 			'expired' => 'limit kosztów nie pozwolił dokończyć w ciągu 7 dni',
 			'cancelled' => 'anulowany',
 			'duplicates' => 'powtórzone frazy między stronami wyników — brak frazy nie oznacza utraty',
+			'total_changed' => 'liczba fraz u dostawcy zmieniła się w trakcie importu — brak frazy nie oznacza utraty',
+			'short_page' => 'dostawca zwrócił mniej fraz, niż zapowiedział — brak frazy nie oznacza utraty',
+			'order' => 'niespójna kolejność wyników między stronami — brak frazy nie oznacza utraty',
+			'unreadable' => 'nieczytelne wyniki w odpowiedzi — brak frazy nie oznacza utraty',
+			'empty' => 'pusta odpowiedź dla zbioru z frazami — utrata wymaga potwierdzenia kolejnym importem',
 			'missing_dataset' => 'brak zbioru domeny',
 			default => $reason,
 		};

@@ -270,7 +270,7 @@ final class GapRefresher
 			$project = $resolver->resolve(
 				$tracked === null ? null : ['found' => (int) $tracked['last_found'] === 1, 'rank' => $tracked['last_rank'] === null ? null : (int) $tracked['last_rank'], 'depth' => (int) $tracked['last_depth']],
 				['has_data' => $context->window !== null, 'impressions' => $gscRow['impressions'], 'position_sum' => $gscRow['position_sum']],
-				$context->baseline === null ? null : ['rank' => $labsRow === null ? null : (int) $labsRow['rank_group'], 'absence_reliable' => $context->baseline->absenceReliable($volume)],
+				$context->baseline === null ? null : ['rank' => $labsRow === null ? null : (int) $labsRow['rank_group'], 'absence_reliable' => $context->baseline->provesNoVisibility($volume)],
 				$volume,
 			);
 			$type = $classifier->classify($project, $competitor['rank']);
@@ -542,7 +542,7 @@ final class GapRefresher
 				leaderType: $leader['type'],
 				gapShare: $gapCount / max(1, count($ids)),
 				gapVolume: $gapVolume,
-				baselineReliable: $context->baseline !== null && $context->baseline->absenceReliable((int) $leader['volume']),
+				baselineReliable: $context->baseline !== null && $context->baseline->provesNoVisibility($leader['volume'] === null ? null : (int) $leader['volume']),
 				hasGsc: $context->window !== null,
 			));
 			$clusters[] = [

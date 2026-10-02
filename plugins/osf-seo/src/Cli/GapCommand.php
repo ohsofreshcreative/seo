@@ -447,7 +447,12 @@ final class GapCommand
 		$competitors = array_map(static fn (array $entry): array => [
 			'competitor' => $entry['competitor']->name,
 			'domain' => $entry['competitor']->domain,
-			'labs_position' => $entry['row'] === null || (int) $entry['row']['present'] !== 1 ? '—' : (string) $entry['row']['rank_group'],
+			'labs_position' => match (true) {
+				$entry['row'] === null => '—',
+				(int) $entry['row']['present'] === 2 => 'unconfirmed (was ' . $entry['row']['rank_group'] . ')',
+				(int) $entry['row']['present'] !== 1 => '—',
+				default => (string) $entry['row']['rank_group'],
+			},
 			'url' => $entry['row']['url'] ?? '—',
 			'labs_date' => $entry['row']['serp_on'] ?? '—',
 			'first_seen' => $entry['row']['first_seen'] ?? '—',
@@ -753,6 +758,7 @@ final class GapCommand
 			'lost' => (int) $target['rows_lost'],
 			'cost' => sprintf('%.4f', $target['cost']),
 			'error' => (string) ($target['error_code'] ?? ''),
+			'unreliable' => (string) ($target['unreliable'] ?? ''),
 		];
 	}
 

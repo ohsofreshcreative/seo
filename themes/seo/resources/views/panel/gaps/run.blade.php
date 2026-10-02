@@ -11,7 +11,7 @@
 
   $base = PanelUrl::project($project->publicId, 'gaps');
   $targetStatuses = ['pending' => 'czeka', 'running' => 'w toku', 'cached' => 'z pamięci (bez kosztu)', 'done' => 'pobrany', 'partial' => 'niepełny', 'failed' => 'błąd', 'cancelled' => 'anulowany'];
-  $errorLabel = fn (?string $code): ?string => $code === null ? null : (in_array($code, ['interrupted', 'expired', 'cancelled', 'missing_dataset', 'duplicates'], true) ? GapRun::reasonLabel($code) : (ProviderErrorCategory::tryFrom($code)?->label() ?? $code));
+  $errorLabel = fn (?string $code): ?string => $code === null ? null : (in_array($code, ['interrupted', 'expired', 'cancelled', 'missing_dataset', ...GapRun::UNRELIABLE_REASONS], true) ? GapRun::reasonLabel($code) : (ProviderErrorCategory::tryFrom($code)?->label() ?? $code));
   $triggers = ['manual' => 'ręcznie', 'cli' => 'WP-CLI', 'schedule' => 'harmonogram'];
 @endphp
 
@@ -77,7 +77,9 @@
             @foreach ($targets as $target)
               <tr>
                 <td class="py-2 pr-4"><span class="text-slate-900">{{ $target['competitor'] ?? $project->name }}</span> <span class="block text-xs text-slate-500">{{ $target['domain'] }}{{ $target['role'] === 'project' ? ' · projekt' : '' }}</span></td>
-                <td class="py-2 pr-4 text-slate-600">{{ $targetStatuses[$target['status']] ?? $target['status'] }}@if ($target['error_code'] !== null)<span class="block text-xs text-amber-700">{{ $errorLabel($target['error_code']) }}</span>@endif</td>
+                <td class="py-2 pr-4 text-slate-600">{{ $targetStatuses[$target['status']] ?? $target['status'] }}@if ($target['error_code'] !== null)<span class="block text-xs text-amber-700">{{ $errorLabel($target['error_code']) }}</span>@endif
+                  @if ($target['unreliable'] !== null && $target['unreliable'] !== $target['error_code'])<span class="block text-xs text-amber-700">{{ GapRun::reasonLabel($target['unreliable']) }}</span>@endif
+                </td>
                 <td class="py-2 pr-4 text-right">{{ $target['pages_done'] }}</td>
                 <td class="py-2 pr-4 text-right">{{ Format::number($target['rows_unique']) }}@if ($target['total_count'] !== null && $target['total_count'] > $target['rows_unique']) <span class="block text-xs text-slate-500">z {{ Format::number($target['total_count']) }} u dostawcy</span>@endif</td>
                 <td class="py-2 pr-4 text-right">{{ Format::number($target['rows_new']) }} / {{ Format::number($target['rows_lost']) }}</td>

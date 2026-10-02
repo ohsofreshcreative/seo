@@ -45,11 +45,17 @@ final class PlannedTarget
 		return $this->state === self::IMPORT;
 	}
 
+	/** Import nastąpi albo może nastąpić (czekanie na import innego projektu, który może się nie udać) — w maksimum kosztu. */
+	public function mayImport(): bool
+	{
+		return $this->state === self::IMPORT || $this->state === self::WAITING;
+	}
+
 	public function stateLabel(): string
 	{
 		return match ($this->state) {
 			self::CACHED => 'z pamięci (import z ' . substr((string) $this->dataset?->importedAt, 0, 10) . ')',
-			self::WAITING => 'czeka na import innego projektu',
+			self::WAITING => 'czeka na trwający import innego projektu (zwykle bez kosztu)',
 			default => $this->dataset?->wasImported() === true ? 'odświeżenie' : 'nowy import',
 		};
 	}

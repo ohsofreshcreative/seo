@@ -168,7 +168,7 @@
                   <td class="py-2 pr-4 text-slate-600">{{ $target->role === PlannedTarget::ROLE_PROJECT ? 'projekt' : 'konkurent' }}</td>
                   <td class="py-2 pr-4 text-slate-600">{{ $target->stateLabel() }}</td>
                   <td class="py-2 pr-4 text-xs text-slate-600">TOP{{ $target->coverage->maxRank }}, ≥ {{ Format::number($target->coverage->minVolume) }}, maks. {{ Format::number($target->coverage->maxRows) }}</td>
-                  @if ($target->needsImport())
+                  @if ($target->mayImport())
                     <td class="py-2 pr-4 text-right">{{ $target->knownTotal === null ? '—' : Format::number($target->knownTotal) }}</td>
                     <td class="py-2 pr-4 text-right">{{ $target->maxRequests }}</td>
                     <td class="py-2 pr-4 text-right">{{ Format::usd($target->expectedCost, 4) }}</td>
