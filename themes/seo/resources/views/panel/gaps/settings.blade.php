@@ -13,6 +13,7 @@
   $value = fn (string $key, mixed $current) => array_key_exists($key, $old) ? (string) $old[$key] : (string) $current;
   $skipReasons = [
     'no_competitors' => 'brak aktywnych konkurentów',
+    'project_inactive' => 'projekt wstrzymany albo w archiwum',
     'unsupported_market' => 'rynek nieobsługiwany',
     'already_running' => 'trwał inny import',
     'not_configured' => 'DataForSEO nie jest skonfigurowane',

@@ -13,6 +13,7 @@ use OsfSeo\Market\Market;
 use OsfSeo\Market\MarketDataConfig;
 use OsfSeo\Market\MarketKeyword;
 use OsfSeo\Market\MarketSyncService;
+use OsfSeo\Projects\ProjectStatus;
 use OsfSeo\Serp\Competitor;
 use OsfSeo\Serp\CompetitorRepository;
 use OsfSeo\Serp\DomainFamily;
@@ -767,8 +768,17 @@ final class GapService
 				$publicId = (string) $this->db->fetchValue("SELECT public_id FROM `{$this->db->table('projects')}` WHERE id = %d", [$projectId]);
 				$context = $this->guard->authorizeSystem($publicId);
 				$settings = $this->settings->get($projectId);
-				$plan = $this->planner->plan($context, new GapRequest([], $settings->fetchCoverage($this->provider->maxRowsPerDomain()), true, false));
 				$tomorrow = $this->clock->now()->modify('+1 day')->format('Y-m-d H:i:s');
+
+				// Projekt wstrzymany albo w archiwum — bez płatnych odświeżeń (jak synchronizacja GSC).
+				if ($context->project()->status !== ProjectStatus::Active) {
+					$this->settings->recordSkip($projectId, 'project_inactive', $tomorrow);
+					$result[$projectId] = 'skipped';
+
+					continue;
+				}
+
+				$plan = $this->planner->plan($context, new GapRequest([], $settings->fetchCoverage($this->provider->maxRowsPerDomain()), true, false));
 
 				if ($plan->skipReason !== null || $this->runs->active($projectId) !== null || ! $this->provider->isConfigured()) {
 					$this->settings->recordSkip($projectId, $plan->skipReason ?? ($this->provider->isConfigured() ? 'already_running' : 'not_configured'), $tomorrow);

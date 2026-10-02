@@ -2092,6 +2092,7 @@ rynkowe) i z `wp osf-seo gap:recalculate`. Przycisk „Przelicz” w panelu tylk
 Harmonogram odświeżania (domyślnie wyłączony): co `refresh_days` (domyślnie 30) import nieświeżych zbiorów w domyślnym zakresie projektu — tylko
 gdy **koszt oczekiwany** (liczba fraz z poprzedniego importu o tych samych filtrach; dla nowej domeny — maksimum) mieści się w dzisiejszym
 i miesięcznym limicie; inaczej pominięcie z powodem i ponowienie następnego dnia. Limit jest i tak sprawdzany przed każdą stroną (pauza).
+Projekty wstrzymane i w archiwum są pomijane (jak synchronizacja GSC).
 Włączenie wymaga potwierdzenia szacowanego kosztu miesięcznego (plan przeskalowany do 30 dni). Koszt pierwszego importu dla jednego konkurenta
 w domyślnym zakresie: maks. 10 stron = **1,32 USD**, a dla domeny z np. 2 000 frazami 2 strony ≈ 0,26 USD; punkt odniesienia projektu — tyle samo.
 

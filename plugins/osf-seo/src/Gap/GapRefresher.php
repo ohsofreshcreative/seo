@@ -119,52 +119,63 @@ final class GapRefresher
 			return $report;
 		}
 
-		$report['skipped'] = false;
-		$marker = $this->clock->now()->format('Y-m-d H:i:s');
-		$this->backfill->fillProject($projectId);
-		$context = new RefreshContext(
-			projectId: $projectId,
-			market: $market,
-			settings: $settings,
-			competitorsByDataset: $byDataset,
-			baseline: $baseline,
-			exclusions: $exclusions,
-			includes: ExclusionList::parse($settings->includeTerms),
-			ownBrand: BrandMatcher::build($projectDomain === null ? [] : [$projectDomain], [(string) $project['name']], $settings->brandTerms),
-			competitorBrands: array_map(
-				static fn (Competitor $competitor): BrandMatcher => BrandMatcher::build([(string) DomainFamily::normalize($competitor->domain)], [$competitor->name], $competitor->brandTerms),
-				$competitors,
-			),
-			window: $latest === null ? null : [DateRange::shift($latest, -($this->config->windowDays() - 1)), $latest],
-			serpSince: $this->clock->now()->modify('-' . $this->config->serpFreshDays() . ' days')->format('Y-m-d H:i:s'),
-			marker: $marker,
-		);
-		$this->datasetCompetitors = array_map(static fn (Competitor $competitor): int => $competitor->id, $byDataset);
-		$keep = [];
-		// Znacznik przeliczenia: wiersze nieocenione w tym przebiegu (scored_at NULL) staną się nieaktualne. Sam czas nie
-		// wystarcza — dwa przeliczenia w tej samej sekundzie miałyby ten sam znacznik.
-		$this->db->execute("UPDATE `{$this->table()}` SET scored_at = NULL WHERE project_id = %d AND active = 1", [$projectId]);
+		$lock = 'gap_refresh_' . $projectId;
 
-		if ($byDataset !== []) {
-			$ids = $this->keywordIds(array_keys($byDataset), $settings->competitorMaxRank);
-			$report['keywords'] = count($ids);
-
-			foreach (array_chunk($ids, self::CHUNK) as $chunk) {
-				foreach ($this->scoreChunk($context, $chunk) as $id => $entry) {
-					$keep[$id] = $entry;
-				}
-			}
+		if (! $this->db->acquireLock($lock, 0)) {
+			// Ten projekt przelicza właśnie inny proces (CLI albo krok tła) — bez równoległego przeliczenia.
+			return $report;
 		}
 
-		$this->db->execute(
-			"UPDATE `{$this->table()}` SET active = 0, listed = 0, filter_reason = 'inactive', cluster_id = NULL, content_gap = NULL, updated_at = %s
-			WHERE project_id = %d AND active = 1 AND scored_at IS NULL",
-			[$marker, $projectId],
-		);
-		$report['listed'] = count($keep);
-		$report['clusters'] = $this->clusters($context, $keep);
-		$report['pages'] = $this->pages($context);
-		$this->settings->recordRecalculation($projectId, $key);
+		try {
+			$report['skipped'] = false;
+			$marker = $this->clock->now()->format('Y-m-d H:i:s');
+			$this->backfill->fillProject($projectId);
+			$context = new RefreshContext(
+				projectId: $projectId,
+				market: $market,
+				settings: $settings,
+				competitorsByDataset: $byDataset,
+				baseline: $baseline,
+				exclusions: $exclusions,
+				includes: ExclusionList::parse($settings->includeTerms),
+				ownBrand: BrandMatcher::build($projectDomain === null ? [] : [$projectDomain], [(string) $project['name']], $settings->brandTerms),
+				competitorBrands: array_map(
+					static fn (Competitor $competitor): BrandMatcher => BrandMatcher::build([(string) DomainFamily::normalize($competitor->domain)], [$competitor->name], $competitor->brandTerms),
+					$competitors,
+				),
+				window: $latest === null ? null : [DateRange::shift($latest, -($this->config->windowDays() - 1)), $latest],
+				serpSince: $this->clock->now()->modify('-' . $this->config->serpFreshDays() . ' days')->format('Y-m-d H:i:s'),
+				marker: $marker,
+			);
+			$this->datasetCompetitors = array_map(static fn (Competitor $competitor): int => $competitor->id, $byDataset);
+			$keep = [];
+			// Znacznik przeliczenia: wiersze nieocenione w tym przebiegu (scored_at NULL) staną się nieaktualne. Sam czas nie
+			// wystarcza — dwa przeliczenia w tej samej sekundzie miałyby ten sam znacznik.
+			$this->db->execute("UPDATE `{$this->table()}` SET scored_at = NULL WHERE project_id = %d AND active = 1", [$projectId]);
+
+			if ($byDataset !== []) {
+				$ids = $this->keywordIds(array_keys($byDataset), $settings->competitorMaxRank);
+				$report['keywords'] = count($ids);
+
+				foreach (array_chunk($ids, self::CHUNK) as $chunk) {
+					foreach ($this->scoreChunk($context, $chunk) as $id => $entry) {
+						$keep[$id] = $entry;
+					}
+				}
+			}
+
+			$this->db->execute(
+				"UPDATE `{$this->table()}` SET active = 0, listed = 0, filter_reason = 'inactive', cluster_id = NULL, content_gap = NULL, updated_at = %s
+				WHERE project_id = %d AND active = 1 AND scored_at IS NULL",
+				[$marker, $projectId],
+			);
+			$report['listed'] = count($keep);
+			$report['clusters'] = $this->clusters($context, $keep);
+			$report['pages'] = $this->pages($context);
+			$this->settings->recordRecalculation($projectId, $key);
+		} finally {
+			$this->db->releaseLock($lock);
+		}
 
 		return $report;
 	}

@@ -215,6 +215,13 @@ final class GapImportTest extends GapTestCase
 		self::assertSame('over_budget', $this->gaps->runBackground(60.0)['scheduled'][$context->projectId()]);
 		self::assertSame('daily_limit', $this->gapSettings->get($context->projectId())->lastSkipReason);
 		self::assertCount($requests + 2, $this->rankedBodies(), 'Oczekiwany koszt ponad limit — odświeżenie pominięte z powodem.');
+
+		putenv(MarketDataConfig::DAILY_COST_LIMIT);
+		self::db()->update(self::db()->table('projects'), ['status' => 'paused'], ['id' => $context->projectId()]);
+		$this->clock->advance(86400);
+		self::assertSame('skipped', $this->gaps->runBackground(60.0)['scheduled'][$context->projectId()]);
+		self::assertSame('project_inactive', $this->gapSettings->get($context->projectId())->lastSkipReason, 'Projekt wstrzymany — bez płatnych odświeżeń.');
+		self::assertCount($requests + 2, $this->rankedBodies());
 	}
 
 	public function test_monthly_budget_blocks_start_and_nothing_is_queued(): void
