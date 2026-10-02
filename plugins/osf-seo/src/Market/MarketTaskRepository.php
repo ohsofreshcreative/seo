@@ -34,6 +34,9 @@ final class MarketTaskRepository
 	/** Pomiary pozycji SERP (STEP 14): jeden wiersz = jedno zlecenie (do 100 zadań); zadania śledzi `serp_snapshots`. */
 	public const ENDPOINT_SERP = 'google_organic_serp';
 
+	/** Luki SEO (STEP 15): jedno żądanie Ranked Keywords = jedna strona wyników (do 1000 fraz) jednej domeny. */
+	public const TRIGGER_GAP = 'gap';
+
 	/** Po ilu dniach usuwamy listę fraz zakończonego zadania (wiersz z kosztem zostaje). */
 	private const KEYWORDS_RETENTION_DAYS = 30;
 
@@ -234,30 +237,39 @@ final class MarketTaskRepository
 	/**
 	 * Zużycie od podanej chwili z podziałem: wzbogacanie fraz danymi rynkowymi (STEP 12), wyszukiwanie nowych fraz
 	 * (STEP 13, `trigger_type = discovery`) i pomiary pozycji SERP (STEP 14, endpoint `google_organic_serp`; zadania =
-	 * zadania SERP w zleceniach) oraz suma. Limity kosztów są wspólne — to tylko podział do wglądu.
+	 * zadania SERP w zleceniach), luki SEO (STEP 15, `trigger_type = gap`; zadania = strony wyników Ranked Keywords) oraz suma.
+	 * Limity kosztów są wspólne — to tylko podział do wglądu.
 	 *
-	 * @return array{enrichment: array{tasks: int, cost: float}, discovery: array{tasks: int, cost: float}, serp: array{tasks: int, cost: float}, total: array{tasks: int, cost: float}}
+	 * @return array{enrichment: array{tasks: int, cost: float}, discovery: array{tasks: int, cost: float}, serp: array{tasks: int, cost: float}, gap: array{tasks: int, cost: float}, total: array{tasks: int, cost: float}}
 	 */
 	public function usageByPurpose(string $since, ?int $projectId = null): array
 	{
 		$empty = ['tasks' => 0, 'cost' => 0.0];
-		$result = ['enrichment' => $empty, 'discovery' => $empty, 'serp' => $empty, 'total' => $empty];
+		$result = ['enrichment' => $empty, 'discovery' => $empty, 'serp' => $empty, 'gap' => $empty, 'total' => $empty];
+		$params = [self::ENDPOINT_SERP, self::TRIGGER_GAP, self::TRIGGER_DISCOVERY, self::ENDPOINT_SERP, $since];
+
+		if ($projectId !== null) {
+			$params[] = $projectId;
+		}
 
 		foreach ($this->db->fetchAll(
-			"SELECT CASE WHEN endpoint = %s THEN 'serp' WHEN trigger_type = %s THEN 'discovery' ELSE 'enrichment' END AS purpose,
+			"SELECT CASE WHEN endpoint = %s THEN 'serp' WHEN trigger_type = %s THEN 'gap' WHEN trigger_type = %s THEN 'discovery' ELSE 'enrichment' END AS purpose,
 				SUM(CASE WHEN endpoint = %s THEN keywords_count ELSE 1 END) AS tasks, COALESCE(SUM(COALESCE(cost, estimated_cost)), 0) AS cost
 			FROM `{$this->table()}` WHERE created_at >= %s" . ($projectId === null ? '' : ' AND project_id = %d') . ' GROUP BY purpose',
-			$projectId === null
-				? [self::ENDPOINT_SERP, self::TRIGGER_DISCOVERY, self::ENDPOINT_SERP, $since]
-				: [self::ENDPOINT_SERP, self::TRIGGER_DISCOVERY, self::ENDPOINT_SERP, $since, $projectId],
+			$params,
 		) as $row) {
 			$result[(string) $row['purpose']] = ['tasks' => (int) $row['tasks'], 'cost' => round((float) $row['cost'], 6)];
 		}
 
-		$result['total'] = [
-			'tasks' => $result['enrichment']['tasks'] + $result['discovery']['tasks'] + $result['serp']['tasks'],
-			'cost' => round($result['enrichment']['cost'] + $result['discovery']['cost'] + $result['serp']['cost'], 6),
-		];
+		$tasks = 0;
+		$cost = 0.0;
+
+		foreach (['enrichment', 'discovery', 'serp', 'gap'] as $purpose) {
+			$tasks += $result[$purpose]['tasks'];
+			$cost += $result[$purpose]['cost'];
+		}
+
+		$result['total'] = ['tasks' => $tasks, 'cost' => round($cost, 6)];
 
 		return $result;
 	}

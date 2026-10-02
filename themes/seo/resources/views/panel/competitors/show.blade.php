@@ -15,7 +15,14 @@
 
 @section('content')
   <p class="mb-2 text-sm"><a href="{{ $base }}" class="text-brand-600 hover:underline">← Konkurenci</a></p>
-  <x-panel.page-header :title="$competitor->name" :description="$competitor->domain . ' (z subdomenami) · ' . ['active' => 'aktywny', 'inactive' => 'monitorowanie wstrzymane', 'archived' => 'w archiwum'][$competitor->status]" />
+  <x-panel.page-header :title="$competitor->name" :description="$competitor->domain . ' (z subdomenami) · ' . ['active' => 'aktywny', 'inactive' => 'monitorowanie wstrzymane', 'archived' => 'w archiwum'][$competitor->status]">
+    @if ($competitor->isActive())
+      <x-slot:actions>
+        <x-panel.button variant="secondary" :href="\App\Panel\PanelUrl::project($project->publicId, 'gaps/keywords') . '?competitor=' . rawurlencode($competitor->publicId)">Luki SEO względem konkurenta</x-panel.button>
+        <x-panel.button variant="secondary" :href="\App\Panel\PanelUrl::project($project->publicId, 'gaps/pages') . '?competitor=' . rawurlencode($competitor->publicId)">Strony konkurenta</x-panel.button>
+      </x-slot:actions>
+    @endif
+  </x-panel.page-header>
 
   <div class="grid grid-cols-2 gap-3 md:grid-cols-5">
     <x-panel.stat label="Frazy w wynikach" :value="Format::number($stats['found']) . ' / ' . Format::number($stats['checked'])" hint="ostatnie pomiary monitorowanych fraz" />

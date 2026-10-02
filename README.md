@@ -20,7 +20,9 @@ dostawca danych rynkowych (wolumen, historia wolumenu, CPC, konkurencja Ads, tru
 > (STEP 13: seedy z GSC, szans lub wpisane ręcznie → DataForSEO Labs w tle z planem i kosztem przed uruchomieniem →
 > deduplikacja, widoczność w GSC, priorytet odkrycia, decyzje i wykluczenia) oraz moduły „Pozycje” i „Konkurenci”
 > (STEP 14: monitorowane frazy, pomiary Google TOP100 w kolejce Standard z podglądem kosztu i harmonogramem — domyślnie
-> wyłączonym, pełne wyniki w historii, Pozycja SERP osobno od średniej pozycji GSC, konkurenci monitorowani i organiczni). Plan i postęp:
+> wyłączonym, pełne wyniki w historii, Pozycja SERP osobno od średniej pozycji GSC, konkurenci monitorowani i organiczni) oraz moduł
+> „Luki SEO” (STEP 15, Whack-a-mole: frazy domen konkurentów z DataForSEO Labs we wspólnych zbiorach, import w tle z planem i kosztem przed
+> uruchomieniem, widoczność projektu SERP → GSC → punkt odniesienia, priorytet luki, grupy fraz, luka treści jako heurystyka, strony konkurencji). Plan i postęp:
 > [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 >
 > **Repozytorium jest publiczne.** Nie commituj żadnych sekretów (sekcja „Konfiguracja”).
@@ -124,6 +126,8 @@ OSF_SEO_TEST_DB_HOST="localhost:/ścieżka/do/mysqld.sock" composer test:integra
 
 # wydajność raportów na syntetycznych danych (ta sama OSOBNA baza testowa)
 composer test:performance
+composer test:performance:serp   # pozycje SERP
+composer test:performance:gap    # Luki SEO (import atrapą HTTP, bez żadnego żądania do DataForSEO)
 
 # stan pluginu w WordPressie
 wp osf-seo status
@@ -169,6 +173,14 @@ wp osf-seo serp:list --project=<public_id> [--band=top10] [--format=json]   # Po
 wp osf-seo serp:snapshot --project=<public_id> --keyword="fraza 1"          # pełne TOP100 ostatniego pomiaru
 wp osf-seo competitors:organic --project=<public_id>             # domeny najczęściej obecne w wynikach (fakty)
 wp osf-seo serp:settings --project=<public_id> --enable --frequency=weekly   # płatny harmonogram (potwierdzenie kosztu)
+
+# Luki SEO (DataForSEO Labs Ranked Keywords — płatne; zawsze najpierw plan; szczegóły: docs/ARCHITECTURE.md, sekcja 14)
+wp osf-seo gap:plan --project=<public_id> --preset=quick --no-baseline   # plan i maks. koszt, zero żądań
+wp osf-seo gap:run --project=<public_id> --preset=quick --no-baseline    # płatne: plan → potwierdzenie → import (strony po 1 000 fraz)
+wp osf-seo gap:status --project=<public_id>                       # zbiory domen, importy, liczniki luk
+wp osf-seo gap:list --project=<public_id> [--type=missing] [--format=json]   # luki fraz z priorytetem i widocznością projektu
+wp osf-seo gap:content --project=<public_id>                      # luki treści (grupy fraz, heurystyka)
+wp osf-seo gap:recalculate --project=<public_id>                  # przeliczenie z zapisanych danych (bez API)
 ```
 
 Synchronizacja działa w tle przez WP-Cron (lokalnie wystarczy ruch na stronie); na serwerze zalecany cron
@@ -213,8 +225,12 @@ define('OSF_SEO_DATAFORSEO_MONTHLY_COST_LIMIT', 10.00);
   zawsze pokazują najpierw szacowany maksymalny koszt (TOP100 ≈ 0,00465 USD za frazę; koszt zgłoszony przez DataForSEO jest rozstrzygający)
   i liczą się do tych samych limitów. Opcjonalnie: `OSF_SEO_SERP_MAX_KEYWORDS` (zalecany limit fraz w projekcie, 500 — komunikat zamiast
   obcinania), `OSF_SEO_SERP_MIN_RECHECK_HOURS` (6), `OSF_SEO_DATAFORSEO_PRICE_SERP_PAGE` / `…_NEXT_PAGE` (cennik do szacunku).
+- Luki SEO: import fraz konkurentów (DataForSEO Labs Ranked Keywords, 0,012 USD za stronę + 0,00012 USD za frazę; maks. 10 000 fraz = 1,32 USD
+  na domenę) zawsze po podglądzie kosztu, w tle i w ramach tych samych limitów; zbiory domen są wspólne między projektami (świeże przez 30 dni —
+  bez ponownej opłaty). Harmonogram odświeżania domyślnie wyłączony. Opcjonalnie: `OSF_SEO_GAP_TTL_DAYS` (30), `OSF_SEO_GAP_MAX_REQUESTS_PER_TICK`
+  (10), `OSF_SEO_DATAFORSEO_PRICE_GAP_REQUEST` / `…_GAP_ITEM` (cennik do szacunku).
 
-Pełna lista stałych: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md), sekcja 15.
+Pełna lista stałych: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md), sekcja 16.
 
 ## Bezpieczeństwo
 

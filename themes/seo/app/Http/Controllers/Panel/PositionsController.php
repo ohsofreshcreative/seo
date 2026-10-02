@@ -196,12 +196,12 @@ final class PositionsController
 	public function store(Request $request): Response
 	{
 		$context = $this->context($request);
-		$source = in_array($request->input('source'), ['manual', 'gsc', 'discovery'], true) ? (string) $request->input('source') : 'manual';
+		$source = in_array($request->input('source'), ['manual', 'gsc', 'discovery', 'gap'], true) ? (string) $request->input('source') : 'manual';
 		$single = $request->input('single');
 		$input = match (true) {
 			is_string($single) && $single !== '' => [$single],
 			$source === 'manual' => (string) $request->input('keywords', ''),
-			default => array_values(array_filter((array) $request->input($source === 'discovery' ? 'ids' : 'keywords', []), 'is_string')),
+			default => array_values(array_filter((array) $request->input(in_array($source, ['discovery', 'gap'], true) ? 'ids' : 'keywords', []), 'is_string')),
 		};
 		$back = $this->back($context, $request->input('back'));
 

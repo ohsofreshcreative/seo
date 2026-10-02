@@ -173,8 +173,8 @@ final class SerpTrackingService
 
 	/**
 	 * Dodanie fraz do monitorowania — bez żadnego płatnego żądania. Źródła: ręcznie (tekst), Frazy GSC (tekst frazy
-	 * z projektu), Nowe frazy (ULID kandydatów). Miękki limit `OSF_SEO_SERP_MAX_KEYWORDS`: przekroczenie = komunikat
-	 * i brak zmian (bez obcinania listy).
+	 * z projektu), Nowe frazy (ULID kandydatów), Luki SEO (ULID luk) — zawsze ta sama fraza rynkowa, bez nowej tożsamości.
+	 * Miękki limit `OSF_SEO_SERP_MAX_KEYWORDS`: przekroczenie = komunikat i brak zmian (bez obcinania listy).
 	 *
 	 * @param list<string>|string $input
 	 * @return array{added: int, restored: int, existing: int, rejected: list<array{keyword: string, reason: string}>}
@@ -188,15 +188,16 @@ final class SerpTrackingService
 		$rejected = [];
 		$entries = [];
 
-		if ($source === 'discovery') {
+		if ($source === 'discovery' || $source === 'gap') {
 			$ids = array_values(array_filter(is_array($input) ? $input : [$input], static fn (mixed $id): bool => is_string($id) && preg_match('/^[0-9A-HJKMNP-TV-Z]{26}$/', $id) === 1));
+			$table = $source === 'gap' ? 'gap_keywords' : 'discovery_candidates';
 
 			foreach (array_chunk($ids, 500) as $chunk) {
 				foreach ($this->db->fetchAll(
-					"SELECT market_keyword_id FROM `{$this->db->table('discovery_candidates')}` WHERE project_id = %d AND public_id IN (" . Connection::placeholders($chunk) . ')',
+					"SELECT market_keyword_id FROM `{$this->db->table($table)}` WHERE project_id = %d AND public_id IN (" . Connection::placeholders($chunk) . ')',
 					[$context->projectId(), ...$chunk],
 				) as $row) {
-					$entries[(int) $row['market_keyword_id']] = 'discovery';
+					$entries[(int) $row['market_keyword_id']] = $source;
 				}
 			}
 		} else {

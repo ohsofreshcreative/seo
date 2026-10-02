@@ -13,6 +13,9 @@ use App\Http\Controllers\Panel\AuthController;
 use App\Http\Controllers\Panel\CompetitorsController;
 use App\Http\Controllers\Panel\DashboardController;
 use App\Http\Controllers\Panel\DiscoveryController;
+use App\Http\Controllers\Panel\GapContentController;
+use App\Http\Controllers\Panel\GapKeywordsController;
+use App\Http\Controllers\Panel\GapsController;
 use App\Http\Controllers\Panel\KeywordsController;
 use App\Http\Controllers\Panel\MarketDataController;
 use App\Http\Controllers\Panel\OpportunitiesController;
@@ -98,8 +101,43 @@ Route::middleware([Authenticate::class, VerifyNonce::class])->group(function () 
 			->where('competitor', '[0-9A-Za-z]{26}');
 	});
 
+	// Luki SEO (frazy domen konkurentów, płatne API): podgląd kosztu, import, ustawienia, warianty marki i praca nad lukami
+	// tylko z uprawnieniem, nonce i Origin; identyfikatory = public_id (ULID). Kontroler nigdy nie wywołuje API.
+	Route::middleware(ResolveProject::class . ':osf_seo_manage_keyword_gap')->group(function () {
+		Route::get('/projects/{project}/gaps/import', [GapsController::class, 'import']);
+		Route::post('/projects/{project}/gaps/preview', [GapsController::class, 'preview']);
+		Route::post('/projects/{project}/gaps/runs', [GapsController::class, 'start']);
+		Route::post('/projects/{project}/gaps/runs/{run}/cancel', [GapsController::class, 'cancel'])
+			->where('run', '[0-9A-Za-z]{26}');
+		Route::post('/projects/{project}/gaps/recalculate', [GapsController::class, 'recalculate']);
+		Route::get('/projects/{project}/gaps/settings', [GapsController::class, 'settings']);
+		Route::post('/projects/{project}/gaps/settings', [GapsController::class, 'saveSettings']);
+		Route::post('/projects/{project}/gaps/schedule', [GapsController::class, 'schedule']);
+		Route::post('/projects/{project}/gaps/competitors/{competitor}/brand', [GapsController::class, 'brand'])
+			->where('competitor', '[0-9A-Za-z]{26}');
+		Route::post('/projects/{project}/gaps/bulk', [GapKeywordsController::class, 'bulk']);
+		Route::post('/projects/{project}/gaps/keywords/{gap}', [GapKeywordsController::class, 'update'])
+			->where('gap', '[0-9A-Za-z]{26}');
+		Route::post('/projects/{project}/gaps/content/{cluster}', [GapContentController::class, 'update'])
+			->where('cluster', '[0-9A-Za-z]{26}');
+	});
+
 	Route::middleware(ResolveProject::class)->group(function () {
 		Route::get('/projects/{project}', [ProjectController::class, 'show']);
+		Route::get('/projects/{project}/gaps', [GapsController::class, 'index']);
+		Route::get('/projects/{project}/gaps/runs/{run}', [GapsController::class, 'run'])
+			->where('run', '[0-9A-Za-z]{26}');
+		Route::get('/projects/{project}/gaps/runs/{run}/status', [GapsController::class, 'runStatus'])
+			->where('run', '[0-9A-Za-z]{26}');
+		Route::get('/projects/{project}/gaps/keywords', [GapKeywordsController::class, 'index']);
+		Route::get('/projects/{project}/gaps/keywords/{gap}', [GapKeywordsController::class, 'show'])
+			->where('gap', '[0-9A-Za-z]{26}');
+		Route::get('/projects/{project}/gaps/content', [GapContentController::class, 'index']);
+		Route::get('/projects/{project}/gaps/content/{cluster}', [GapContentController::class, 'show'])
+			->where('cluster', '[0-9A-Za-z]{26}');
+		Route::get('/projects/{project}/gaps/pages', [GapContentController::class, 'pages']);
+		Route::get('/projects/{project}/gaps/pages/{competitor}/{url}', [GapContentController::class, 'page'])
+			->where(['competitor' => '[0-9A-Za-z]{26}', 'url' => '[0-9a-f]{32}']);
 		Route::get('/projects/{project}/positions', [PositionsController::class, 'index']);
 		Route::get('/projects/{project}/positions/keywords/{keyword}', [PositionsController::class, 'show'])
 			->where('keyword', '[0-9A-Za-z]{26}');

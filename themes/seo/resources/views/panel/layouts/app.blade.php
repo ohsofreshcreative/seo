@@ -31,6 +31,7 @@
               <x-panel.nav-link :href="\App\Panel\PanelUrl::project($currentProject->publicId, 'positions')" :active="$active === 'positions'">Pozycje</x-panel.nav-link>
               <x-panel.nav-link :href="\App\Panel\PanelUrl::project($currentProject->publicId, 'competitors')" :active="$active === 'competitors'">Konkurenci</x-panel.nav-link>
               <x-panel.nav-link :href="\App\Panel\PanelUrl::project($currentProject->publicId, 'discovery')" :active="$active === 'discovery'">Nowe frazy</x-panel.nav-link>
+              <x-panel.nav-link :href="\App\Panel\PanelUrl::project($currentProject->publicId, 'gaps')" :active="$active === 'gaps'">Luki SEO</x-panel.nav-link>
               <x-panel.nav-link :href="\App\Panel\PanelUrl::project($currentProject->publicId, 'opportunities')" :active="$active === 'opportunities'">Szanse SEO</x-panel.nav-link>
               <x-panel.nav-link :href="\App\Panel\PanelUrl::project($currentProject->publicId, 'market-data')" :active="$active === 'market-data'">Dane rynkowe</x-panel.nav-link>
               <x-panel.nav-link :href="\App\Panel\PanelUrl::project($currentProject->publicId, 'pages')" :active="$active === 'pages'">Strony</x-panel.nav-link>

@@ -87,8 +87,8 @@ final class SerpCommand
 			'shortdesc' => 'Add keywords to SERP tracking (no API request).',
 			'synopsis' => [
 				$project,
-				['type' => 'assoc', 'name' => 'keywords', 'description' => 'Keywords (comma or newline separated); with --from=discovery: candidate ULIDs.', 'optional' => false],
-				['type' => 'assoc', 'name' => 'from', 'description' => 'Source.', 'optional' => true, 'default' => 'manual', 'options' => ['manual', 'gsc', 'discovery']],
+				['type' => 'assoc', 'name' => 'keywords', 'description' => 'Keywords (comma or newline separated); with --from=discovery or --from=gap: candidate / gap ULIDs.', 'optional' => false],
+				['type' => 'assoc', 'name' => 'from', 'description' => 'Source.', 'optional' => true, 'default' => 'manual', 'options' => ['manual', 'gsc', 'discovery', 'gap']],
 			],
 		]);
 		WP_CLI::add_command('osf-seo serp:untrack', [$command, 'untrack'], [
@@ -390,7 +390,7 @@ final class SerpCommand
 	{
 		$context = CliProject::resolve($this->plugin, $assocArgs, Capabilities::MANAGE_SERP_TRACKING);
 		$source = (string) ($assocArgs['from'] ?? 'manual');
-		$input = $source === 'discovery' ? array_map('trim', explode(',', (string) $assocArgs['keywords'])) : (string) $assocArgs['keywords'];
+		$input = in_array($source, ['discovery', 'gap'], true) ? array_map('trim', explode(',', (string) $assocArgs['keywords'])) : (string) $assocArgs['keywords'];
 
 		try {
 			$result = $this->service()->addKeywords($context, $source, $input);

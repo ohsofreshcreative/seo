@@ -259,6 +259,61 @@ final class MarketMetricsRepository
 	}
 
 	/**
+	 * Grupa synonimów dostawcy (`core_key` = klucz rynkowy frazy głównej grupy, np. DataForSEO Labs `core_keyword`) —
+	 * sygnał grupowania fraz (Luki SEO), nie tożsamość frazy.
+	 *
+	 * @param array<string, string> $cores postać znormalizowana → fraza główna grupy
+	 */
+	public function storeCoreKeys(Market $market, array $cores): int
+	{
+		$ids = $this->ensure($market, array_map('strval', array_keys($cores)));
+		$now = $this->now();
+		$upsert = new BulkInsert(
+			$this->db,
+			$this->table(),
+			['id', 'provider', 'location_code', 'language_code', 'keyword_key', 'keyword', 'core_key', 'created_at', 'updated_at'],
+			['%d', '%s', '%d', '%s', 'UNHEX(%s)', '%s', 'UNHEX(%s)', '%s', '%s'],
+			'ON DUPLICATE KEY UPDATE core_key = VALUES(core_key)',
+		);
+
+		foreach ($ids as $keyword => $id) {
+			$keyword = (string) $keyword;
+			$upsert->add([$id, $market->provider, $market->locationCode, $market->languageCode, bin2hex(MarketKeyword::key($keyword)), mb_substr($keyword, 0, 255, 'UTF-8'), bin2hex(MarketKeyword::key($cores[$keyword])), $now, $now]);
+		}
+
+		$upsert->flush();
+
+		return count($ids);
+	}
+
+	/**
+	 * Dostawca rozpoznał inny język frazy niż język rynku (filtr trafności Luk SEO).
+	 *
+	 * @param array<string, bool> $languages postać znormalizowana → inny język
+	 */
+	public function storeOtherLanguage(Market $market, array $languages): int
+	{
+		$ids = $this->ensure($market, array_map('strval', array_keys($languages)));
+		$now = $this->now();
+		$upsert = new BulkInsert(
+			$this->db,
+			$this->table(),
+			['id', 'provider', 'location_code', 'language_code', 'keyword_key', 'keyword', 'other_language', 'created_at', 'updated_at'],
+			['%d', '%s', '%d', '%s', 'UNHEX(%s)', '%s', '%d', '%s', '%s'],
+			'ON DUPLICATE KEY UPDATE other_language = VALUES(other_language)',
+		);
+
+		foreach ($ids as $keyword => $id) {
+			$keyword = (string) $keyword;
+			$upsert->add([$id, $market->provider, $market->locationCode, $market->languageCode, bin2hex(MarketKeyword::key($keyword)), mb_substr($keyword, 0, 255, 'UTF-8'), $languages[$keyword] ? 1 : 0, $now, $now]);
+		}
+
+		$upsert->flush();
+
+		return count($ids);
+	}
+
+	/**
 	 * Metryki dla kluczy rynkowych (jedno zapytanie na paczkę — bez N+1). Klucz wyniku: hex klucza.
 	 *
 	 * @param list<string> $keys klucze binarne (MarketKeyword::key)

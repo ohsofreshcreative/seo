@@ -19,7 +19,7 @@ use OsfSeo\Support\Ulid;
  */
 final class TrackedKeywordRepository
 {
-	public const SOURCES = ['manual', 'gsc', 'discovery'];
+	public const SOURCES = ['manual', 'gsc', 'discovery', 'gap'];
 
 	public function __construct(
 		private readonly Connection $db,

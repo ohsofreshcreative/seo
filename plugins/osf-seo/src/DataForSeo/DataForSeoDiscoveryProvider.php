@@ -228,7 +228,7 @@ final class DataForSeoDiscoveryProvider implements KeywordDiscoveryProvider
 	/**
 	 * @param array<string, mixed> $data obiekt danych frazy (KeywordDataInfo)
 	 */
-	private static function keyword(array $data, ?int $depth, int $position): ?DiscoveredKeyword
+	public static function keyword(array $data, ?int $depth, int $position): ?DiscoveredKeyword
 	{
 		$keyword = DataForSeoResponse::nonEmptyString($data['keyword'] ?? null);
 

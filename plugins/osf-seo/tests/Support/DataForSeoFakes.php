@@ -383,4 +383,76 @@ final class DataForSeoFakes
 			]],
 		]);
 	}
+
+	/**
+	 * Element DataForSEO Labs Ranked Keywords: dane frazy + wynik domeny w migawce SERP Labs.
+	 *
+	 * @param array<string, mixed> $keywordData {@see labsKeyword()}
+	 * @return array<string, mixed>
+	 */
+	public static function rankedItem(array $keywordData, int $rankGroup, string $domain, ?string $url = null, ?int $rankAbsolute = null, ?string $title = null, ?float $etv = 12.5, string $type = 'organic', string $updated = '2026-09-20 08:15:00 +00:00'): array
+	{
+		$url ??= 'https://' . $domain . '/' . str_replace(' ', '-', (string) $keywordData['keyword']) . '/';
+
+		return [
+			'se_type' => 'google',
+			'keyword_data' => $keywordData,
+			'ranked_serp_element' => [
+				'se_type' => 'google',
+				'serp_item' => [
+					'se_type' => 'google',
+					'type' => $type,
+					'rank_group' => $rankGroup,
+					'rank_absolute' => $rankAbsolute ?? $rankGroup + 1,
+					'position' => 'left',
+					'xpath' => '/html[1]/body[1]',
+					'domain' => $domain,
+					'title' => $title ?? ucfirst((string) $keywordData['keyword']) . ' — oferta',
+					'url' => $url,
+					'breadcrumb' => $url,
+					'website_name' => $domain,
+					'description' => 'Opis wyniku.',
+					'etv' => $etv,
+					'estimated_paid_traffic_cost' => null,
+					'rank_changes' => ['previous_rank_absolute' => null, 'is_new' => true, 'is_up' => false, 'is_down' => false],
+					'backlinks_info' => null,
+					'rank_info' => null,
+					'main_domain' => $domain,
+					'relative_url' => (string) parse_url($url, PHP_URL_PATH),
+				],
+				'check_url' => 'https://www.google.com/search?q=' . rawurlencode((string) $keywordData['keyword']),
+				'serp_item_types' => ['organic', 'people_also_ask'],
+				'se_results_count' => 1250000,
+				'keyword_difficulty' => $keywordData['keyword_properties']['keyword_difficulty'] ?? null,
+				'is_lost' => false,
+				'last_updated_time' => $updated,
+				'previous_updated_time' => '2026-08-20 08:15:00 +00:00',
+			],
+		];
+	}
+
+	/**
+	 * Wynik DataForSEO Labs Ranked Keywords (jedna strona).
+	 *
+	 * @param list<array<string, mixed>> $items {@see rankedItem()}
+	 * @return array<string, mixed>
+	 */
+	public static function rankedResult(string $target, array $items, ?int $total = null, float $cost = 0.0, int $offset = 0): array
+	{
+		return self::envelope([
+			'result_count' => 1,
+			'cost' => $cost,
+			'result' => [[
+				'se_type' => 'google',
+				'target' => $target,
+				'location_code' => 2616,
+				'language_code' => 'pl',
+				'total_count' => $total ?? count($items),
+				'items_count' => count($items),
+				'offset' => $offset,
+				'metrics' => ['organic' => ['pos_1' => 1, 'pos_2_3' => 2, 'count' => count($items), 'etv' => 120.5]],
+				'items' => $items,
+			]],
+		], 20000, $cost);
+	}
 }

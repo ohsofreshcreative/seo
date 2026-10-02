@@ -283,53 +283,17 @@ final class DiscoveryRunner
 	}
 
 	/**
-	 * Metryki z odpowiedzi discovery trafiają do wspólnych `market_keywords` tylko tam, gdzie brakuje danych albo minął TTL
-	 * (świeży wolumen Google Ads ze STEP 12 nie jest nadpisywany); brak wartości u dostawcy niczego nie zmienia.
-	 * Kandydaci nie wymagają osobnych płatnych żądań wzbogacających.
+	 * Metryki z odpowiedzi discovery trafiają do wspólnych `market_keywords` (`KeywordMetricsWriter`: tylko brakujące lub
+	 * po TTL — świeży wolumen Google Ads ze STEP 12 nie jest nadpisywany). Kandydaci nie wymagają osobnych płatnych
+	 * żądań wzbogacających.
 	 *
 	 * @param array<string, array{item: DiscoveredKeyword, seed: bool}> $accepted
 	 * @return array<string, int> postać znormalizowana → id frazy rynkowej
 	 */
 	private function reuseMetrics(Market $market, array $accepted, int $taskId): array
 	{
-		$keywords = array_map('strval', array_keys($accepted));
-		$ids = $this->metrics->ensure($market, $keywords);
-		$existing = $this->metrics->findByKeys($market, array_map(static fn (string $keyword): string => MarketKeyword::key($keyword), $keywords));
-		$now = $this->metrics->now();
-		$volume = [];
-		$difficulty = [];
-		$intents = [];
-
-		foreach ($accepted as $keyword => ['item' => $item]) {
-			$keyword = (string) $keyword;
-			$current = $existing[bin2hex(MarketKeyword::key($keyword))] ?? null;
-
-			if ($item->searchVolume !== null && ($current === null || ! $current->volumeFetched() || $current->isVolumeStale($now))) {
-				$volume[$keyword] = $item->volumeMetrics();
-			}
-
-			if ($item->keywordDifficulty !== null && ($current === null || ! $current->difficultyFetched() || $current->isDifficultyStale($now))) {
-				$difficulty[$keyword] = $item->keywordDifficulty;
-			}
-
-			if ($item->intent !== null) {
-				$intents[$keyword] = $item->intent;
-			}
-		}
-
-		if ($volume !== []) {
-			$this->metrics->storeVolume($market, array_map('strval', array_keys($volume)), $volume, $taskId, $this->marketConfig->volumeTtlDays());
-		}
-
-		if ($difficulty !== []) {
-			$this->metrics->storeDifficulty($market, array_map('strval', array_keys($difficulty)), $difficulty, $taskId, $this->marketConfig->difficultyTtlDays());
-		}
-
-		if ($intents !== []) {
-			$this->metrics->storeIntent($market, $intents);
-		}
-
-		return $ids;
+		return (new KeywordMetricsWriter($this->metrics, $this->marketConfig))
+			->store($market, array_map(static fn (array $entry): DiscoveredKeyword => $entry['item'], $accepted), $taskId);
 	}
 
 	private function offset(int $seconds): string

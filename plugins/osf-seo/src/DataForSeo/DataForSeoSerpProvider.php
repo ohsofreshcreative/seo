@@ -358,7 +358,7 @@ final class DataForSeoSerpProvider implements SerpProvider
 	}
 
 	/** Adres wyniku: tylko http(s), bez fragmentu, najwyżej 2048 znaków (dłuższy jest pomijany — nie skracamy tożsamości). */
-	private static function url(mixed $value): ?string
+	public static function url(mixed $value): ?string
 	{
 		if (! is_string($value)) {
 			return null;
