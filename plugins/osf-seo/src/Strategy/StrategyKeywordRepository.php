@@ -7,6 +7,7 @@ namespace OsfSeo\Strategy;
 use OsfSeo\Database\BulkInsert;
 use OsfSeo\Database\Connection;
 use OsfSeo\Market\Market;
+use OsfSeo\Market\MarketKeyword;
 use OsfSeo\Support\Ulid;
 
 /**
@@ -311,6 +312,95 @@ final class StrategyKeywordRepository
 		);
 
 		return $row === null ? null : CandidateRow::fromRow($row);
+	}
+
+	/**
+	 * Aktywni kandydaci wskazani ULID-em albo tekstem frazy (klucz rynkowy na rynku projektu): wartość → kandydat albo null.
+	 *
+	 * @param list<string> $values
+	 * @return array<string, array{public_id: string, market_keyword_id: int, keyword: string, active: bool, tier: ?int}|null>
+	 */
+	public function resolve(int $projectId, Market $market, array $values): array
+	{
+		$result = [];
+		$byId = [];
+		$byKey = [];
+
+		foreach ($values as $value) {
+			$value = trim((string) $value);
+
+			if ($value === '') {
+				continue;
+			}
+
+			$result[$value] = null;
+			$ulid = Ulid::normalize($value);
+
+			if ($ulid !== null) {
+				$byId[$ulid][] = $value;
+			} else {
+				$byKey[bin2hex(MarketKeyword::key($value))][] = $value;
+			}
+		}
+
+		$select = 'SELECT STRAIGHT_JOIN s.public_id, s.market_keyword_id, s.active, s.tier, m.keyword, LOWER(HEX(m.keyword_key)) AS h';
+
+		foreach (array_chunk(array_keys($byId), self::CHUNK) as $chunk) {
+			foreach ($this->db->fetchAll(
+				"{$select} FROM `{$this->table()}` s JOIN `{$this->db->table('market_keywords')}` m ON m.id = s.market_keyword_id
+				WHERE s.project_id = %d AND s.public_id IN (" . Connection::placeholders($chunk) . ') AND m.provider = %s AND m.location_code = %d AND m.language_code = %s',
+				[$projectId, ...$chunk, $market->provider, $market->locationCode, $market->languageCode],
+			) as $row) {
+				foreach ($byId[(string) $row['public_id']] ?? [] as $value) {
+					$result[$value] = self::resolved($row);
+				}
+			}
+		}
+
+		foreach (array_chunk(array_keys($byKey), self::CHUNK) as $chunk) {
+			foreach ($this->db->fetchAll(
+				"{$select} FROM `{$this->db->table('market_keywords')}` m JOIN `{$this->table()}` s ON s.project_id = %d AND s.market_keyword_id = m.id
+				WHERE m.provider = %s AND m.location_code = %d AND m.language_code = %s AND m.keyword_key IN (" . Connection::placeholders(array_map('strval', $chunk), 'UNHEX(%s)') . ')',
+				[$projectId, $market->provider, $market->locationCode, $market->languageCode, ...array_map('strval', $chunk)],
+			) as $row) {
+				foreach ($byKey[(string) $row['h']] ?? [] as $value) {
+					$result[$value] = self::resolved($row);
+				}
+			}
+		}
+
+		return $result;
+	}
+
+	/**
+	 * Aktywni kandydaci rynku projektu w kolejności Strategii (poziom źródła, wyświetlenia GSC, identyfikator) — stronicowanie po kluczu.
+	 *
+	 * @return list<array{public_id: string, market_keyword_id: int, keyword: string, active: bool, tier: ?int}>
+	 */
+	public function ordered(int $projectId, Market $market, int $offset, int $limit): array
+	{
+		return array_map(static fn (array $row): array => self::resolved($row), $this->db->fetchAll(
+			"SELECT STRAIGHT_JOIN s.public_id, s.market_keyword_id, s.active, s.tier, m.keyword
+			FROM `{$this->table()}` s JOIN `{$this->db->table('market_keywords')}` m ON m.id = s.market_keyword_id
+			WHERE s.project_id = %d AND s.active = 1 AND m.provider = %s AND m.location_code = %d AND m.language_code = %s
+			ORDER BY s.tier IS NULL, s.tier, s.gsc_impressions IS NULL, s.gsc_impressions DESC, s.id LIMIT %d OFFSET %d",
+			[$projectId, $market->provider, $market->locationCode, $market->languageCode, max(1, $limit), max(0, $offset)],
+		));
+	}
+
+	/**
+	 * @param array<string, string|null> $row
+	 * @return array{public_id: string, market_keyword_id: int, keyword: string, active: bool, tier: ?int}
+	 */
+	private static function resolved(array $row): array
+	{
+		return [
+			'public_id' => (string) $row['public_id'],
+			'market_keyword_id' => (int) $row['market_keyword_id'],
+			'keyword' => (string) $row['keyword'],
+			'active' => (int) $row['active'] === 1,
+			'tier' => $row['tier'] === null ? null : (int) $row['tier'],
+		];
 	}
 
 	/**

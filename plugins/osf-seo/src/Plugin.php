@@ -106,6 +106,7 @@ use OsfSeo\Opportunities\OpportunityService;
 use OsfSeo\Projects\ProjectRepository;
 use OsfSeo\Projects\ProjectService;
 use OsfSeo\Setup\Installer;
+use OsfSeo\Strategy\Serp\SerpAnalysisService;
 use OsfSeo\Strategy\Serp\SerpIntelligence;
 use OsfSeo\Strategy\Serp\SerpProfileRepository;
 use OsfSeo\Strategy\Sources\ContentGapSource;
@@ -508,6 +509,21 @@ final class Plugin
 			$c->get(CompetitorRepository::class),
 			$c->get(SerpReports::class),
 			$c->get(Clock::class),
+		));
+		$container->singleton(SerpAnalysisService::class, static fn (Container $c): SerpAnalysisService => new SerpAnalysisService(
+			$c->get(SerpIntelligence::class),
+			$c->get(SerpProvider::class),
+			$c->get(TrackedKeywordRepository::class),
+			$c->get(SerpSubmitter::class),
+			$c->get(SerpPlanner::class),
+			$c->get(SerpRunRepository::class),
+			$c->get(SerpSettingsRepository::class),
+			$c->get(StrategyKeywordRepository::class),
+			$c->get(MarketSyncService::class),
+			$c->get(StrategyConfig::class),
+			$c->get(Connection::class),
+			$c->get(Clock::class),
+			$c->get(Logger::class),
 		));
 		$container->singleton(StrategyRefresher::class, static fn (Container $c): StrategyRefresher => new StrategyRefresher(
 			$c->get(Connection::class),

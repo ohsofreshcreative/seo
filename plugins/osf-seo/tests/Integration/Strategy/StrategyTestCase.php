@@ -11,9 +11,13 @@ use OsfSeo\Market\MarketKeyword;
 use OsfSeo\Opportunities\OpportunityKeywordIndex;
 use OsfSeo\Opportunities\OpportunityRepository;
 use OsfSeo\Opportunities\UrlKey;
+use OsfSeo\Serp\SerpConfig;
 use OsfSeo\Serp\SerpDictionary;
+use OsfSeo\Serp\SerpPlanner;
+use OsfSeo\Serp\SerpSubmitter;
 use OsfSeo\Strategy\CandidateFilters;
 use OsfSeo\Strategy\CandidateRow;
+use OsfSeo\Strategy\Serp\SerpAnalysisService;
 use OsfSeo\Strategy\Serp\SerpIntelligence;
 use OsfSeo\Strategy\Serp\SerpProfileRepository;
 use OsfSeo\Strategy\Sources\ContentGapSource;
@@ -53,6 +57,8 @@ abstract class StrategyTestCase extends GapTestCase
 	protected StrategyService $strategy;
 
 	protected SerpIntelligence $intelligence;
+
+	protected SerpAnalysisService $analysis;
 
 	protected StrategyRefresher $strategyRefresher;
 
@@ -131,6 +137,23 @@ abstract class StrategyTestCase extends GapTestCase
 			$this->intelligence,
 			$this->clock,
 			$this->captureLogger(),
+		);
+		$logger = $this->captureLogger();
+		$planner = new SerpPlanner($this->serpProvider, $this->tracked, new SerpConfig(), $this->market, $this->clock);
+		$this->analysis = new SerpAnalysisService(
+			$this->intelligence,
+			$this->serpProvider,
+			$this->tracked,
+			new SerpSubmitter($db, $this->serpProvider, $this->tracked, $this->serpRuns, $this->snapshots, $this->contexts, $this->tasks, $this->market, $planner, $this->clock, $logger),
+			$planner,
+			$this->serpRuns,
+			$this->serpSettings,
+			$this->strategyKeywords,
+			$this->market,
+			$config,
+			$db,
+			$this->clock,
+			$logger,
 		);
 	}
 
