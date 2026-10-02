@@ -18,8 +18,13 @@ use OsfSeo\Strategy\StrategySource;
 
 /**
  * Szanse SEO (STEP 11, wykrycia z 28 dni): frazy grup aktywnych, nieodrzuconych szans są kandydatami (poziom decyzji), z wagą
- * = priorytet szansy. Powiązanie fraza ↔ szansa wyłącznie z danych query × page (`OpportunityKeywordIndex`, D54) — członek grupy,
- * ta sama podstrona (strony GSC frazy z dowodów GSC) albo fraza szansy; nigdy z samego `opportunities.keyword`.
+ * = priorytet szansy. Powiązanie fraza ↔ szansa wyłącznie z danych query × page (`OpportunityKeywordIndex`, D54); nigdy z samego
+ * `opportunities.keyword`. Dowody rozdzielają:
+ *
+ * - `direct` — fraza szansy albo fraza z listy grupy w wykryciu (dowód, że szansa dotyczy frazy; tylko te dają sygnał i fakt `opportunities`),
+ * - `context` — ta sama podstrona (strony GSC frazy z dowodów GSC); nie jest dowodem, że szansa dotyczy frazy.
+ *
+ * `members_complete = false` — lista fraz grupy w wykryciu jest przycięta (brak powiązania bezpośredniego niczego wtedy nie dowodzi).
  */
 final class OpportunitySource implements CandidateSource
 {
@@ -119,11 +124,11 @@ final class OpportunitySource implements CandidateSource
 				continue;
 			}
 
-			$items = [];
+			$items = ['direct' => [], 'context' => []];
 
 			foreach ($links as $index => $link) {
 				$opportunity = $state['opportunities'][$index];
-				$items[] = [
+				$items[OpportunityKeywordIndex::isDirect($link) ? 'direct' : 'context'][] = [
 					'id' => $opportunity['public_id'],
 					'type' => $opportunity['type'],
 					'status' => $opportunity['status'],
@@ -131,11 +136,20 @@ final class OpportunitySource implements CandidateSource
 					'confidence' => $opportunity['confidence'],
 					'page' => $opportunity['page_url'],
 					'link' => $link,
+					'members_complete' => $opportunity['members_complete'],
 				];
 			}
 
-			usort($items, static fn (array $a, array $b): int => [self::LINK_ORDER[$a['link']], $b['priority'], $a['id']] <=> [self::LINK_ORDER[$b['link']], $a['priority'], $b['id']]);
-			$result[(int) $id] = array_slice($items, 0, StrategyConfig::EVIDENCE_OPPORTUNITIES);
+			$items['direct_open'] = count(array_filter($items['direct'], static fn (array $item): bool => $item['status'] !== 'dismissed'));
+
+			foreach (['direct', 'context'] as $group) {
+				$list = $items[$group];
+				usort($list, static fn (array $a, array $b): int => [self::LINK_ORDER[$a['link']], $b['priority'], $a['id']] <=> [self::LINK_ORDER[$b['link']], $a['priority'], $b['id']]);
+				$items[$group] = array_slice($list, 0, StrategyConfig::EVIDENCE_OPPORTUNITIES);
+				$items[$group . '_total'] = count($list);
+			}
+
+			$result[(int) $id] = $items;
 		}
 
 		return $result;

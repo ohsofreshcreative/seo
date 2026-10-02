@@ -110,7 +110,7 @@ API wymaga osobnej decyzji architektonicznej; integracje dostawców wyłącznie 
 | D51 | Strategia (STEP 16) to warstwa decyzyjna nad modułami — nie zastępuje Szans SEO, Nowych fraz, Luk SEO ani Pozycji; czyta ich wyniki i decyzje. Rekord backlogu = temat (frazy + strona docelowa + działanie); tożsamość frazy = fraza rynkowa projektu (`market_keywords`); `core_key` i zbiór wyrazów — tylko sygnały pomocnicze | Jedno miejsce decyzji bez kopiowania danych modułów; ta sama tożsamość co w STEP 12–15. Sekcja 15 |
 | D52 | Kandydaci z adapterów źródeł (ręczne, Pozycje, Szanse SEO, Nowe frazy, Luki fraz, Luki treści, GSC) z kolejnością poziomów, filtrami marki i wykluczeń i limitem `OSF_SEO_STRATEGY_MAX_KEYWORDS` (5000); decyzje modułów (odrzucenia) respektowane | Przewidywalna skala i brak „wskrzeszania” odrzuconych fraz. Sekcja 15.2 |
 | D53 | Fakty i dowody per fraza materializowane w `strategy_keywords` (przyrostowo, `facts_hash`); metryki rynkowe, historia GSC i SERP tylko odwoływane; klucz danych obejmuje mutacje ręczne wszystkich modułów i rewizję Strategii, nie tylko czas importu | Lista i klasyfikacja bez agregacji przy renderowaniu; brak nieaktualnych wyników po decyzjach użytkownika. Sekcje 15.3, 15.6 |
-| D54 | Powiązanie szansa SEO ↔ fraza z danych query × page (członek grupy szansy, ta sama podstrona, fraza) — nie z samego `opportunities.keyword`; używane przez Strategię i szczegóły luki | Szanse są per podstrona — kolumna frazy jest zwykle pusta. Sekcja 15.5 |
+| D54 | Powiązanie szansa SEO ↔ fraza z danych query × page — bezpośrednie (fraza, członek grupy szansy) osobno od kontekstowego (ta sama podstrona — nie dowód); nie z samego `opportunities.keyword`; przycięta lista fraz grupy jawnie oznaczona (`members_complete`); używane przez Strategię i szczegóły luki | Szanse są per podstrona — kolumna frazy jest zwykle pusta; wspólna podstrona nie dowodzi, że szansa dotyczy frazy. Sekcja 15.5 |
 | D55 | SERP Intelligence na danych STEP 14 (bez nowych tabel wyników; profil pomiaru jako tabela pochodna); jednorazowa analiza = monitorowana fraza `analysis` (poza harmonogramem i listą Pozycje, dowód widoczności także dla Luk SEO), w kontekście pomiaru projektu; świeżość 30 / 90 dni | Bez drugiego systemu SERP; analiza nie zamienia się w koszt cykliczny. Sekcja 15.10 (faza B) |
 | D56 | Płatna analiza SERP tylko ręcznie: lider tematu plus jawnie wybrane frazy do potwierdzenia overlapu, podgląd kosztu i potwierdzenie, maks. `OSF_SEO_STRATEGY_SERP_MAX_PER_RUN` (100) fraz, wspólne limity DataForSEO; bez automatycznego harmonogramu w MVP | Koszt pod kontrolą człowieka; jeden budżet. Sekcja 15.10 |
 | D57 | „Create” = „Kandydat na nową stronę”: brak widoczności (GSC, Labs, SERP) nie dowodzi braku strony; wysoka pewność luki strukturalnej tylko z indeksem stron projektu (`ProjectPageIndex`, przyszły crawler) albo ręcznym potwierdzeniem; dane niejednoznaczne → „investigate” | Bez fałszywych rekomendacji tworzenia stron, które już istnieją. Sekcja 15.1 |
@@ -2326,16 +2326,28 @@ Frazy GSC i członkowie szans SEO bez wiersza rynkowego dostają go przy zapisie
 ### 15.5 Powiązanie szans SEO z frazami (D54)
 
 Szanse są w większości **per podstrona** (odcisk typ × strona), a kolumna `opportunities.keyword` jest wypełniona tylko dla szans bez danych
-query × page — dlatego nie jest podstawą powiązania. `Opportunities\OpportunityKeywordIndex` wiąże szansę z frazą na podstawie danych query × page:
+query × page — dlatego nie jest podstawą powiązania. `Opportunities\OpportunityKeywordIndex` wiąże szansę z frazą na podstawie danych query × page
+i rozdziela dwa rodzaje powiązań:
 
-- **członek** (`member`) — fraza należy do grupy szansy (frazy z dowodów i pełna lista z tekstu wyszukiwania wykrycia — przypisanie frazy do
-  strony docelowej przez detektor), dla kanibalizacji — frazy pary adresów,
-- **ta sama podstrona** (`page`) — fraza ma wyświetlenia w GSC (query × page, okno) na podstronie szansy (adres bez `#fragmentu`, `UrlKey`),
-- **fraza** (`keyword`) — szansa na poziomie frazy (bez danych query × page).
+- **bezpośrednie** — dowód wykrycia, że szansa dotyczy tej frazy:
+  - **fraza** (`keyword`) — szansa na poziomie frazy (bez danych query × page),
+  - **członek** (`member`) — fraza należy do grupy szansy (lista fraz z tekstu wyszukiwania wykrycia — przypisanie frazy do strony docelowej
+    przez detektor), dla kanibalizacji — frazy pary adresów;
+- **kontekstowe** — **ta sama podstrona** (`page`): fraza ma wyświetlenia w GSC (query × page, okno) na podstronie szansy (adres bez
+  `#fragmentu`, `UrlKey`). To **nie jest dowód**, że szansa dotyczy tej frazy — pokazujemy je osobno, z etykietą „kontekst”.
 
-Strategia używa członków jako źródła (15.2) i wszystkich powiązań jako dowodów; szczegóły luki w Lukach SEO pokazują szanse powiązane tymi
-samymi regułami (poprawka: wcześniej wyłącznie `opportunities.keyword IN (warianty)` — prawie zawsze pusto przy danych query × page).
-Lista członków z tekstu wyszukiwania jest ograniczona do 10 000 znaków (bardzo duże grupy mogą być ucięte — powiązanie `page` je uzupełnia).
+Strategia używa wyłącznie powiązań bezpośrednich jako źródła (15.2) i faktu `opportunities` (nieodrzucone szanse powiązane bezpośrednio);
+w dowodach frazy są dwie osobne listy: `opportunity.direct` i `opportunity.context`. Szczegóły luki w Lukach SEO pokazują „Szanse SEO tej frazy”
+i osobno „Szanse SEO tej samej podstrony (kontekst)”.
+
+**Ograniczenie (jawne w danych):** lista fraz grupy pochodzi z `opportunity_detections.search_text`, przycinanego przez detektor do 10 000 znaków;
+dowody wykrycia (`evidence.keywords`) zawierają tylko pierwsze `evidence_keywords` (domyślnie 25) fraz z `keywords_total`. Pełne powiązanie
+wymagałoby osobnej tabeli członków grupy (zmiana modelu Szans SEO — poza STEP 16). Dlatego:
+
+- przy przyciętym tekście każde powiązanie ma `members_complete = false` — brak powiązania bezpośredniego niczego wtedy nie dowodzi, a powiązanie
+  kontekstowe może być w rzeczywistości członkostwem (panel pokazuje tę informację),
+- ostatnia linia przyciętego tekstu (możliwie ucięta fraza, np. „sklep” z „sklep internetowy”) nie jest dopasowywana — ani w PHP (`split`), ani
+  w SQL (`forKeyword`).
 
 ### 15.6 Aktualność (klucz danych, D53)
 

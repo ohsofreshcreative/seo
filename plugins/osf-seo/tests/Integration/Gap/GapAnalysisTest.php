@@ -13,6 +13,7 @@ use OsfSeo\Gap\GapDomain;
 use OsfSeo\Gap\GapFilters;
 use OsfSeo\Gap\GapNotFound;
 use OsfSeo\Gap\GapStatus;
+use OsfSeo\Opportunities\OpportunityKeywordIndex;
 use OsfSeo\Projects\ProjectRole;
 use OsfSeo\Serp\Competitor;
 use OsfSeo\Tests\Support\DataForSeoFakes;
@@ -403,10 +404,34 @@ final class GapAnalysisTest extends GapTestCase
 		$this->opportunity($context, 'decline', 'https://example.pl/sklep/', null, "https://example.pl/sklep/\nsklep internetowy", 95, 'inactive');
 
 		$detail = $this->gaps->keyword($context, (string) $this->gap($context, 'sklep internetowy')['public_id']);
-		$links = array_column($detail['evidence']['opportunities'], 'link', 'public_id');
 
-		self::assertSame([$member => 'member', $page => 'page', $keyword => 'keyword'], $links, 'Członek grupy, ta sama podstrona i szansa frazy; bez innych fraz i szans nieaktywnych.');
-		self::assertSame(['near_top', 'low_ctr', 'weak_position'], array_column($detail['evidence']['opportunities'], 'type'), 'Od najwyższego priorytetu.');
+		self::assertSame([$member => 'member', $keyword => 'keyword'], array_column($detail['evidence']['opportunities'], 'link', 'public_id'), 'Bezpośrednio: członek grupy i szansa frazy; bez innych fraz i szans nieaktywnych.');
+		self::assertSame(['near_top', 'weak_position'], array_column($detail['evidence']['opportunities'], 'type'), 'Od najwyższego priorytetu.');
+		self::assertSame([$page => 'page'], array_column($detail['evidence']['opportunities_context'], 'link', 'public_id'), 'Ta sama podstrona — osobno, jako kontekst, nie dowód.');
+		self::assertSame([true], array_column($detail['evidence']['opportunities_context'], 'members_complete'));
+	}
+
+	public function test_truncated_opportunity_search_text_is_explicit_and_never_matches_a_cut_last_line(): void
+	{
+		// Regresja (STEP 16): tekst wyszukiwania wykrycia jest przycinany do 10 000 znaków — ostatnia linia może być uciętą frazą
+		// („sklep internetowy wrocław” → „sklep internetowy”), a lista fraz grupy jest wtedy niepełna.
+		$context = $this->gapProject();
+		$this->setRanked('konkurent.pl', [self::ranked('konkurent.pl', 'sklep internetowy', 800, 1)]);
+		$this->gscKeyword($context, 'sklep internetowy', 120, 14.0, 'https://example.pl/sklep/', 2);
+		$this->gapRun($context, ['baseline' => '0']);
+		$filler = static fn (string $page, string $tail): string => mb_substr($page . "\n" . implode("\n", array_map(static fn (int $i): string => 'fraza poboczna ' . $i, range(1, 800))), 0, OpportunityKeywordIndex::SEARCH_TEXT_LIMIT - mb_strlen($tail) - 1) . "\n" . $tail;
+		$cut = $this->opportunity($context, 'near_top', 'https://example.pl/inna/', null, $filler('https://example.pl/inna/', 'sklep internetowy'), 90);
+		$head = "https://example.pl/srodek/\nsklep internetowy\n";
+		$middle = $this->opportunity($context, 'low_ctr', 'https://example.pl/srodek/', null, $head . mb_substr($filler('x', 'ostatnia'), 0, OpportunityKeywordIndex::SEARCH_TEXT_LIMIT - mb_strlen($head)), 60);
+		$onPage = $this->opportunity($context, 'decline', 'https://example.pl/sklep/', null, $filler('https://example.pl/sklep/', 'inna fraza'), 30);
+		$db = self::db();
+		self::assertSame(['10000'], array_values(array_unique(array_column($db->fetchAll("SELECT CHAR_LENGTH(search_text) AS n FROM `{$db->table('opportunity_detections')}` WHERE project_id = %d", [$context->projectId()]), 'n'))));
+
+		$evidence = $this->gaps->keyword($context, (string) $this->gap($context, 'sklep internetowy')['public_id'])['evidence'];
+
+		self::assertSame([$middle => ['member', false]], array_map(static fn (array $item): array => [$item['link'], $item['members_complete']], array_column($evidence['opportunities'], null, 'public_id')), 'Fraza w środku przyciętego tekstu — powiązanie bezpośrednie z jawną niepełną listą.');
+		self::assertSame([$onPage => ['page', false]], array_map(static fn (array $item): array => [$item['link'], $item['members_complete']], array_column($evidence['opportunities_context'], null, 'public_id')), 'Kontekst z informacją, że fraza może należeć do grupy.');
+		self::assertNotContains($cut, [...array_column($evidence['opportunities'], 'public_id'), ...array_column($evidence['opportunities_context'], 'public_id')], 'Ostatnia (możliwie ucięta) linia nie jest dopasowywana.');
 	}
 
 	/**

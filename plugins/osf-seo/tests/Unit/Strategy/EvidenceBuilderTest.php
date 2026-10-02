@@ -23,7 +23,7 @@ final class EvidenceBuilderTest extends TestCase
 		$opportunity = new FakeSource(StrategySource::Opportunity, static function (array $keys, array $collected) use (&$seen): array {
 			$seen = $collected;
 
-			return [1 => [['id' => '01HOPP', 'link' => 'page']]];
+			return [1 => ['direct' => [['id' => '01HOPP', 'link' => 'member', 'status' => 'new']], 'context' => [['id' => '01HCTX', 'link' => 'page', 'status' => 'new']], 'direct_open' => 1, 'direct_total' => 1, 'context_total' => 1]];
 		});
 		$gsc = new FakeSource(StrategySource::Gsc, static fn (): array => [1 => self::gsc(120, 4, 8.25, 3, 15, 0.75)]);
 

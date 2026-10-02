@@ -169,7 +169,8 @@ Motyw powstał z marketingowego motywu `h2otwock` i wciąż zawiera jego kod: bl
   decyzji modułów (odrzucone nie wracają tym źródłem), filtrami marki i wykluczeń oraz limitem `OSF_SEO_STRATEGY_MAX_KEYWORDS` (nadmiar liczony,
   bez cichego pomijania). Klucz danych przeliczenia musi obejmować także mutacje ręczne wszystkich modułów i `strategy_settings.revision` —
   nie tylko czas importu. Przeliczenie wyłącznie w CLI albo w tle, nigdy przy renderowaniu. Powiązanie szansa SEO ↔ fraza tylko przez
-  `Opportunities\OpportunityKeywordIndex` (dane query × page) — nigdy przez samo `opportunities.keyword`. Płatna analiza SERP (od fazy B) wyłącznie
+  `Opportunities\OpportunityKeywordIndex` (dane query × page) — nigdy przez samo `opportunities.keyword`; wspólna podstrona to kontekst, nie dowód
+  (osobno od powiązań bezpośrednich), a przycięta lista fraz grupy jest jawnie oznaczona (`members_complete`). Płatna analiza SERP (od fazy B) wyłącznie
   przez `SerpSubmitter` STEP 14, po podglądzie i potwierdzeniu, we wspólnych limitach; bez automatycznego harmonogramu, PAA/related searches,
   nowych płatnych endpointów, crawlera i AI w STEP 16 bez nowej decyzji.
 - `$wpdb` traktuje tabelę z kolumnami ascii i utf8mb4 bez kolumny binarnej jako ASCII i odrzuca zapytania z polskimi znakami

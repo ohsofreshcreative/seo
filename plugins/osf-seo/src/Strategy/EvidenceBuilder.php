@@ -13,7 +13,8 @@ namespace OsfSeo\Strategy;
  */
 final class EvidenceBuilder
 {
-	public const VERSION = 1;
+	/** 2 — dowody szans SEO rozdzielone na powiązania bezpośrednie i kontekstowe. */
+	public const VERSION = 2;
 
 	/** Kolejność źródeł przy zbieraniu dowodów (GSC pierwsze). */
 	private const ORDER = ['gsc', 'manual', 'serp', 'opportunity', 'discovery', 'gap', 'content_gap'];
@@ -81,7 +82,8 @@ final class EvidenceBuilder
 		$gap = is_array($sections['gap'] ?? null) ? $sections['gap'] : null;
 		$discovery = is_array($sections['discovery'] ?? null) ? $sections['discovery'] : null;
 		$contentGap = is_array($sections['content_gap'] ?? null) ? $sections['content_gap'] : null;
-		$opportunities = is_array($sections['opportunity'] ?? null) ? $sections['opportunity'] : [];
+		// Fakt `opportunities` = nieodrzucone szanse powiązane bezpośrednio (kontekst tej samej podstrony nie jest dowodem dla frazy).
+		$opportunities = (int) ($sections['opportunity']['direct_open'] ?? 0);
 		$topPage = $gsc['pages'][0] ?? null;
 		$evidence = ['v' => self::VERSION, 'keyword' => $candidate->keyword, 'sources' => $candidate->sourceCodes()];
 
@@ -115,7 +117,7 @@ final class EvidenceBuilder
 			gapKeywordId: isset($gap['_facts']['gap_keyword_id']) ? (int) $gap['_facts']['gap_keyword_id'] : null,
 			gapClusterId: isset($gap['_facts']['cluster_id']) ? (int) $gap['_facts']['cluster_id'] : (isset($contentGap['_facts']['cluster_id']) ? (int) $contentGap['_facts']['cluster_id'] : null),
 			discoveryCandidateId: isset($discovery['_facts']['candidate_id']) ? (int) $discovery['_facts']['candidate_id'] : null,
-			opportunities: min(255, count($opportunities)),
+			opportunities: min(255, $opportunities),
 			evidence: $evidence,
 		);
 	}

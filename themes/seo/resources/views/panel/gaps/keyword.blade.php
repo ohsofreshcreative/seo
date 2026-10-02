@@ -273,9 +273,23 @@
           <li><a href="{{ OpportunitiesController::detailUrl($project->publicId, $opportunity['public_id']) }}" class="text-brand-600 hover:underline">Szansa SEO: {{ OpportunityType::tryFrom((string) $opportunity['type'])?->label() ?? $opportunity['type'] }}</a> <span class="text-xs text-slate-500">({{ OpportunityKeywordIndex::linkLabel((string) ($opportunity['link'] ?? '')) }})</span></li>
         @endforeach
         @if ($evidence['candidate'] === null && $evidence['opportunities'] === [])
-          <li class="text-slate-500">Brak powiązanych kandydatów Nowych fraz i Szans SEO.</li>
+          <li class="text-slate-500">Brak powiązanych kandydatów Nowych fraz i Szans SEO tej frazy.</li>
         @endif
       </ul>
+      @if ($evidence['opportunities_context'] !== [])
+        <h3 class="mt-4 text-sm font-medium text-slate-900">Szanse SEO tej samej podstrony (kontekst)</h3>
+        <p class="mt-1 text-xs text-slate-500">Fraza ma wyświetlenia na podstronie szansy. To kontekst, nie dowód, że szansa dotyczy tej frazy.</p>
+        <ul class="mt-2 space-y-1 text-sm">
+          @foreach ($evidence['opportunities_context'] as $opportunity)
+            <li>
+              <a href="{{ OpportunitiesController::detailUrl($project->publicId, $opportunity['public_id']) }}" class="text-brand-600 hover:underline">Szansa SEO: {{ OpportunityType::tryFrom((string) $opportunity['type'])?->label() ?? $opportunity['type'] }}</a>
+              @if (! $opportunity['members_complete'])
+                <span class="text-xs text-slate-500">(lista fraz tej szansy jest przycięta — fraza może należeć do jej grupy)</span>
+              @endif
+            </li>
+          @endforeach
+        </ul>
+      @endif
     </x-panel.card>
   </div>
 

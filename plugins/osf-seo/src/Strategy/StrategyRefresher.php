@@ -34,7 +34,7 @@ use OsfSeo\Support\DateRange;
 final class StrategyRefresher
 {
 	/** Wersja reguł — zmiana unieważnia klucz danych wszystkich projektów (przeliczenie lokalne, bez API). */
-	public const VERSION = 1;
+	public const VERSION = 2;
 
 	public const SKIPPED_UNCHANGED = 'unchanged';
 

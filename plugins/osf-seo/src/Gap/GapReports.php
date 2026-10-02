@@ -187,10 +187,11 @@ final class GapReports
 
 	/**
 	 * Dowody z projektu: warianty frazy w GSC (okno), strony GSC, pomiar SERP (STEP 14), kandydat Nowych fraz, szanse SEO
-	 * powiązane danymi query × page (fraza w grupie szansy, ta sama podstrona, ta sama fraza — `OpportunityKeywordIndex`).
+	 * powiązane danymi query × page (`OpportunityKeywordIndex`): bezpośrednio (ta sama fraza, fraza w grupie szansy) i osobno —
+	 * kontekstowo (ta sama podstrona; to nie dowód, że szansa dotyczy tej frazy).
 	 *
 	 * @param array{0: string, 1: string}|null $window
-	 * @return array{variants: list<array<string, string|null>>, pages: list<array<string, string|null>>, serp: ?array<string, string|null>, candidate: ?array<string, string|null>, opportunities: list<array<string, string|null>>}
+	 * @return array{variants: list<array<string, string|null>>, pages: list<array<string, string|null>>, serp: ?array<string, string|null>, candidate: ?array<string, string|null>, opportunities: list<array<string, mixed>>, opportunities_context: list<array<string, mixed>>}
 	 */
 	public function projectEvidence(int $projectId, int $marketKeywordId, string $keywordHex, ?array $window): array
 	{
@@ -226,7 +227,14 @@ final class GapReports
 			array_map(static fn (array $row): string => (string) $row['url'], $pages),
 		);
 
-		return ['variants' => $variants, 'pages' => $pages, 'serp' => $serp, 'candidate' => $candidate, 'opportunities' => $opportunities];
+		return [
+			'variants' => $variants,
+			'pages' => $pages,
+			'serp' => $serp,
+			'candidate' => $candidate,
+			'opportunities' => array_values(array_filter($opportunities, static fn (array $item): bool => $item['direct'])),
+			'opportunities_context' => array_values(array_filter($opportunities, static fn (array $item): bool => ! $item['direct'])),
+		];
 	}
 
 	/**

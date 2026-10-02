@@ -67,7 +67,8 @@ final class StrategyCandidatesTest extends StrategyTestCase
 		self::assertSame(['v', 'keyword', 'sources', 'gsc', 'opportunity'], array_keys($evidence));
 		self::assertSame(2, $evidence['gsc']['variants']);
 		self::assertSame([['url' => 'https://example.pl/pozycjonowanie/', 'impressions' => 400, 'clicks' => 7, 'share' => 1.0]], $evidence['gsc']['pages']);
-		self::assertSame(['near_top', 'member', 'new'], [$evidence['opportunity'][0]['type'], $evidence['opportunity'][0]['link'], $evidence['opportunity'][0]['status']]);
+		self::assertSame(['near_top', 'member', 'new', true], [$evidence['opportunity']['direct'][0]['type'], $evidence['opportunity']['direct'][0]['link'], $evidence['opportunity']['direct'][0]['status'], $evidence['opportunity']['direct'][0]['members_complete']]);
+		self::assertSame([], $evidence['opportunity']['context']);
 		$db = self::db();
 		$facts = $db->fetchRow("SELECT s.gsc_top_url_id, s.gsc_top_share, u.url, s.evidence FROM `{$db->table('strategy_keywords')}` s LEFT JOIN `{$db->table('serp_urls')}` u ON u.id = s.gsc_top_url_id WHERE s.public_id = %s", [$row->publicId]);
 		self::assertSame(['https://example.pl/pozycjonowanie/', '1.0000'], [$facts['url'], $facts['gsc_top_share']], 'Strona GSC w słowniku adresów wspólnym z SERP i Labs.');
@@ -76,7 +77,8 @@ final class StrategyCandidatesTest extends StrategyTestCase
 
 		// Odrzucona szansa nie wprowadza frazy, ale zostaje w dowodach (fraza weszła źródłem GSC).
 		$audit = $this->strategy->keyword($context, 'audyt seo');
-		self::assertSame(['low_ctr', 'dismissed', 'member'], [$audit->evidence['opportunity'][0]['type'], $audit->evidence['opportunity'][0]['status'], $audit->evidence['opportunity'][0]['link']]);
+		self::assertSame(['low_ctr', 'dismissed', 'member'], [$audit->evidence['opportunity']['direct'][0]['type'], $audit->evidence['opportunity']['direct'][0]['status'], $audit->evidence['opportunity']['direct'][0]['link']]);
+		self::assertSame(0, $audit->opportunities, 'Fakt liczy tylko nieodrzucone szanse powiązane bezpośrednio.');
 		self::assertSame(StrategyConfig::EVIDENCE_PAGES >= 1, isset($audit->evidence['gsc']['pages'][0]));
 
 		// Luka: wyniki przeliczenia Luk SEO (pozycja konkurenta z bazy Labs), grupa i luka treści jako dowód, nie źródło.
@@ -104,6 +106,30 @@ final class StrategyCandidatesTest extends StrategyTestCase
 		self::assertSame([null, null, null], [$tracked->serpCheckedAt, $tracked->serpFound, $tracked->serpRank]);
 		self::assertSame('active', $tracked->evidence['serp']['status']);
 		self::assertSame($requests, count($this->dataForSeoRequests()));
+	}
+
+	public function test_opportunity_page_context_is_not_evidence_for_the_keyword_and_truncated_groups_are_explicit(): void
+	{
+		// Regresja (STEP 16): wspólna podstrona to kontekst — nie sygnał członkostwa i nie fakt `opportunities`; przycięta lista fraz
+		// grupy jest jawnie oznaczona, a ostatnia (możliwie ucięta) linia nie jest dopasowywana.
+		$context = $this->gapProject();
+		$this->gscKeyword($context, 'sklep internetowy', 300, 8.0, 'https://example.pl/sklep/');
+		$this->gscKeyword($context, 'sklep', 200, 9.0, 'https://example.pl/inna/');
+		$this->gscKeyword($context, 'fraza strony', 100, 12.0, 'https://example.pl/sklep/');
+		$filler = static fn (string $page, string $tail): string => mb_substr($page . "\n" . implode("\n", array_map(static fn (int $i): string => 'fraza poboczna ' . $i, range(1, 800))), 0, \OsfSeo\Opportunities\OpportunityKeywordIndex::SEARCH_TEXT_LIMIT - mb_strlen($tail) - 1) . "\n" . $tail;
+		$onPage = $this->opportunity($context, 'near_top', 'https://example.pl/sklep/', null, $filler('https://example.pl/sklep/', 'fraza strony'), 80);
+		$this->opportunity($context, 'low_ctr', 'https://example.pl/inna/', null, $filler('https://example.pl/inna/', 'sklep'), 70);
+
+		$this->strategy->refresh($context);
+
+		self::assertSame(['fraza strony' => ['gsc'], 'sklep' => ['gsc'], 'sklep internetowy' => ['gsc']], $this->activeCandidates($context), 'Bez sygnału szans: kontekst podstrony i ucięta ostatnia linia.');
+		$shop = $this->strategy->keyword($context, 'sklep internetowy');
+		self::assertSame(0, $shop->opportunities);
+		self::assertSame([], $shop->evidence['opportunity']['direct']);
+		self::assertSame([[$onPage, 'page', false]], array_map(static fn (array $item): array => [$item['id'], $item['link'], $item['members_complete']], $shop->evidence['opportunity']['context']), 'Kontekst z jawną informacją o przyciętej liście fraz grupy.');
+		$short = $this->strategy->keyword($context, 'sklep')->evidence['opportunity'];
+		self::assertSame([], $short['direct'], 'Ucięta ostatnia linia „sklep” nie wiąże bezpośrednio frazy „sklep”.');
+		self::assertSame(['page'], array_column($short['context'], 'link'), 'Tylko kontekst jej własnej podstrony.');
 	}
 
 	public function test_serp_measurement_becomes_facts_and_rank_change_evidence(): void
