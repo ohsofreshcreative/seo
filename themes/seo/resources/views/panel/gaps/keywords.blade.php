@@ -200,6 +200,9 @@
                     @if (CandidateRow::intentLabel($row['intent']) !== null)
                       <span class="ml-1 inline-flex rounded bg-slate-100 px-1.5 py-0.5 text-xs text-slate-600" title="Intencja wyszukiwania według DataForSEO">{{ CandidateRow::intentLabel($row['intent']) }}</span>
                     @endif
+                    @if ($row['other_language'] === '1')
+                      <span class="ml-1 inline-flex rounded bg-slate-100 px-1.5 py-0.5 text-xs text-slate-600" title="DataForSEO rozpoznało inny język niż język rynku — tylko informacja, fraza nie jest przez to odfiltrowana">inny język</span>
+                    @endif
                     @if ($row['filter_reason'] !== null)
                       <span class="ml-1 inline-flex rounded bg-amber-50 px-1.5 py-0.5 text-xs text-amber-800">{{ $reasons[$row['filter_reason']] ?? $row['filter_reason'] }}</span>
                     @endif

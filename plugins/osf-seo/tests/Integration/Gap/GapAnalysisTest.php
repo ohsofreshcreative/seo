@@ -191,20 +191,74 @@ final class GapAnalysisTest extends GapTestCase
 			'konkurent cennik' => ['0', 'brand_competitor'],
 			'kmarka sklep' => ['0', 'brand_competitor'],
 			'praca seo' => ['0', 'excluded'],
-			'website design' => ['0', 'foreign_language'],
+			'website design' => ['1', null],
 			'tanie strony' => ['0', 'low_volume'],
 			'trudna fraza seo' => ['0', 'high_difficulty'],
 			'strony internetowe' => ['1', null],
 			'konkurent' => ['1', null],
-		], $reasons, 'Nazwa z domeny bez intencji nawigacyjnej nie ukrywa frazy; wiersze odfiltrowane zostają z powodem.');
-		self::assertEqualsCanonicalizing(['strony internetowe', 'konkurent'], array_column($this->gaps->keywords($context, GapFilters::fromInput([]))['rows'], 'keyword'));
-		self::assertCount(7, $this->gaps->keywords($context, GapFilters::fromInput(['filtered' => '1']))['rows']);
-		self::assertSame(['brand_competitor' => 2, 'brand_own' => 1, 'excluded' => 1, 'foreign_language' => 1, 'high_difficulty' => 1, 'low_volume' => 1], self::sorted($this->gaps->counts($context)['filter_reasons']));
+		], $reasons, 'Nazwa z domeny bez intencji nawigacyjnej nie ukrywa frazy; inny język nie jest filtrem; wiersze odfiltrowane zostają z powodem.');
+		self::assertEqualsCanonicalizing(['strony internetowe', 'konkurent', 'website design'], array_column($this->gaps->keywords($context, GapFilters::fromInput([]))['rows'], 'keyword'));
+		self::assertCount(6, $this->gaps->keywords($context, GapFilters::fromInput(['filtered' => '1']))['rows']);
+		self::assertSame(['brand_competitor' => 2, 'brand_own' => 1, 'excluded' => 1, 'high_difficulty' => 1, 'low_volume' => 1], self::sorted($this->gaps->counts($context)['filter_reasons']));
 
 		$this->gaps->saveSettings($context, ['include_terms' => 'strony']);
 		$this->gaps->recalculate($context);
 		self::assertSame(['0', 'not_included'], [$this->gap($context, 'konkurent')['listed'], $this->gap($context, 'konkurent')['filter_reason']], 'Słowa tematyczne: tylko frazy z nimi.');
 		self::assertSame('1', $this->gap($context, 'strony internetowe')['listed']);
+	}
+
+	public function test_other_language_phrases_stay_gaps_with_a_badge_and_rank_threshold_change_recalculates_locally(): void
+	{
+		// Odtworzenie pierwszego smoke testu (rynek Polska / pl): frazy angielskie konkurenta oznaczone przez dostawcę jako inny język.
+		$context = $this->gapProject(['wisepeople.pl' => 'WisePeople'], 'ohsofresh.pl');
+		$english = static fn (string $keyword, int $volume, int $rank): array => self::ranked('wisepeople.pl', $keyword, $volume, $rank, null, 30, 'commercial', 2.5, null, true);
+		$this->setRanked('wisepeople.pl', [
+			$english('wordpress developer', 260, 2),
+			$english('neontri', 390, 6),
+			$english('heatmap', 2400, 11),
+			$english('uxui designer', 720, 16),
+			$english('sharebee', 480, 7),
+			self::ranked('wisepeople.pl', 'projektowanie aplikacji', 320, 24),
+		]);
+		$this->setRanked('ohsofresh.pl', [self::ranked('ohsofresh.pl', 'strony internetowe', 1000, 5)]);
+
+		$this->gapRun($context);
+		$requests = count($this->dataForSeoRequests());
+		$dataset = $this->gapDomains->find($this->gaps->market($context), 'wisepeople.pl');
+
+		self::assertSame(6, $dataset->rowsPresent, 'Zbiór konkurenta: 6 fraz.');
+		$listed = $this->gaps->keywords($context, GapFilters::fromInput(['type' => 'all']))['rows'];
+		self::assertEqualsCanonicalizing(['wordpress developer', 'neontri', 'heatmap', 'uxui designer', 'sharebee'], array_column($listed, 'keyword'), 'Inny język nie wyklucza frazy.');
+		self::assertSame(['1'], array_values(array_unique(array_column($listed, 'other_language'))), 'Informacja o innym języku zostaje przy frazie (badge).');
+		self::assertSame(0, $this->gaps->counts($context)['filtered']);
+		self::assertSame('1', self::db()->fetchValue("SELECT other_language FROM `" . self::db()->table('market_keywords') . "` WHERE keyword_key = UNHEX(%s)", [md5('heatmap')]), 'Dane dostawcy bez zmian.');
+		self::assertNull($this->gap($context, 'projektowanie aplikacji'), 'Pozycja 24 poza progiem znaczącej pozycji (domyślnie TOP20) — fraza zbioru, ale nie luka.');
+
+		// Zmiana progu w ustawieniach: tylko lokalne przeliczenie z zapisanego zbioru, bez żądań.
+		$this->gaps->saveSettings($context, ['competitor_max_rank' => '30']);
+		$this->gaps->recalculate($context);
+
+		self::assertSame('1', $this->gap($context, 'projektowanie aplikacji')['listed']);
+		self::assertCount($requests, $this->dataForSeoRequests(), 'Przeliczenie bez żadnego żądania do DataForSEO.');
+		self::assertSame(6, $this->gapDomains->find($this->gaps->market($context), 'wisepeople.pl')->rowsPresent, 'Zbiór domeny bez zmian.');
+	}
+
+	public function test_gaps_filtered_by_the_old_language_rule_are_restored_by_background_recalculation_without_requests(): void
+	{
+		$context = $this->gapProject();
+		$this->setRanked('konkurent.pl', [self::ranked('konkurent.pl', 'heatmap', 2400, 11, null, 30, 'commercial', 2.5, null, true)]);
+		$this->gapRun($context, ['baseline' => '0']);
+		$requests = count($this->dataForSeoRequests());
+		$db = self::db();
+		// Stan sprzed poprawki: fraza odfiltrowana regułą języka, klucz danych z poprzedniej wersji przeliczenia.
+		$db->execute("UPDATE `{$db->table('gap_keywords')}` SET listed = 0, filter_reason = 'foreign_language' WHERE project_id = %d", [$context->projectId()]);
+		$this->gapSettings->invalidate($context->projectId());
+		add_filter('wp_doing_cron', '__return_true');
+
+		$this->gaps->runBackground(60.0, true);
+
+		self::assertSame(['1', null], [$this->gap($context, 'heatmap')['listed'], $this->gap($context, 'heatmap')['filter_reason']]);
+		self::assertCount($requests, $this->dataForSeoRequests());
 	}
 
 	public function test_competitors_are_aggregated_into_one_gap_row_with_best_competitor(): void
