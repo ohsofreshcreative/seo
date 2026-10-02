@@ -118,6 +118,8 @@ final class GapRun
 			'interrupted' => 'przerwane żądanie — bez automatycznego ponowienia',
 			'expired' => 'limit kosztów nie pozwolił dokończyć w ciągu 7 dni',
 			'cancelled' => 'anulowany',
+			'duplicates' => 'powtórzone frazy między stronami wyników — brak frazy nie oznacza utraty',
+			'missing_dataset' => 'brak zbioru domeny',
 			default => $reason,
 		};
 	}

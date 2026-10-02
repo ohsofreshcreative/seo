@@ -386,6 +386,16 @@ final class GapService
 	}
 
 	/**
+	 * Aktywni konkurenci projektu (filtr listy luk, formularz importu).
+	 *
+	 * @return list<Competitor>
+	 */
+	public function competitors(ProjectContext $context): array
+	{
+		return $this->competitors->active($context->projectId());
+	}
+
+	/**
 	 * Zbiory domen projektu (konkurenci + punkt odniesienia): stan, zakres, świeżość, ostatni import.
 	 *
 	 * @return list<array<string, mixed>>
@@ -449,14 +459,15 @@ final class GapService
 	}
 
 	/**
-	 * Liczniki przeglądu (nowe = od zakończenia poprzedniego importu projektu).
+	 * Liczniki przeglądu (nowe = luki pierwszy raz widziane od startu ostatniego importu, gdy był wcześniejszy).
 	 *
 	 * @return array<string, mixed>
 	 */
 	public function counts(ProjectContext $context): array
 	{
 		$finished = array_values(array_filter($this->runs->recent($context->projectId(), 5), static fn (GapRun $run): bool => $run->finishedAt !== null && in_array($run->status, [GapRun::COMPLETED, GapRun::PARTIAL], true)));
-		$since = isset($finished[1]) ? $finished[1]->finishedAt : null;
+		// Nowe = pierwszy raz widziane od startu ostatniego importu (przeliczenie po nim); przy pierwszym imporcie — brak.
+		$since = isset($finished[1]) ? ($finished[0]->startedAt ?? $finished[0]->createdAt) : null;
 
 		return $this->reports->counts($context->projectId(), $since) + ['filter_reasons' => $this->reports->filterReasons($context->projectId())];
 	}
@@ -520,7 +531,7 @@ final class GapService
 			'competitors' => $competitors,
 			'serp_competitors' => $serpHosts,
 			'baseline' => $baseline,
-			'project' => $project,
+			'evidence' => $project,
 			'window' => $window,
 			'events' => $this->domains->events(array_values(array_filter($domainIds)), $marketKeywordId),
 			'settings' => $this->settings($context),

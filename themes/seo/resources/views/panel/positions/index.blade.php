@@ -34,7 +34,7 @@
   ];
   $bands = ['all' => 'Wszystkie', 'top3' => 'TOP 3', 'top10' => 'TOP 10', 'top20' => 'TOP 20', 'top50' => 'TOP 50', 'found' => 'W wynikach', 'out' => 'Poza sprawdzonym TOP', 'unchecked' => 'Niesprawdzone'];
   $changes = ['all' => 'Wszystkie', 'up' => 'Wzrosty', 'down' => 'Spadki', 'entered' => 'Weszły do TOP', 'left' => 'Wypadły z TOP', 'top10_entered' => 'Weszły do TOP 10', 'top10_left' => 'Wypadły z TOP 10', 'new' => 'Pierwszy pomiar', 'out' => 'Nadal poza TOP'];
-  $sources = ['manual' => 'dodana ręcznie', 'gsc' => 'z fraz GSC', 'discovery' => 'z Nowych fraz'];
+  $sources = ['manual' => 'dodana ręcznie', 'gsc' => 'z fraz GSC', 'discovery' => 'z Nowych fraz', 'gap' => 'z Luk SEO'];
   $listUrl = $url();
 @endphp
 

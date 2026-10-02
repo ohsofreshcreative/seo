@@ -31,6 +31,25 @@ enum ContentGap: string
 		};
 	}
 
+	/** Powód klasyfikacji (`ContentGapClassifier`) dla panelu i CLI. */
+	public static function reasonLabel(?string $reason): string
+	{
+		return match ($reason) {
+			'no_project_data' => 'brak danych projektu (GSC, punkt odniesienia Labs, pomiar SERP) — nie da się ocenić',
+			'scattered' => 'wyświetlenia grupy rozkładają się na kilka stron projektu',
+			'covered' => 'projekt ma stronę docelową i porównywalną widoczność',
+			'homepage_only' => 'jedyną stroną projektu dla tych fraz jest strona główna, a konkurenci rankują podstronami',
+			'target_serp' => 'strona projektu z naszego pomiaru SERP',
+			'target_gsc' => 'strona projektu z Google Search Console (większość wyświetleń grupy)',
+			'target_labs' => 'strona projektu z punktu odniesienia DataForSEO Labs',
+			'target_slug' => 'adres projektu zawierający słowa frazy (bez danych o ruchu)',
+			'no_target' => 'brak strony projektu dla tych fraz, a konkurenci rankują dedykowanymi podstronami',
+			'competitors_homepages' => 'konkurenci rankują wyłącznie stronami głównymi',
+			'low_demand' => 'mały łączny wolumen luk w grupie',
+			default => (string) $reason,
+		};
+	}
+
 	public static function fromInput(mixed $value): ?self
 	{
 		return is_string($value) ? self::tryFrom($value) : null;
