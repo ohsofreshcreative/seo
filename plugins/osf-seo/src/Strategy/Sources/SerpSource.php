@@ -7,6 +7,8 @@ namespace OsfSeo\Strategy\Sources;
 use OsfSeo\Database\Connection;
 use OsfSeo\Serp\RankChange;
 use OsfSeo\Strategy\CandidateSource;
+use OsfSeo\Strategy\Serp\SerpIntelligence;
+use OsfSeo\Strategy\Serp\SerpProfiler;
 use OsfSeo\Strategy\SignalBatch;
 use OsfSeo\Strategy\SourceScope;
 use OsfSeo\Strategy\SourceSignal;
@@ -14,9 +16,11 @@ use OsfSeo\Strategy\StrategyConfig;
 use OsfSeo\Strategy\StrategySource;
 
 /**
- * Pozycje (STEP 14): monitorowane frazy projektu są kandydatami (jawny wybór użytkownika). Dowody — bieżący stan frazy
- * (ostatni pomiar, Pozycja SERP, URL, zmiana względem poprzedniego porównywalnego pomiaru, przejścia pasm TOP3/10/20,
- * sygnał spadku) dla każdego kandydata z wierszem monitorowania, także usuniętym z monitorowania (pomiar zostaje dowodem).
+ * Pozycje (STEP 14): monitorowane frazy projektu są kandydatami (jawny wybór użytkownika; frazy analizowane jednorazowo przez Strategię
+ * — `analysis` — nie są źródłem). Dowody — bieżący stan frazy (ostatni pomiar, Pozycja SERP, URL, zmiana względem poprzedniego
+ * porównywalnego pomiaru, przejścia pasm TOP3/10/20, sygnał spadku) dla każdego kandydata z wierszem monitorowania (każdy status —
+ * pomiar zostaje dowodem) oraz SERP Intelligence (`intel`, faza B): najnowszy zgodny pomiar w kontekście projektu, świeżość, profil
+ * (kształt, kompozycja TOP10/TOP20, sygnał intencji z SERP), Pozycja SERP projektu tylko ze świeżego pomiaru, konkurenci.
  * Pozycja SERP jest osobną metryką — nigdy nie zastępuje średniej pozycji (GSC).
  */
 final class SerpSource implements CandidateSource
@@ -26,8 +30,10 @@ final class SerpSource implements CandidateSource
 	/** Pasma Pozycji SERP, których przejścia zapisujemy w dowodach. */
 	private const BANDS = ['top3' => 3, 'top10' => 10, 'top20' => 20];
 
-	public function __construct(private readonly Connection $db)
-	{
+	public function __construct(
+		private readonly Connection $db,
+		private readonly SerpIntelligence $intelligence,
+	) {
 	}
 
 	public function source(): StrategySource
@@ -43,8 +49,10 @@ final class SerpSource implements CandidateSource
 			FROM `{$this->db->table('serp_tracked_keywords')}` WHERE project_id = %d",
 			[$scope->projectId],
 		) ?? [];
+		// Kontekst analizy (urządzenie, głębokość) i reguły profilu zmieniają dowody SERP Intelligence bez nowych pomiarów.
+		$settings = $this->db->fetchRow("SELECT device, depth FROM `{$this->db->table('serp_settings')}` WHERE project_id = %d", [$scope->projectId]) ?? [];
 
-		return implode(':', [$row['n'] ?? 0, $row['s'] ?? 0, $row['mx'] ?? 0, $row['c'] ?? 0]);
+		return implode(':', [$row['n'] ?? 0, $row['s'] ?? 0, $row['mx'] ?? 0, $row['c'] ?? 0, $settings['device'] ?? '', $settings['depth'] ?? '', SerpProfiler::VERSION]);
 	}
 
 	public function signals(SourceScope $scope): SignalBatch
@@ -76,6 +84,12 @@ final class SerpSource implements CandidateSource
 				[$scope->projectId, ...$chunk],
 			) as $row) {
 				$result[(int) $row['market_keyword_id']] = self::describe($row);
+			}
+		}
+
+		if ($result !== []) {
+			foreach ($this->intelligence->evidence($scope->projectId, $scope->market, array_keys($result), ! $scope->dryRun) as $id => $intel) {
+				$result[$id]['intel'] = $intel;
 			}
 		}
 

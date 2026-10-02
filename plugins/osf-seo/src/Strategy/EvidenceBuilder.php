@@ -13,8 +13,8 @@ namespace OsfSeo\Strategy;
  */
 final class EvidenceBuilder
 {
-	/** 2 — dowody szans SEO rozdzielone na powiązania bezpośrednie i kontekstowe. */
-	public const VERSION = 2;
+	/** 2 — dowody szans SEO rozdzielone na powiązania bezpośrednie i kontekstowe; 3 — SERP Intelligence (`serp.intel`). */
+	public const VERSION = 3;
 
 	/** Kolejność źródeł przy zbieraniu dowodów (GSC pierwsze). */
 	private const ORDER = ['gsc', 'manual', 'serp', 'opportunity', 'discovery', 'gap', 'content_gap'];

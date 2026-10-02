@@ -10,7 +10,9 @@ use OsfSeo\Market\KeywordMetricsProvider;
 use OsfSeo\Market\Market;
 use OsfSeo\Market\MarketKeyword;
 use OsfSeo\Market\MarketMetricsRepository;
+use OsfSeo\Serp\DomainFamily;
 use OsfSeo\Serp\SerpKeywordRules;
+use OsfSeo\Strategy\Serp\SerpIntelligence;
 use OsfSeo\Support\Clock;
 use OsfSeo\Support\Logger;
 use OsfSeo\Support\Ulid;
@@ -29,6 +31,7 @@ final class StrategyService
 		private readonly StrategyConfig $config,
 		private readonly KeywordMetricsProvider $provider,
 		private readonly MarketMetricsRepository $metrics,
+		private readonly SerpIntelligence $intelligence,
 		private readonly Clock $clock,
 		private readonly Logger $logger,
 	) {
@@ -205,6 +208,39 @@ final class StrategyService
 		}
 
 		return $removed;
+	}
+
+	/**
+	 * SERP Intelligence kandydata (faza B): najnowszy zgodny pomiar w kontekście projektu, świeżość, profil, TOP20 z kształtami wyników.
+	 * Bez żadnego żądania; null — kandydat bez zgodnego pomiaru (kwalifikuje się do analizy).
+	 *
+	 * @return array<string, mixed>|null
+	 *
+	 * @throws StrategyNotFound
+	 */
+	public function serp(ProjectContext $context, string $value): ?array
+	{
+		$row = $this->keyword($context, $value);
+		$market = $this->market($context) ?? throw new StrategyNotFound();
+		$project = $context->project();
+
+		return $this->intelligence->detail($context->projectId(), $market, $row->marketKeywordId, DomainFamily::normalize($project->domain) ?? $project->domain);
+	}
+
+	/**
+	 * Overlap SERP dwóch kandydatów projektu (najnowsze zgodne pomiary; bez żadnego żądania).
+	 *
+	 * @return array<string, mixed>
+	 *
+	 * @throws StrategyNotFound
+	 */
+	public function serpOverlap(ProjectContext $context, string $first, string $second): array
+	{
+		$a = $this->keyword($context, $first);
+		$b = $this->keyword($context, $second);
+		$market = $this->market($context) ?? throw new StrategyNotFound();
+
+		return $this->intelligence->overlap($context->projectId(), $market, $a->marketKeywordId, $b->marketKeywordId);
 	}
 
 	private function now(): string

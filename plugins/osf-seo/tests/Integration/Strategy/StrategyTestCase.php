@@ -14,6 +14,8 @@ use OsfSeo\Opportunities\UrlKey;
 use OsfSeo\Serp\SerpDictionary;
 use OsfSeo\Strategy\CandidateFilters;
 use OsfSeo\Strategy\CandidateRow;
+use OsfSeo\Strategy\Serp\SerpIntelligence;
+use OsfSeo\Strategy\Serp\SerpProfileRepository;
 use OsfSeo\Strategy\Sources\ContentGapSource;
 use OsfSeo\Strategy\Sources\DiscoverySource;
 use OsfSeo\Strategy\Sources\GapSource;
@@ -49,6 +51,8 @@ abstract class StrategyTestCase extends GapTestCase
 	];
 
 	protected StrategyService $strategy;
+
+	protected SerpIntelligence $intelligence;
 
 	protected StrategyRefresher $strategyRefresher;
 
@@ -88,6 +92,7 @@ abstract class StrategyTestCase extends GapTestCase
 		$config = new StrategyConfig();
 		$lookup = new MarketKeywordLookup($db);
 		$gsc = new GscSource($db, $lookup, new SerpDictionary($db, $this->clock));
+		$this->intelligence = new SerpIntelligence($db, new SerpProfileRepository($db, $this->clock), $this->serpSettings, $this->competitorRepository, $this->serpReports, $this->clock);
 		$this->strategyKeywords = new StrategyKeywordRepository($db);
 		$this->strategySettings = new StrategySettingsRepository($db, $this->clock);
 		$this->discoveryCandidates = new DiscoveryCandidateRepository($db, $this->clock);
@@ -96,7 +101,7 @@ abstract class StrategyTestCase extends GapTestCase
 			$db,
 			[
 				new ManualSource($db),
-				new SerpSource($db),
+				new SerpSource($db, $this->intelligence),
 				new OpportunitySource($db, new OpportunityKeywordIndex($db), $lookup),
 				new DiscoverySource($db),
 				new GapSource($db),
@@ -123,6 +128,7 @@ abstract class StrategyTestCase extends GapTestCase
 			$config,
 			$this->provider,
 			$this->marketMetrics,
+			$this->intelligence,
 			$this->clock,
 			$this->captureLogger(),
 		);

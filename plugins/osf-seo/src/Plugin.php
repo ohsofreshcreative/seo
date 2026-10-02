@@ -106,6 +106,8 @@ use OsfSeo\Opportunities\OpportunityService;
 use OsfSeo\Projects\ProjectRepository;
 use OsfSeo\Projects\ProjectService;
 use OsfSeo\Setup\Installer;
+use OsfSeo\Strategy\Serp\SerpIntelligence;
+use OsfSeo\Strategy\Serp\SerpProfileRepository;
 use OsfSeo\Strategy\Sources\ContentGapSource;
 use OsfSeo\Strategy\Sources\DiscoverySource;
 use OsfSeo\Strategy\Sources\GapSource;
@@ -498,11 +500,20 @@ final class Plugin
 			$c->get(MarketKeywordLookup::class),
 			new SerpDictionary($c->get(Connection::class), $c->get(Clock::class)),
 		));
+		$container->singleton(SerpProfileRepository::class, static fn (Container $c): SerpProfileRepository => new SerpProfileRepository($c->get(Connection::class), $c->get(Clock::class)));
+		$container->singleton(SerpIntelligence::class, static fn (Container $c): SerpIntelligence => new SerpIntelligence(
+			$c->get(Connection::class),
+			$c->get(SerpProfileRepository::class),
+			$c->get(SerpSettingsRepository::class),
+			$c->get(CompetitorRepository::class),
+			$c->get(SerpReports::class),
+			$c->get(Clock::class),
+		));
 		$container->singleton(StrategyRefresher::class, static fn (Container $c): StrategyRefresher => new StrategyRefresher(
 			$c->get(Connection::class),
 			[
 				new ManualSource($c->get(Connection::class)),
-				new SerpSource($c->get(Connection::class)),
+				new SerpSource($c->get(Connection::class), $c->get(SerpIntelligence::class)),
 				new OpportunitySource($c->get(Connection::class), new OpportunityKeywordIndex($c->get(Connection::class)), $c->get(MarketKeywordLookup::class)),
 				new DiscoverySource($c->get(Connection::class)),
 				new GapSource($c->get(Connection::class)),
@@ -529,6 +540,7 @@ final class Plugin
 			$c->get(StrategyConfig::class),
 			$c->get(KeywordMetricsProvider::class),
 			$c->get(MarketMetricsRepository::class),
+			$c->get(SerpIntelligence::class),
 			$c->get(Clock::class),
 			$c->get(Logger::class),
 		));
