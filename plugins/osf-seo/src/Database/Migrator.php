@@ -16,6 +16,7 @@ use OsfSeo\Database\Migrations\M0008CreateSerpTracking;
 use OsfSeo\Database\Migrations\M0009CreateKeywordGap;
 use OsfSeo\Database\Migrations\M0010CreateStrategy;
 use OsfSeo\Database\Migrations\M0011SerpIntelligence;
+use OsfSeo\Database\Migrations\M0012StrategyTopics;
 use OsfSeo\Support\Logger;
 
 /**
@@ -63,6 +64,7 @@ final class Migrator
 			new M0009CreateKeywordGap(),
 			new M0010CreateStrategy(),
 			new M0011SerpIntelligence(),
+			new M0012StrategyTopics(),
 		];
 	}
 
