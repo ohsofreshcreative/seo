@@ -136,6 +136,12 @@ final class StrategyCommand
 			$gsc !== null && $gsc['complete']['query_page'] ? 'yes' : 'no',
 			$gsc === null ? 0 : $gsc['unkeyed'],
 		));
+		WP_CLI::log(sprintf(
+			'Topics: %d active (%s), inactive %d.',
+			$status['topics']['active'],
+			$status['topics']['actions'] === [] ? 'none' : self::pairs($status['topics']['actions']),
+			$status['topics']['inactive'],
+		));
 		WP_CLI::log(sprintf('Last refresh: %s%s. Data key: %s.', $status['refreshed_at'] ?? 'never', $status['refresh_ms'] === null ? '' : ' (' . $status['refresh_ms'] . ' ms)', $status['up_to_date'] ? 'up to date' : 'changed — run strategy:refresh'));
 	}
 
@@ -212,7 +218,7 @@ final class StrategyCommand
 		}
 
 		WP_CLI::success(sprintf(
-			'Refreshed in %d ms: %d selected (%d new, %d updated, %d unchanged, %d deactivated); over the limit %d. No API request was made.',
+			'Refreshed in %d ms: %d selected (%d new, %d updated, %d unchanged, %d deactivated); over the limit %d; topics %d (%d new, %d updated, %d deactivated, %d events). No API request was made.',
 			$report['duration_ms'],
 			$report['stats']['selected'],
 			$report['inserted'],
@@ -220,6 +226,11 @@ final class StrategyCommand
 			$report['unchanged'],
 			$report['deactivated'],
 			$report['stats']['overflow'],
+			$report['topics']['topics'],
+			$report['topics']['inserted'],
+			$report['topics']['updated'],
+			$report['topics']['deactivated'],
+			$report['topics']['events'],
 		));
 	}
 

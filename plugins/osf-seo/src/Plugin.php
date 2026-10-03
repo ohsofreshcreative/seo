@@ -25,6 +25,7 @@ use OsfSeo\Cli\OpportunityCommand;
 use OsfSeo\Cli\ProjectCommand;
 use OsfSeo\Cli\StatusCommand;
 use OsfSeo\Cli\StrategyCommand;
+use OsfSeo\Cli\StrategyTopicCommand;
 use OsfSeo\Cli\SyncCommand;
 use OsfSeo\Database\Connection;
 use OsfSeo\Database\Migrator;
@@ -731,6 +732,7 @@ final class Plugin
 			CompetitorCommand::register($this);
 			GapCommand::register($this);
 			StrategyCommand::register($this);
+			StrategyTopicCommand::register($this);
 			SyncCommand::register($this);
 		}
 	}
