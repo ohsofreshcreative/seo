@@ -96,7 +96,8 @@ final class StrategySerpAnalysisTest extends StrategyTestCase
 		$boots = $this->strategy->keyword($context, 'kozaki');
 		self::assertSame(['manual'], array_map(static fn ($source): string => $source->value, $boots->sources));
 		$intel = $boots->evidence['serp']['intel'];
-		self::assertSame([SerpFreshness::FRESH, 'analysis', ['found' => true, 'rank' => 6, 'url' => 'https://example.pl/kozaki/', 'featured' => false]], [$intel['freshness'], $intel['tracking'], $intel['project']]);
+		self::assertSame([SerpFreshness::FRESH, 'analysis', ['found' => true, 'rank' => 6, 'url' => 'https://example.pl/kozaki/', 'featured' => false, 'top10' => [['url' => 'https://example.pl/kozaki/', 'rank' => 6]]]], [$intel['freshness'], $intel['tracking'], $intel['project']]);
+		self::assertNull($intel['spell'], 'Bez korekty pisowni wyszukiwarki.');
 		self::assertSame(['subpage', 10, 10], [$intel['profile']['shape'], $intel['profile']['top10']['organic'], $intel['profile']['top10']['domains']]);
 		self::assertStringNotContainsString('snapshot_id', (string) json_encode($boots->evidence), 'W dowodach tylko publiczne identyfikatory.');
 		self::assertSame(2, (int) $db->fetchValue("SELECT COUNT(*) FROM `{$db->table('serp_snapshot_profiles')}` WHERE project_id = %d", [$context->projectId()]), 'Profile zapisane raz, przy przeliczeniu.');

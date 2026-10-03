@@ -61,7 +61,7 @@ final class SerpIntelligence
 	 * Najnowszy zakończony zgodny pomiar każdej frazy rynkowej projektu.
 	 *
 	 * @param list<int> $marketKeywordIds
-	 * @return array<int, array{snapshot_id: int, public_id: string, tracked_keyword_id: int, tracked_status: string, checked_at: string, depth: int, device: string, context_key: string, project_rank: ?int, project_url: ?string, project_featured: bool, item_types: int}>
+	 * @return array<int, array{snapshot_id: int, public_id: string, tracked_keyword_id: int, tracked_status: string, checked_at: string, depth: int, device: string, context_key: string, project_rank: ?int, project_url: ?string, project_featured: bool, item_types: int, spell_type: ?string}>
 	 */
 	public function latest(int $projectId, SerpContext $required, array $marketKeywordIds): array
 	{
@@ -90,7 +90,8 @@ final class SerpIntelligence
 			// Indeks `tracked_history` (fraza, kontekst, data) — bez skanowania wszystkich pomiarów projektu.
 			foreach ($this->db->fetchAll(
 				"SELECT x.* FROM (
-					SELECT s.id, s.public_id, s.tracked_keyword_id, s.context_id, s.checked_at, s.project_rank, s.project_featured, s.item_types, u.url AS project_url,
+					SELECT s.id, s.public_id, s.tracked_keyword_id, s.context_id, s.checked_at, s.project_rank, s.project_featured, s.item_types, s.spell_type,
+						u.url AS project_url,
 						ROW_NUMBER() OVER (PARTITION BY s.tracked_keyword_id ORDER BY s.checked_at DESC, s.id DESC) AS rn
 					FROM `{$this->db->table('serp_snapshots')}` s LEFT JOIN `{$this->db->table('serp_urls')}` u ON u.id = s.project_url_id
 					WHERE s.project_id = %d AND s.tracked_keyword_id IN (" . Connection::placeholders($chunk, '%d') . ')
@@ -113,6 +114,7 @@ final class SerpIntelligence
 					'project_url' => $row['project_url'],
 					'project_featured' => (int) $row['project_featured'] === 1,
 					'item_types' => (int) $row['item_types'],
+					'spell_type' => $row['spell_type'],
 				];
 			}
 		}
@@ -122,12 +124,13 @@ final class SerpIntelligence
 
 	/**
 	 * Dowody SERP Intelligence fraz projektu (Strategia): najnowszy zgodny pomiar, świeżość, profil (kształt, kompozycja, sygnał
-	 * intencji), obecność projektu (Pozycja SERP tylko ze świeżego pomiaru) i aktywnych konkurentów w TOP10/TOP20.
+	 * intencji), obecność projektu (Pozycja SERP tylko ze świeżego pomiaru; z domeną projektu — także wszystkie adresy projektu
+	 * w TOP10 świeżego pomiaru), aktywnych konkurentów w TOP10/TOP20 i korektę pisowni wyszukiwarki (`spell`).
 	 *
 	 * @param list<int> $marketKeywordIds
 	 * @return array<int, array<string, mixed>> id frazy rynkowej → dowód (`_facts` z identyfikatorem pomiaru)
 	 */
-	public function evidence(int $projectId, Market $market, array $marketKeywordIds, bool $persist = true): array
+	public function evidence(int $projectId, Market $market, array $marketKeywordIds, bool $persist = true, ?string $projectDomain = null): array
 	{
 		$context = $this->analysisContext($projectId, $market);
 		$latest = $this->latest($projectId, $context, $marketKeywordIds);
@@ -141,6 +144,10 @@ final class SerpIntelligence
 		$profiles = $this->profiles->ensure($projectId, array_values(array_map(static fn (array $row): int => $row['snapshot_id'], $usable)), $persist);
 		$competitors = $this->competitors->active($projectId);
 		$found = $this->reports->familyResults(array_values(array_map(static fn (array $row): int => $row['snapshot_id'], $usable)), $this->families($competitors));
+		$own = $projectDomain === null ? [] : $this->reports->familyResults(
+			array_values(array_map(static fn (array $row): int => $row['snapshot_id'], array_filter($latest, static fn (array $row): bool => SerpFreshness::allowsProjectRank(SerpFreshness::of($row['checked_at'], $now))))),
+			['project' => $this->reports->familyDomainIds($projectDomain)],
+		);
 		$names = [];
 
 		foreach ($competitors as $competitor) {
@@ -162,6 +169,14 @@ final class SerpIntelligence
 
 			usort($rivals, static fn (array $a, array $b): int => [$a['rank'], $a['id']] <=> [$b['rank'], $b['id']]);
 			$rankAllowed = SerpFreshness::allowsProjectRank($freshness);
+			$top10 = [];
+
+			foreach ($own[$row['snapshot_id']]['project'] ?? [] as $result10) {
+				if ($result10['rank'] <= 10) {
+					$top10[$result10['url']] ??= $result10['rank'];
+				}
+			}
+
 			$result[$marketKeywordId] = [
 				'_facts' => ['snapshot_id' => $row['snapshot_id']],
 				'snapshot' => $row['public_id'],
@@ -172,7 +187,9 @@ final class SerpIntelligence
 				'profile' => $profile?->toArray($freshness),
 				'project' => $rankAllowed
 					? ['found' => $row['project_rank'] !== null, 'rank' => $row['project_rank'], 'url' => $row['project_url'], 'featured' => $row['project_featured']]
+						+ ($projectDomain === null ? [] : ['top10' => array_map(static fn (string $url, int $rank): array => ['url' => $url, 'rank' => $rank], array_keys($top10), array_values($top10))])
 					: null,
+				'spell' => SerpFreshness::usableForClassification($freshness) && $row['spell_type'] !== null && $row['spell_type'] !== '' ? (string) $row['spell_type'] : null,
 				'competitors' => SerpFreshness::usableForClassification($freshness) ? [
 					'top10' => count(array_filter($rivals, static fn (array $rival): bool => $rival['rank'] <= 10)),
 					'top20' => count($rivals),

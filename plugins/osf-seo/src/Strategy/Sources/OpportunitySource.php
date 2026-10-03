@@ -8,6 +8,7 @@ use OsfSeo\Database\Connection;
 use OsfSeo\Market\MarketKeyword;
 use OsfSeo\Opportunities\OpportunityConfig;
 use OsfSeo\Opportunities\OpportunityKeywordIndex;
+use OsfSeo\Opportunities\OpportunityType;
 use OsfSeo\Opportunities\UrlKey;
 use OsfSeo\Strategy\CandidateSource;
 use OsfSeo\Strategy\SignalBatch;
@@ -137,7 +138,7 @@ final class OpportunitySource implements CandidateSource
 					'page' => $opportunity['page_url'],
 					'link' => $link,
 					'members_complete' => $opportunity['members_complete'],
-				];
+				] + ($opportunity['type'] === OpportunityType::Cannibalization->value ? ['urls' => $opportunity['urls']] : []);
 			}
 
 			$items['direct_open'] = count(array_filter($items['direct'], static fn (array $item): bool => $item['status'] !== 'dismissed'));

@@ -20,7 +20,8 @@ use OsfSeo\Strategy\StrategySource;
  * — `analysis` — nie są źródłem). Dowody — bieżący stan frazy (ostatni pomiar, Pozycja SERP, URL, zmiana względem poprzedniego
  * porównywalnego pomiaru, przejścia pasm TOP3/10/20, sygnał spadku) dla każdego kandydata z wierszem monitorowania (każdy status —
  * pomiar zostaje dowodem) oraz SERP Intelligence (`intel`, faza B): najnowszy zgodny pomiar w kontekście projektu, świeżość, profil
- * (kształt, kompozycja TOP10/TOP20, sygnał intencji z SERP), Pozycja SERP projektu tylko ze świeżego pomiaru, konkurenci.
+ * (kształt, kompozycja TOP10/TOP20, sygnał intencji z SERP), Pozycja SERP projektu tylko ze świeżego pomiaru, konkurenci. Od fazy C także
+ * adres projektu w poprzednim porównywalnym pomiarze (`prev_url`) — zmiana adresu rankującego jest sygnałem konfliktu URL, nie kanibalizacją.
  * Pozycja SERP jest osobną metryką — nigdy nie zastępuje średniej pozycji (GSC).
  */
 final class SerpSource implements CandidateSource
@@ -78,8 +79,11 @@ final class SerpSource implements CandidateSource
 		foreach (array_chunk(array_keys($keys), self::CHUNK) as $chunk) {
 			foreach ($this->db->fetchAll(
 				"SELECT t.id, t.market_keyword_id, t.public_id, t.status, t.source, t.last_snapshot_id, t.last_checked_at, t.last_found, t.last_rank,
-					t.last_rank_absolute, t.last_url_id, t.last_depth, t.last_featured, t.prev_rank, t.change_type, t.change_value, t.top10_change, u.url
+					t.last_rank_absolute, t.last_url_id, t.last_depth, t.last_featured, t.prev_rank, t.change_type, t.change_value, t.top10_change, u.url,
+					pu.url AS prev_url
 				FROM `{$this->db->table('serp_tracked_keywords')}` t LEFT JOIN `{$this->db->table('serp_urls')}` u ON u.id = t.last_url_id
+				LEFT JOIN `{$this->db->table('serp_snapshots')}` ps ON ps.id = t.prev_snapshot_id AND ps.project_id = t.project_id
+				LEFT JOIN `{$this->db->table('serp_urls')}` pu ON pu.id = ps.project_url_id
 				WHERE t.project_id = %d AND t.market_keyword_id IN (" . Connection::placeholders($chunk, '%d') . ')',
 				[$scope->projectId, ...$chunk],
 			) as $row) {
@@ -88,7 +92,7 @@ final class SerpSource implements CandidateSource
 		}
 
 		if ($result !== []) {
-			foreach ($this->intelligence->evidence($scope->projectId, $scope->market, array_keys($result), ! $scope->dryRun) as $id => $intel) {
+			foreach ($this->intelligence->evidence($scope->projectId, $scope->market, array_keys($result), ! $scope->dryRun, $scope->projectDomain) as $id => $intel) {
 				$result[$id]['intel'] = $intel;
 			}
 		}
@@ -135,6 +139,8 @@ final class SerpSource implements CandidateSource
 			'depth' => $checked && $row['last_depth'] !== null ? (int) $row['last_depth'] : null,
 			'featured' => $checked ? (int) $row['last_featured'] === 1 : null,
 			'prev_rank' => $comparable ? $previous : null,
+			// Adres projektu w poprzednim porównywalnym pomiarze (zmiana adresu rankującego — sygnał konfliktu URL, faza C).
+			'prev_url' => $comparable ? ($row['prev_url'] ?? null) : null,
 			'change' => $change,
 			'change_value' => $comparable ? $value : null,
 			'top10' => $checked ? $row['top10_change'] : null,
