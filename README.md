@@ -23,8 +23,9 @@ dostawca danych rynkowych (wolumen, historia wolumenu, CPC, konkurencja Ads, tru
 > wyłączonym, pełne wyniki w historii, Pozycja SERP osobno od średniej pozycji GSC, konkurenci monitorowani i organiczni) oraz moduł
 > „Luki SEO” (STEP 15, Whack-a-mole: frazy domen konkurentów z DataForSEO Labs we wspólnych zbiorach, import w tle z planem i kosztem przed
 > uruchomieniem, widoczność projektu SERP → GSC → punkt odniesienia, priorytet luki, grupy fraz, luka treści jako heurystyka, strony konkurencji). W toku:
-> STEP 16 — **Strategia** (backlog SEO łączący sygnały modułów z dowodami; zrobione fazy A — kandydaci, fakty i dowody per fraza — i B — SERP
-> Intelligence na zapisanych pomiarach oraz jednorazowa analiza SERP przez moduł Pozycji, z CLI). Plan i postęp:
+> STEP 16 — **Strategia** (backlog SEO łączący sygnały modułów z dowodami; zrobione fazy A — kandydaci, fakty i dowody per fraza — B — SERP
+> Intelligence na zapisanych pomiarach oraz jednorazowa analiza SERP przez moduł Pozycji — i C — tematy ze stabilnymi ID, strona docelowa,
+> konflikty URL, działanie z powodem, pewność, Priorytet Strategii, status pracy i pakiet kontekstu, z CLI). Plan i postęp:
 > [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 >
 > **Repozytorium jest publiczne.** Nie commituj żadnych sekretów (sekcja „Konfiguracja”).
@@ -194,6 +195,12 @@ wp osf-seo strategy:serp --project=<public_id> --keyword="fraza"            # SE
 wp osf-seo strategy:serp-overlap --project=<public_id> --keywords="a, b"    # overlap SERP dwóch kandydatów (bez API)
 wp osf-seo strategy:serp-plan --project=<public_id> [--keywords="a, b"]     # podgląd analizy SERP: ponowne użycie, nowe zadania, maks. koszt (bez API)
 wp osf-seo strategy:serp-run --project=<public_id> [--keywords="a, b"]      # PŁATNE — jednorazowa analiza przez moduł Pozycji (wspólne limity)
+wp osf-seo strategy:list --project=<public_id> [--action=optimize]        # tematy: działanie z powodem, pewność, Priorytet Strategii (bez API)
+wp osf-seo strategy:topic --project=<public_id> --topic="fraza"           # strona docelowa, działanie, pewność i priorytet z rozbiciem, konflikty URL
+wp osf-seo strategy:context --project=<public_id> --topic="fraza"         # deterministyczny pakiet kontekstu tematu (JSON, evidence_hash)
+wp osf-seo strategy:set-status --project=<public_id> --topic="fraza" --status=planned [--note="…"]
+wp osf-seo strategy:set-target --project=<public_id> --topic="fraza" --target-url=https://example.pl/strona/   # albo --confirm-missing / --clear
+wp osf-seo strategy:pin --project=<public_id> --keywords="a, b" --new      # przypięcie fraz do nowego tematu (albo --topic=…); strategy:unpin
 ```
 
 Synchronizacja działa w tle przez WP-Cron (lokalnie wystarczy ruch na stronie); na serwerze zalecany cron

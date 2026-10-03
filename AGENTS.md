@@ -178,6 +178,17 @@ Motyw powstał z marketingowego motywu `h2otwock` i wciąż zawiera jego kod: bl
   dodanie do monitorowania zmienia ją na `active` bez utraty historii. Bez drugiego magazynu SERP (profile `serp_snapshot_profiles` to pochodna
   wersjonowanych reguł); Pozycja SERP projektu tylko ze świeżego pomiaru (31–90 dni — niższa pewność, > 90 — bez interpretacji); silny overlap tylko
   wg D64. Bez automatycznego harmonogramu, PAA/related searches, nowych płatnych endpointów, crawlera i AI w STEP 16 bez nowej decyzji.
+  Rdzeń (faza C, `src/Strategy/Target`, `Topics`, `Decision`, sekcja 15.13): strona docelowa tylko przez `TargetPageResolver` — rodzina dowodów liczy
+  się raz (szansa SEO, Nowe frazy i luka ze źródłem SERP/GSC to dowody pochodne GSC/SERP), SERP według pozycji (TOP20 silnie, 21–50 średnio, > 50 słabo),
+  Labs najwyżej średnio, dopasowanie adresu zawsze słabo; „brak znanej strony” wymaga dodatkowego dowodu braku widoczności (nigdy sam brak GSC).
+  Tematy: porównanie tylko z liderem, scalenie automatyczne wyłącznie przy tej samej znanej stronie (nie strona główna) albo silnym overlapie bez
+  konfliktu stron; frazy przypięte poza grupowaniem automatycznym; stabilne ID (`TopicIdentity`, ≥ 50%). Działania w kolejności consolidate → recover →
+  optimize → create → monitor → investigate; „create” to wyłącznie „Kandydat na nową stronę” z twardymi bramkami i pewnością najwyżej średnią bez
+  pełnego `ProjectPageIndex` albo ręcznego potwierdzenia; konsolidacja tylko przy silnym sygnale konfliktu URL (pojedyncza zmiana adresu → investigate).
+  Priorytet Strategii (`PriorityModel`) to ograniczone składniki × mnożnik pewności — monotoniczny, bez kopiowania wyników modułów; brak KD ≠ KD 0.
+  **Przeliczenie nigdy nie zmienia statusu pracy tematu** (tylko flaga `decision_changed`); zdarzenia wyłącznie istotnych zmian; pakiet kontekstu
+  (`TopicContextBuilder`) deterministyczny, dane zewnętrzne oznaczone jako niezaufane. Nie zmieniaj progów overlapu ani heurystyk kształtu z fazy B
+  bez kalibracji na prawdziwych danych.
 - `$wpdb` traktuje tabelę z kolumnami ascii i utf8mb4 bez kolumny binarnej jako ASCII i odrzuca zapytania z polskimi znakami
   („contains invalid data”) — w nowych tabelach z tekstem użytkownika daj co najmniej jedną kolumnę `*_bin` / binarną albo zapisuj
   tekst przez `insert()`/`update()`. Frazy liczbowe („2024”) jako klucze tablic PHP stają się int — rzutuj na `(string)`.
@@ -361,6 +372,10 @@ wp osf-seo strategy:add|remove --project=<id> --keywords="a, b"        # wpisy r
 wp osf-seo strategy:serp-plan --project=<id> [--keywords=…] [--format=json]   # podgląd analizy SERP: zero żądań, ponowne użycie pomiarów, maks. koszt
 wp osf-seo strategy:serp-run --project=<id> [--keywords=…] [--yes] [--queue-only] [--wait=<s>]   # PŁATNE (przez SerpSubmitter) — tylko na polecenie użytkownika
 wp osf-seo strategy:serp-status|serp|serp-overlap --project=<id> …     # stan analiz, SERP Intelligence kandydata, overlap dwóch kandydatów (bez API)
+wp osf-seo strategy:list|topic|context --project=<id> [--topic=…] [--format=json]   # tematy (backlog), szczegóły tematu, pakiet kontekstu (bez API)
+wp osf-seo strategy:set-status --project=<id> --topic=… --status=… [--note=…]           # status pracy (przeliczenie go nie zmienia)
+wp osf-seo strategy:set-target --project=<id> --topic=… (--target-url=… | --confirm-missing | --clear)   # ręczna strona docelowa (nie `--url` — globalny parametr WP-CLI)
+wp osf-seo strategy:pin|unpin --project=<id> --keywords="a, b" [--topic=… | --new]   # przypięcia fraz do tematów (osf_seo_manage_strategy)
 composer test:performance       # benchmark raportów + EXPLAIN na syntetycznych danych (OSOBNA baza testowa)
 composer test:performance:serp  # benchmark pozycji SERP (100 projektów × 500 fraz, TOP100, historia, 2500 fraz) + EXPLAIN (OSOBNA baza)
 composer test:performance:gap   # benchmark Luk SEO (40 zbiorów × 10 000 fraz, 20 projektów, import 10 000 fraz atrapą HTTP) + EXPLAIN (OSOBNA baza)
