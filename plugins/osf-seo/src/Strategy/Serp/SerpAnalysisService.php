@@ -262,7 +262,8 @@ final class SerpAnalysisService
 	}
 
 	/**
-	 * Kolejność Strategii: kolejne strony aktywnych kandydatów, aż do limitu nowych pomiarów.
+	 * Kolejność Strategii: liderzy otwartych tematów według Priorytetu Strategii (faza C; bez monitorowania), a bez tematów — kolejne
+	 * strony aktywnych kandydatów; aż do limitu nowych pomiarów. Członkowie grup tylko z jawnego wyboru (D56).
 	 *
 	 * @return list<array<string, mixed>>
 	 */
@@ -270,9 +271,10 @@ final class SerpAnalysisService
 	{
 		$items = [];
 		$measure = 0;
+		$leaders = $this->keywords->hasTopics($projectId);
 
 		for ($offset = 0; $measure < $limit; $offset += self::PAGE) {
-			$page = $this->keywords->ordered($projectId, $market, $offset, self::PAGE);
+			$page = $leaders ? $this->keywords->topicLeaders($projectId, $market, $offset, self::PAGE) : $this->keywords->ordered($projectId, $market, $offset, self::PAGE);
 
 			if ($page === []) {
 				break;

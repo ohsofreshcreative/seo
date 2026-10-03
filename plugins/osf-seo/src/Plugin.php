@@ -106,6 +106,9 @@ use OsfSeo\Opportunities\OpportunityService;
 use OsfSeo\Projects\ProjectRepository;
 use OsfSeo\Projects\ProjectService;
 use OsfSeo\Setup\Installer;
+use OsfSeo\Strategy\Decision\ActionClassifier;
+use OsfSeo\Strategy\Decision\ConfidenceModel;
+use OsfSeo\Strategy\Decision\PriorityModel;
 use OsfSeo\Strategy\Serp\SerpAnalysisService;
 use OsfSeo\Strategy\Serp\SerpIntelligence;
 use OsfSeo\Strategy\Serp\SerpProfileRepository;
@@ -122,6 +125,16 @@ use OsfSeo\Strategy\StrategyKeywordRepository;
 use OsfSeo\Strategy\StrategyRefresher;
 use OsfSeo\Strategy\StrategyService;
 use OsfSeo\Strategy\StrategySettingsRepository;
+use OsfSeo\Strategy\Target\GscPageIndex;
+use OsfSeo\Strategy\Target\ProjectPageIndex;
+use OsfSeo\Strategy\Target\TargetPageResolver;
+use OsfSeo\Strategy\Topics\TopicClusterer;
+use OsfSeo\Strategy\Topics\TopicEventRepository;
+use OsfSeo\Strategy\Topics\TopicIdentity;
+use OsfSeo\Strategy\Topics\TopicInputLoader;
+use OsfSeo\Strategy\Topics\TopicRefresher;
+use OsfSeo\Strategy\Topics\TopicRepository;
+use OsfSeo\Strategy\Topics\UrlConflictDetector;
 use OsfSeo\Support\Clock;
 use OsfSeo\Sync\SyncConfig;
 use OsfSeo\Sync\SyncPlanner;
@@ -525,6 +538,24 @@ final class Plugin
 			$c->get(Clock::class),
 			$c->get(Logger::class),
 		));
+		$container->singleton(TopicRepository::class, static fn (Container $c): TopicRepository => new TopicRepository($c->get(Connection::class)));
+		$container->singleton(TopicEventRepository::class, static fn (Container $c): TopicEventRepository => new TopicEventRepository($c->get(Connection::class)));
+		$container->singleton(ProjectPageIndex::class, static fn (Container $c): ProjectPageIndex => new GscPageIndex($c->get(Connection::class)));
+		$container->singleton(TopicRefresher::class, static fn (Container $c): TopicRefresher => new TopicRefresher(
+			new TopicInputLoader($c->get(Connection::class)),
+			$c->get(TopicRepository::class),
+			$c->get(TopicEventRepository::class),
+			new TargetPageResolver(),
+			new UrlConflictDetector(),
+			new TopicClusterer(),
+			new TopicIdentity(),
+			new ActionClassifier(),
+			new ConfidenceModel(),
+			new PriorityModel(),
+			$c->get(SerpIntelligence::class),
+			$c->get(ProjectPageIndex::class),
+			$c->get(Clock::class),
+		));
 		$container->singleton(StrategyRefresher::class, static fn (Container $c): StrategyRefresher => new StrategyRefresher(
 			$c->get(Connection::class),
 			[
@@ -548,6 +579,7 @@ final class Plugin
 			$c->get(CompetitorRepository::class),
 			$c->get(StrategyConfig::class),
 			$c->get(Clock::class),
+			$c->get(TopicRefresher::class),
 		));
 		$container->singleton(StrategyService::class, static fn (Container $c): StrategyService => new StrategyService(
 			$c->get(StrategyRefresher::class),
@@ -559,6 +591,9 @@ final class Plugin
 			$c->get(SerpIntelligence::class),
 			$c->get(Clock::class),
 			$c->get(Logger::class),
+			$c->get(TopicRepository::class),
+			$c->get(TopicEventRepository::class),
+			new SerpDictionary($c->get(Connection::class), $c->get(Clock::class)),
 		));
 
 		$container->singleton(KeywordReport::class, static fn (Container $c): KeywordReport => new KeywordReport(

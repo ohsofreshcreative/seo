@@ -46,10 +46,10 @@ final class StrategySerpAnalysisTest extends StrategyTestCase
 		self::assertNull($plan->skipReason);
 		self::assertSame([
 			'buty damskie' => ['reuse', 'fresh_measurement'],
+			'site:example.pl buty' => ['rejected', 'keyword_search_operator'],
 			'kozaki' => ['measure', 'no_measurement'],
 			'botki' => ['measure', 'no_measurement'],
-			'site:example.pl buty' => ['rejected', 'keyword_search_operator'],
-		], self::actions($plan), 'Kolejność Strategii: wpisy ręczne, potem GSC.');
+		], self::actions($plan), 'Kolejność Strategii (faza C): liderzy tematów według Priorytetu Strategii.');
 		self::assertSame([2, self::TOP100_COST, round(2 * self::TOP100_COST, 6)], [$plan->tasks(), $plan->costPerTask, $plan->estimatedCost()]);
 		self::assertSame(['desktop', 100], [$plan->context?->device->value, $plan->context?->depth], 'Kontekst pomiarów projektu.');
 		self::assertSame(1, $plan->toArray()['reuse']);
@@ -219,8 +219,11 @@ final class StrategySerpAnalysisTest extends StrategyTestCase
 		$priority = $this->analysis->plan($context);
 		self::assertNull($priority->skipReason);
 		self::assertSame(2, $priority->tasks());
-		self::assertSame(['measure', 'measure'], array_values(array_map(static fn (array $action): string => $action[0], self::actions($priority))), 'Najwyżej limit nowych pomiarów — wpisy ręczne przed frazami GSC.');
-		self::assertNotContains('buty zimowe', array_keys(self::actions($priority)));
+		self::assertSame(['buty zimowe' => ['measure', 'no_measurement'], 'kozaki' => ['measure', 'no_measurement']], self::actions($priority), 'Najwyżej limit nowych pomiarów — liderzy tematów według Priorytetu Strategii (popyt z GSC przed wpisami bez danych).');
+
+		// Bez tematów (np. przed pierwszym przeliczeniem fazy C) — kolejność kandydatów: wpisy ręczne przed frazami GSC.
+		self::db()->execute('DELETE FROM `' . self::db()->table('strategy_topics') . '`');
+		self::assertSame(['kozaki', 'botki'], array_keys(self::actions($this->analysis->plan($context))));
 	}
 
 	public function test_overlap_safeguards_for_ubiquitous_domains_intents_freshness_and_contexts(): void

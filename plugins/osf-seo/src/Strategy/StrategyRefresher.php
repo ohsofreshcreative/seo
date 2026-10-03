@@ -16,6 +16,7 @@ use OsfSeo\Serp\CompetitorRepository;
 use OsfSeo\Serp\DomainFamily;
 use OsfSeo\Strategy\Sources\GscSource;
 use OsfSeo\Strategy\Sources\MarketKeywordLookup;
+use OsfSeo\Strategy\Topics\TopicRefresher;
 use OsfSeo\Support\Clock;
 use OsfSeo\Support\DateRange;
 
@@ -27,7 +28,8 @@ use OsfSeo\Support\DateRange;
  *    źródeł — także mutacje ręczne we wszystkich modułach i rewizja wpisów ręcznych Strategii; bez zmian → nic do zrobienia,
  * 2. sygnały źródeł → scalenie, filtry i limit (`CandidateCollector`),
  * 3. brakujące frazy rynkowe (frazy GSC) → `market_keywords` (bez danych, bez wzbogacania),
- * 4. fakty i dowody (`EvidenceBuilder`) → zapis przyrostowy (`StrategyKeywordRepository::sync`).
+ * 4. fakty i dowody (`EvidenceBuilder`) → zapis przyrostowy (`StrategyKeywordRepository::sync`),
+ * 5. tematy (faza C): strona docelowa, grupowanie, stabilne ID, działanie, pewność, priorytet, zdarzenia (`TopicRefresher`).
  *
  * Podgląd (`preview`) wykonuje kroki 1–2 bez żadnego zapisu.
  */
@@ -62,6 +64,7 @@ final class StrategyRefresher
 		private readonly CompetitorRepository $competitors,
 		private readonly StrategyConfig $config,
 		private readonly Clock $clock,
+		private readonly TopicRefresher $topics,
 	) {
 	}
 
@@ -193,14 +196,17 @@ final class StrategyRefresher
 			$facts = (new EvidenceBuilder($this->sources))->build($scope, $selected);
 			$now = $this->clock->now()->format('Y-m-d H:i:s');
 			$report = $this->keywords->sync($projectId, $scope->market, $facts, $this->inactiveReasons($scope, $set, $facts), $now);
-			$stats = $set->stats() + ['gsc' => $this->gscState($scope), 'market' => $scope->market->label()];
+			$gsc = $this->gscState($scope);
+			// Tematy (faza C) — po zapisie kandydatów, pod tą samą blokadą.
+			$topics = $this->topics->refresh($scope, $gsc['complete']['query'] && $gsc['complete']['query_page'], $now);
+			$stats = $set->stats() + ['gsc' => $gsc, 'market' => $scope->market->label(), 'topics' => $topics];
 			$durationMs = (int) round((microtime(true) - $started) * 1000);
 			$this->settings->recordRefresh($projectId, $key, $durationMs, $stats, $scope->market);
 		} finally {
 			$this->db->releaseLock($lock);
 		}
 
-		return ['skipped' => null, 'data_key' => $key, 'duration_ms' => $durationMs, 'stats' => $stats] + $report;
+		return ['skipped' => null, 'data_key' => $key, 'duration_ms' => $durationMs, 'stats' => $stats, 'topics' => $topics] + $report;
 	}
 
 	/**

@@ -17,6 +17,9 @@ use OsfSeo\Serp\SerpPlanner;
 use OsfSeo\Serp\SerpSubmitter;
 use OsfSeo\Strategy\CandidateFilters;
 use OsfSeo\Strategy\CandidateRow;
+use OsfSeo\Strategy\Decision\ActionClassifier;
+use OsfSeo\Strategy\Decision\ConfidenceModel;
+use OsfSeo\Strategy\Decision\PriorityModel;
 use OsfSeo\Strategy\Serp\SerpAnalysisService;
 use OsfSeo\Strategy\Serp\SerpIntelligence;
 use OsfSeo\Strategy\Serp\SerpProfileRepository;
@@ -34,6 +37,15 @@ use OsfSeo\Strategy\StrategyRefresher;
 use OsfSeo\Strategy\StrategyService;
 use OsfSeo\Strategy\StrategySettingsRepository;
 use OsfSeo\Strategy\StrategySource;
+use OsfSeo\Strategy\Target\GscPageIndex;
+use OsfSeo\Strategy\Target\TargetPageResolver;
+use OsfSeo\Strategy\Topics\TopicClusterer;
+use OsfSeo\Strategy\Topics\TopicEventRepository;
+use OsfSeo\Strategy\Topics\TopicIdentity;
+use OsfSeo\Strategy\Topics\TopicInputLoader;
+use OsfSeo\Strategy\Topics\TopicRefresher;
+use OsfSeo\Strategy\Topics\TopicRepository;
+use OsfSeo\Strategy\Topics\UrlConflictDetector;
 use OsfSeo\Support\Ulid;
 use OsfSeo\Tests\Integration\Gap\GapTestCase;
 
@@ -43,7 +55,7 @@ use OsfSeo\Tests\Integration\Gap\GapTestCase;
  */
 abstract class StrategyTestCase extends GapTestCase
 {
-	protected const STRATEGY_TABLES = ['strategy_settings', 'strategy_keywords', 'opportunities', 'opportunity_detections', 'opportunity_analyses'];
+	protected const STRATEGY_TABLES = ['strategy_settings', 'strategy_keywords', 'strategy_topics', 'strategy_topic_events', 'opportunities', 'opportunity_detections', 'opportunity_analyses'];
 
 	protected const STRATEGY_ENV = [
 		StrategyConfig::MAX_KEYWORDS,
@@ -65,6 +77,10 @@ abstract class StrategyTestCase extends GapTestCase
 	protected StrategyKeywordRepository $strategyKeywords;
 
 	protected StrategySettingsRepository $strategySettings;
+
+	protected TopicRepository $topics;
+
+	protected TopicEventRepository $topicEvents;
 
 	protected DiscoveryCandidateRepository $discoveryCandidates;
 
@@ -100,6 +116,8 @@ abstract class StrategyTestCase extends GapTestCase
 		$gsc = new GscSource($db, $lookup, new SerpDictionary($db, $this->clock));
 		$this->intelligence = new SerpIntelligence($db, new SerpProfileRepository($db, $this->clock), $this->serpSettings, $this->competitorRepository, $this->serpReports, $this->clock);
 		$this->strategyKeywords = new StrategyKeywordRepository($db);
+		$this->topics = new TopicRepository($db);
+		$this->topicEvents = new TopicEventRepository($db);
 		$this->strategySettings = new StrategySettingsRepository($db, $this->clock);
 		$this->discoveryCandidates = new DiscoveryCandidateRepository($db, $this->clock);
 		$this->opportunities = new OpportunityRepository($db, $this->projects, $this->clock);
@@ -126,6 +144,21 @@ abstract class StrategyTestCase extends GapTestCase
 			$this->competitorRepository,
 			$config,
 			$this->clock,
+			new TopicRefresher(
+				new TopicInputLoader($db),
+				$this->topics,
+				$this->topicEvents,
+				new TargetPageResolver(),
+				new UrlConflictDetector(),
+				new TopicClusterer(),
+				new TopicIdentity(),
+				new ActionClassifier(),
+				new ConfidenceModel(),
+				new PriorityModel(),
+				$this->intelligence,
+				new GscPageIndex($db),
+				$this->clock,
+			),
 		);
 		$this->strategy = new StrategyService(
 			$this->strategyRefresher,
@@ -137,6 +170,9 @@ abstract class StrategyTestCase extends GapTestCase
 			$this->intelligence,
 			$this->clock,
 			$this->captureLogger(),
+			$this->topics,
+			$this->topicEvents,
+			new SerpDictionary($db, $this->clock),
 		);
 		$logger = $this->captureLogger();
 		$planner = new SerpPlanner($this->serpProvider, $this->tracked, new SerpConfig(), $this->market, $this->clock);

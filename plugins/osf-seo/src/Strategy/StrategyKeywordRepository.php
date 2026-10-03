@@ -318,7 +318,7 @@ final class StrategyKeywordRepository
 	 * Aktywni kandydaci wskazani ULID-em albo tekstem frazy (klucz rynkowy na rynku projektu): wartość → kandydat albo null.
 	 *
 	 * @param list<string> $values
-	 * @return array<string, array{public_id: string, market_keyword_id: int, keyword: string, active: bool, tier: ?int}|null>
+	 * @return array<string, array{id: int, public_id: string, market_keyword_id: int, keyword: string, active: bool, tier: ?int}|null>
 	 */
 	public function resolve(int $projectId, Market $market, array $values): array
 	{
@@ -343,7 +343,7 @@ final class StrategyKeywordRepository
 			}
 		}
 
-		$select = 'SELECT STRAIGHT_JOIN s.public_id, s.market_keyword_id, s.active, s.tier, m.keyword, LOWER(HEX(m.keyword_key)) AS h';
+		$select = 'SELECT STRAIGHT_JOIN s.id, s.public_id, s.market_keyword_id, s.active, s.tier, m.keyword, LOWER(HEX(m.keyword_key)) AS h';
 
 		foreach (array_chunk(array_keys($byId), self::CHUNK) as $chunk) {
 			foreach ($this->db->fetchAll(
@@ -375,12 +375,12 @@ final class StrategyKeywordRepository
 	/**
 	 * Aktywni kandydaci rynku projektu w kolejności Strategii (poziom źródła, wyświetlenia GSC, identyfikator) — stronicowanie po kluczu.
 	 *
-	 * @return list<array{public_id: string, market_keyword_id: int, keyword: string, active: bool, tier: ?int}>
+	 * @return list<array{id: int, public_id: string, market_keyword_id: int, keyword: string, active: bool, tier: ?int}>
 	 */
 	public function ordered(int $projectId, Market $market, int $offset, int $limit): array
 	{
 		return array_map(static fn (array $row): array => self::resolved($row), $this->db->fetchAll(
-			"SELECT STRAIGHT_JOIN s.public_id, s.market_keyword_id, s.active, s.tier, m.keyword
+			"SELECT STRAIGHT_JOIN s.id, s.public_id, s.market_keyword_id, s.active, s.tier, m.keyword
 			FROM `{$this->table()}` s JOIN `{$this->db->table('market_keywords')}` m ON m.id = s.market_keyword_id
 			WHERE s.project_id = %d AND s.active = 1 AND m.provider = %s AND m.location_code = %d AND m.language_code = %s
 			ORDER BY s.tier IS NULL, s.tier, s.gsc_impressions IS NULL, s.gsc_impressions DESC, s.id LIMIT %d OFFSET %d",
@@ -389,18 +389,68 @@ final class StrategyKeywordRepository
 	}
 
 	/**
+	 * Liderzy aktywnych, otwartych tematów (bez monitorowania) w kolejności Priorytetu Strategii — domyślna kwalifikacja analizy SERP
+	 * od fazy C; pusta lista, gdy projekt nie ma jeszcze tematów.
+	 *
+	 * @return list<array{id: int, public_id: string, market_keyword_id: int, keyword: string, active: bool, tier: ?int}>
+	 */
+	public function topicLeaders(int $projectId, Market $market, int $offset, int $limit): array
+	{
+		return array_map(static fn (array $row): array => self::resolved($row), $this->db->fetchAll(
+			"SELECT STRAIGHT_JOIN s.id, s.public_id, s.market_keyword_id, s.active, s.tier, m.keyword
+			FROM `{$this->db->table('strategy_topics')}` t
+			JOIN `{$this->table()}` s ON s.project_id = t.project_id AND s.market_keyword_id = t.leader_market_keyword_id
+			JOIN `{$this->db->table('market_keywords')}` m ON m.id = s.market_keyword_id
+			WHERE t.project_id = %d AND t.active = 1 AND t.status IN ('new', 'review', 'planned', 'in_progress') AND (t.action IS NULL OR t.action <> 'monitor')
+				AND s.active = 1 AND m.provider = %s AND m.location_code = %d AND m.language_code = %s
+			ORDER BY t.priority IS NULL, t.priority DESC, t.confidence DESC, t.id LIMIT %d OFFSET %d",
+			[$projectId, $market->provider, $market->locationCode, $market->languageCode, max(1, $limit), max(0, $offset)],
+		));
+	}
+
+	/** Projekt ma aktywne tematy (faza C). */
+	public function hasTopics(int $projectId): bool
+	{
+		return $this->db->fetchValue("SELECT 1 FROM `{$this->db->table('strategy_topics')}` WHERE project_id = %d AND active = 1 LIMIT 1", [$projectId]) !== null;
+	}
+
+	/**
 	 * @param array<string, string|null> $row
-	 * @return array{public_id: string, market_keyword_id: int, keyword: string, active: bool, tier: ?int}
+	 * @return array{id: int, public_id: string, market_keyword_id: int, keyword: string, active: bool, tier: ?int}
 	 */
 	private static function resolved(array $row): array
 	{
 		return [
+			'id' => (int) $row['id'],
 			'public_id' => (string) $row['public_id'],
 			'market_keyword_id' => (int) $row['market_keyword_id'],
 			'keyword' => (string) $row['keyword'],
 			'active' => (int) $row['active'] === 1,
 			'tier' => $row['tier'] === null ? null : (int) $row['tier'],
 		];
+	}
+
+	/**
+	 * Dowody kandydatów projektu (ULID → zdekodowany JSON) — do kontekstu tematu.
+	 *
+	 * @param list<string> $publicIds
+	 * @return array<string, array<string, mixed>>
+	 */
+	public function evidence(int $projectId, array $publicIds): array
+	{
+		$result = [];
+
+		foreach (array_chunk(array_values(array_unique($publicIds)), self::CHUNK) as $chunk) {
+			foreach ($this->db->fetchAll(
+				"SELECT public_id, evidence FROM `{$this->table()}` WHERE project_id = %d AND public_id IN (" . Connection::placeholders($chunk) . ')',
+				[$projectId, ...$chunk],
+			) as $row) {
+				$decoded = json_decode((string) $row['evidence'], true);
+				$result[(string) $row['public_id']] = is_array($decoded) ? $decoded : [];
+			}
+		}
+
+		return $result;
 	}
 
 	/**

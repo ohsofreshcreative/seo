@@ -327,6 +327,83 @@ final class SerpIntelligence
 	}
 
 	/**
+	 * Strony porównania overlapu wielu fraz naraz (faza C — grupowanie tematów): najnowsze zgodne pomiary nadające się do klasyfikacji
+	 * (≤ 90 dni), TOP10 organiczne ze stronami głównymi z profilu i intencją dostawcy — te same dane co w `overlap()`, wsadowo.
+	 *
+	 * @param list<int> $marketKeywordIds
+	 * @return array{sides: array<int, OverlapSide>, ubiquity: array{domains: array<int, bool>, known: bool, measurements: int, threshold: int}}
+	 */
+	public function sides(int $projectId, Market $market, array $marketKeywordIds, bool $persist = true): array
+	{
+		$context = $this->analysisContext($projectId, $market);
+		$now = $this->clock->now();
+		$latest = array_filter(
+			$this->latest($projectId, $context, $marketKeywordIds),
+			static fn (array $row): bool => SerpFreshness::usableForClassification(SerpFreshness::of($row['checked_at'], $now)),
+		);
+
+		if ($latest === []) {
+			return ['sides' => [], 'ubiquity' => ['domains' => [], 'known' => false, 'measurements' => 0, 'threshold' => 0]];
+		}
+
+		$profiles = $this->profiles->ensure($projectId, array_values(array_map(static fn (array $row): int => $row['snapshot_id'], $latest)), $persist);
+		$intents = [];
+
+		foreach (array_chunk(array_keys($latest), self::CHUNK) as $chunk) {
+			foreach ($this->db->fetchAll(
+				'SELECT id, keyword, search_intent FROM `' . $this->db->table('market_keywords') . '` WHERE id IN (' . Connection::placeholders($chunk, '%d') . ')',
+				$chunk,
+			) as $row) {
+				$intents[(int) $row['id']] = ['keyword' => (string) $row['keyword'], 'intent' => $row['search_intent']];
+			}
+		}
+
+		$bySnapshot = [];
+
+		foreach (array_chunk(array_values(array_map(static fn (array $row): int => $row['snapshot_id'], $latest)), self::CHUNK) as $chunk) {
+			foreach ($this->db->fetchAll(
+				'SELECT snapshot_id, rank_group, domain_id, url_id FROM `' . $this->db->table('serp_results') . '` WHERE snapshot_id IN (' . Connection::placeholders($chunk, '%d') . ')
+				AND result_type = %d AND rank_group <= 10 ORDER BY snapshot_id, rank_group, item_index',
+				[...$chunk, SerpItem::TYPE_ORGANIC],
+			) as $row) {
+				$bySnapshot[(int) $row['snapshot_id']][] = $row;
+			}
+		}
+
+		$sides = [];
+
+		foreach ($latest as $marketKeywordId => $row) {
+			$freshness = SerpFreshness::of($row['checked_at'], $now);
+			$profile = $profiles[$row['snapshot_id']] ?? null;
+			$homes = [];
+
+			foreach ($profile?->results ?? [] as [$rank, $shape]) {
+				$homes[(int) $rank] = $shape === ResultShape::Home->value;
+			}
+
+			$top10 = [];
+
+			foreach ($bySnapshot[$row['snapshot_id']] ?? [] as $result) {
+				$top10[(int) $result['url_id']] ??= ['rank' => (int) $result['rank_group'], 'domain_id' => (int) $result['domain_id'], 'home' => $homes[(int) $result['rank_group']] ?? false];
+			}
+
+			$sides[$marketKeywordId] = new OverlapSide(
+				$marketKeywordId,
+				$intents[$marketKeywordId]['keyword'] ?? '',
+				$row['snapshot_id'],
+				$row['context_key'],
+				$freshness,
+				$top10,
+				$profile?->intent,
+				$profile === null ? null : SerpConfidence::forFreshness($profile->intentConfidence, $freshness),
+				$intents[$marketKeywordId]['intent'] ?? null,
+			);
+		}
+
+		return ['sides' => $sides, 'ubiquity' => $this->ubiquity($projectId, $context)];
+	}
+
+	/**
 	 * @param array{snapshot_id: int, checked_at: string, context_key: string}|null $latest
 	 */
 	private function side(int $projectId, int $marketKeywordId, ?array $latest, bool $persist): OverlapSide
