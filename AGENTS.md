@@ -170,9 +170,14 @@ Motyw powstał z marketingowego motywu `h2otwock` i wciąż zawiera jego kod: bl
   bez cichego pomijania). Klucz danych przeliczenia musi obejmować także mutacje ręczne wszystkich modułów i `strategy_settings.revision` —
   nie tylko czas importu. Przeliczenie wyłącznie w CLI albo w tle, nigdy przy renderowaniu. Powiązanie szansa SEO ↔ fraza tylko przez
   `Opportunities\OpportunityKeywordIndex` (dane query × page) — nigdy przez samo `opportunities.keyword`; wspólna podstrona to kontekst, nie dowód
-  (osobno od powiązań bezpośrednich), a przycięta lista fraz grupy jest jawnie oznaczona (`members_complete`). Płatna analiza SERP (od fazy B) wyłącznie
-  przez `SerpSubmitter` STEP 14, po podglądzie i potwierdzeniu, we wspólnych limitach; bez automatycznego harmonogramu, PAA/related searches,
-  nowych płatnych endpointów, crawlera i AI w STEP 16 bez nowej decyzji.
+  (osobno od powiązań bezpośrednich), a przycięta lista fraz grupy jest jawnie oznaczona (`members_complete`). Płatna analiza SERP (faza B, `src/Strategy/Serp`,
+  sekcja 15.12) wyłącznie przez `SerpSubmitter` STEP 14 (`SerpAnalysisService`), po podglądzie i potwierdzeniu, we wspólnych limitach i ze wspólnym
+  odstępem pomiaru ręcznego; świeży (≤ 30 dni) zgodny pomiar jest używany ponownie bez kosztu; najwyżej `OSF_SEO_STRATEGY_SERP_MAX_PER_RUN` nowych
+  pomiarów bez cichego obcinania; nieudana rezerwacja wycofuje przygotowane frazy. Fraza `analysis` jest poza listą i licznikami Pozycji, harmonogramem
+  i miękkim limitem (zapytania modułu Pozycji filtrują `status = 'active'` — nie zmieniaj tego mimochodem), ale jest dowodem widoczności dla Luk SEO;
+  dodanie do monitorowania zmienia ją na `active` bez utraty historii. Bez drugiego magazynu SERP (profile `serp_snapshot_profiles` to pochodna
+  wersjonowanych reguł); Pozycja SERP projektu tylko ze świeżego pomiaru (31–90 dni — niższa pewność, > 90 — bez interpretacji); silny overlap tylko
+  wg D64. Bez automatycznego harmonogramu, PAA/related searches, nowych płatnych endpointów, crawlera i AI w STEP 16 bez nowej decyzji.
 - `$wpdb` traktuje tabelę z kolumnami ascii i utf8mb4 bez kolumny binarnej jako ASCII i odrzuca zapytania z polskimi znakami
   („contains invalid data”) — w nowych tabelach z tekstem użytkownika daj co najmniej jedną kolumnę `*_bin` / binarną albo zapisuj
   tekst przez `insert()`/`update()`. Frazy liczbowe („2024”) jako klucze tablic PHP stają się int — rzutuj na `(string)`.
@@ -353,6 +358,9 @@ wp osf-seo strategy:status|preview --project=<id> [--format=json]      # Strateg
 wp osf-seo strategy:refresh --project=<id> [--force]                   # materializacja kandydatów, faktów i dowodów (bez API)
 wp osf-seo strategy:candidates|keyword --project=<id> …                # lista kandydatów, fakty i dowody frazy (bez API)
 wp osf-seo strategy:add|remove --project=<id> --keywords="a, b"        # wpisy ręczne Strategii (osf_seo_manage_strategy)
+wp osf-seo strategy:serp-plan --project=<id> [--keywords=…] [--format=json]   # podgląd analizy SERP: zero żądań, ponowne użycie pomiarów, maks. koszt
+wp osf-seo strategy:serp-run --project=<id> [--keywords=…] [--yes] [--queue-only] [--wait=<s>]   # PŁATNE (przez SerpSubmitter) — tylko na polecenie użytkownika
+wp osf-seo strategy:serp-status|serp|serp-overlap --project=<id> …     # stan analiz, SERP Intelligence kandydata, overlap dwóch kandydatów (bez API)
 composer test:performance       # benchmark raportów + EXPLAIN na syntetycznych danych (OSOBNA baza testowa)
 composer test:performance:serp  # benchmark pozycji SERP (100 projektów × 500 fraz, TOP100, historia, 2500 fraz) + EXPLAIN (OSOBNA baza)
 composer test:performance:gap   # benchmark Luk SEO (40 zbiorów × 10 000 fraz, 20 projektów, import 10 000 fraz atrapą HTTP) + EXPLAIN (OSOBNA baza)

@@ -23,7 +23,8 @@ dostawca danych rynkowych (wolumen, historia wolumenu, CPC, konkurencja Ads, tru
 > wyłączonym, pełne wyniki w historii, Pozycja SERP osobno od średniej pozycji GSC, konkurenci monitorowani i organiczni) oraz moduł
 > „Luki SEO” (STEP 15, Whack-a-mole: frazy domen konkurentów z DataForSEO Labs we wspólnych zbiorach, import w tle z planem i kosztem przed
 > uruchomieniem, widoczność projektu SERP → GSC → punkt odniesienia, priorytet luki, grupy fraz, luka treści jako heurystyka, strony konkurencji). W toku:
-> STEP 16 — **Strategia** (backlog SEO łączący sygnały modułów z dowodami; zrobiona faza A: kandydaci, fakty i dowody per fraza, CLI). Plan i postęp:
+> STEP 16 — **Strategia** (backlog SEO łączący sygnały modułów z dowodami; zrobione fazy A — kandydaci, fakty i dowody per fraza — i B — SERP
+> Intelligence na zapisanych pomiarach oraz jednorazowa analiza SERP przez moduł Pozycji, z CLI). Plan i postęp:
 > [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 >
 > **Repozytorium jest publiczne.** Nie commituj żadnych sekretów (sekcja „Konfiguracja”).
@@ -183,12 +184,16 @@ wp osf-seo gap:list --project=<public_id> [--type=missing] [--format=json]   # l
 wp osf-seo gap:content --project=<public_id>                      # luki treści (grupy fraz, heurystyka)
 wp osf-seo gap:recalculate --project=<public_id>                  # przeliczenie z zapisanych danych (bez API)
 
-# Strategia (STEP 16, faza A — bez żadnego żądania do API; szczegóły: docs/ARCHITECTURE.md, sekcja 15)
+# Strategia (STEP 16 — bez żądań do API poza jawnie potwierdzoną analizą SERP; szczegóły: docs/ARCHITECTURE.md, sekcja 15)
 wp osf-seo strategy:status --project=<public_id>                 # limity, ostatnie przeliczenie, aktualność klucza danych, okno GSC
 wp osf-seo strategy:preview --project=<public_id>                # podgląd kandydatów ze wszystkich źródeł (bez zapisu)
 wp osf-seo strategy:refresh --project=<public_id> [--force]      # zapis kandydatów, faktów i dowodów per fraza
 wp osf-seo strategy:candidates --project=<public_id> [--source=gap] [--format=json]
 wp osf-seo strategy:keyword --project=<public_id> --keyword="fraza"
+wp osf-seo strategy:serp --project=<public_id> --keyword="fraza"            # SERP Intelligence: świeżość, kształt, kompozycja, TOP20 (bez API)
+wp osf-seo strategy:serp-overlap --project=<public_id> --keywords="a, b"    # overlap SERP dwóch kandydatów (bez API)
+wp osf-seo strategy:serp-plan --project=<public_id> [--keywords="a, b"]     # podgląd analizy SERP: ponowne użycie, nowe zadania, maks. koszt (bez API)
+wp osf-seo strategy:serp-run --project=<public_id> [--keywords="a, b"]      # PŁATNE — jednorazowa analiza przez moduł Pozycji (wspólne limity)
 ```
 
 Synchronizacja działa w tle przez WP-Cron (lokalnie wystarczy ruch na stronie); na serwerze zalecany cron
