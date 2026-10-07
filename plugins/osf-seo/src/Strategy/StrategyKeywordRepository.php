@@ -53,13 +53,13 @@ final class StrategyKeywordRepository
 				'public_id', 'project_id', 'market_keyword_id', 'active', 'inactive_reason', 'sources', 'tier', 'gsc_impressions', 'gsc_clicks',
 				'gsc_position', 'gsc_pages', 'gsc_top_url_id', 'gsc_top_share', 'tracked_keyword_id', 'serp_checked_at', 'serp_found', 'serp_rank',
 				'serp_url_id', 'gap_keyword_id', 'gap_cluster_id', 'discovery_candidate_id', 'opportunities', 'evidence', 'facts_hash',
-				'first_seen_at', 'refreshed_at', 'created_at', 'updated_at',
+				'first_seen_at', 'refreshed_at', 'created_at', 'updated_at', 'serp_intel_at',
 			],
 			[
 				'%s', '%d', '%d', '%d', "NULLIF(%s, '')", '%d', '%d', 'NULLIF(%d, -1)', 'NULLIF(%d, -1)',
 				"NULLIF(%s, '')", 'NULLIF(%d, -1)', 'NULLIF(%d, 0)', "NULLIF(%s, '')", 'NULLIF(%d, 0)', "NULLIF(%s, '')", 'NULLIF(%d, -1)', 'NULLIF(%d, 0)',
 				'NULLIF(%d, 0)', 'NULLIF(%d, 0)', 'NULLIF(%d, 0)', 'NULLIF(%d, 0)', '%d', '%s', 'UNHEX(%s)',
-				'%s', '%s', '%s', '%s',
+				'%s', '%s', '%s', '%s', "NULLIF(%s, '')",
 			],
 			'ON DUPLICATE KEY UPDATE active = VALUES(active), inactive_reason = VALUES(inactive_reason), sources = VALUES(sources), tier = VALUES(tier),
 				gsc_impressions = VALUES(gsc_impressions), gsc_clicks = VALUES(gsc_clicks), gsc_position = VALUES(gsc_position), gsc_pages = VALUES(gsc_pages),
@@ -67,7 +67,7 @@ final class StrategyKeywordRepository
 				serp_checked_at = VALUES(serp_checked_at), serp_found = VALUES(serp_found), serp_rank = VALUES(serp_rank), serp_url_id = VALUES(serp_url_id),
 				gap_keyword_id = VALUES(gap_keyword_id), gap_cluster_id = VALUES(gap_cluster_id), discovery_candidate_id = VALUES(discovery_candidate_id),
 				opportunities = VALUES(opportunities), evidence = VALUES(evidence), facts_hash = VALUES(facts_hash), refreshed_at = VALUES(refreshed_at),
-				updated_at = VALUES(updated_at)',
+				updated_at = VALUES(updated_at), serp_intel_at = VALUES(serp_intel_at)',
 			200,
 		);
 		$seen = [];
@@ -113,6 +113,7 @@ final class StrategyKeywordRepository
 				$now,
 				$now,
 				$now,
+				(string) $fact->serpIntelAt,
 			]);
 		}
 
@@ -406,6 +407,72 @@ final class StrategyKeywordRepository
 			ORDER BY t.priority IS NULL, t.priority DESC, t.confidence DESC, t.id LIMIT %d OFFSET %d",
 			[$projectId, $market->provider, $market->locationCode, $market->languageCode, max(1, $limit), max(0, $offset)],
 		));
+	}
+
+	/**
+	 * Aktywni kandydaci dla listy SERP Intelligence (panel): stan zgodnego pomiaru według `serp_intel_at` (bez dekodowania dowodów
+	 * w filtrze), temat i rola w temacie; kolejność — priorytet tematu, lider pierwszy, wolumen. Dowody tylko dla wierszy strony.
+	 *
+	 * @param string $filter `measured` (≤ 90 dni), `fresh` (≤ 30), `stale` (31–90), `missing` (brak albo > 90), `all`
+	 * @return array{rows: list<array<string, mixed>>, total: int}
+	 */
+	public function serpCandidates(int $projectId, Market $market, string $filter, string $fresh, string $expired, int $offset, int $limit, bool $restricted = false): array
+	{
+		[$where, $params] = $this->serpFilter($filter, $fresh, $expired);
+		$rows = $this->db->fetchAll(
+			"SELECT STRAIGHT_JOIN s.id, s.public_id, s.market_keyword_id, s.evidence, s.serp_intel_at, s.tracked_keyword_id, m.keyword, m.search_volume, m.search_intent,
+				t.public_id AS topic_public_id, t.label AS topic_label, t.status AS topic_status, t.action AS topic_action,
+				(t.leader_market_keyword_id = s.market_keyword_id) AS leader, COUNT(*) OVER () AS total_rows
+			FROM `{$this->table()}` s
+			JOIN `{$this->db->table('market_keywords')}` m ON m.id = s.market_keyword_id
+			LEFT JOIN `{$this->db->table('strategy_topics')}` t ON t.id = s.topic_id AND t.project_id = s.project_id
+			WHERE s.project_id = %d AND s.active = 1 AND m.provider = %s AND m.location_code = %d AND m.language_code = %s{$where}"
+				. ($restricted ? " AND (t.status IS NULL OR t.status <> 'dismissed')" : '') . '
+			ORDER BY t.priority IS NULL, t.priority DESC, leader DESC, m.search_volume IS NULL, m.search_volume DESC, s.id LIMIT %d OFFSET %d',
+			[$projectId, $market->provider, $market->locationCode, $market->languageCode, ...$params, max(1, $limit), max(0, $offset)],
+		);
+
+		return [
+			'rows' => array_map(static function (array $row): array {
+				$evidence = json_decode((string) $row['evidence'], true);
+				$row['evidence'] = is_array($evidence) ? $evidence : [];
+
+				return $row;
+			}, $rows),
+			'total' => (int) ($rows[0]['total_rows'] ?? 0),
+		];
+	}
+
+	/**
+	 * Liczby aktywnych kandydatów według stanu zgodnego pomiaru SERP.
+	 *
+	 * @return array{fresh: int, stale: int, missing: int, all: int}
+	 */
+	public function serpCounts(int $projectId, string $fresh, string $expired, bool $restricted = false): array
+	{
+		$row = $this->db->fetchRow(
+			"SELECT COUNT(*) AS n, COALESCE(SUM(s.serp_intel_at >= %s), 0) AS fresh, COALESCE(SUM(s.serp_intel_at >= %s AND s.serp_intel_at < %s), 0) AS stale
+			FROM `{$this->table()}` s LEFT JOIN `{$this->db->table('strategy_topics')}` t ON t.id = s.topic_id AND t.project_id = s.project_id
+			WHERE s.project_id = %d AND s.active = 1" . ($restricted ? " AND (t.status IS NULL OR t.status <> 'dismissed')" : ''),
+			[$fresh, $expired, $fresh, $projectId],
+		) ?? [];
+		$all = (int) ($row['n'] ?? 0);
+
+		return ['fresh' => (int) ($row['fresh'] ?? 0), 'stale' => (int) ($row['stale'] ?? 0), 'missing' => $all - (int) ($row['fresh'] ?? 0) - (int) ($row['stale'] ?? 0), 'all' => $all];
+	}
+
+	/**
+	 * @return array{0: string, 1: list<string>}
+	 */
+	private function serpFilter(string $filter, string $fresh, string $expired): array
+	{
+		return match ($filter) {
+			'fresh' => [' AND s.serp_intel_at >= %s', [$fresh]],
+			'stale' => [' AND s.serp_intel_at >= %s AND s.serp_intel_at < %s', [$expired, $fresh]],
+			'measured' => [' AND s.serp_intel_at >= %s', [$expired]],
+			'missing' => [' AND (s.serp_intel_at IS NULL OR s.serp_intel_at < %s)', [$expired]],
+			default => ['', []],
+		};
 	}
 
 	/** Projekt ma aktywne tematy (faza C). */

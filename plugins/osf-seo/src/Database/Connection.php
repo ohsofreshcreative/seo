@@ -174,6 +174,12 @@ final class Connection
 		return $this->fetchValue('SELECT GET_LOCK(%s, %d)', [$this->lockName($name), $timeout]) === '1';
 	}
 
+	/** Czy blokadę nazwaną trzyma teraz jakiekolwiek połączenie (bez jej przejmowania). */
+	public function lockInUse(string $name): bool
+	{
+		return $this->fetchValue('SELECT IS_USED_LOCK(%s)', [$this->lockName($name)]) !== null;
+	}
+
 	public function releaseLock(string $name): void
 	{
 		$this->fetchValue('SELECT RELEASE_LOCK(%s)', [$this->lockName($name)]);

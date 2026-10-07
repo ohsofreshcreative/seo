@@ -22,6 +22,9 @@ final class StrategySettings
 		public readonly ?int $locationCode = null,
 		public readonly ?string $languageCode = null,
 		public readonly ?string $updatedAt = null,
+		/** Ręcznie zlecone przeliczenie (panel) — wykona je krok w tle (faza E) albo CLI; czyszczone po przeliczeniu. */
+		public readonly ?string $refreshRequestedAt = null,
+		public readonly ?int $refreshRequestedBy = null,
 	) {
 	}
 
@@ -42,6 +45,8 @@ final class StrategySettings
 			$row['location_code'] === null ? null : (int) $row['location_code'],
 			$row['language_code'],
 			$row['updated_at'],
+			$row['refresh_requested_at'] ?? null,
+			isset($row['refresh_requested_by']) ? (int) $row['refresh_requested_by'] : null,
 		);
 	}
 }

@@ -34,6 +34,8 @@ final class KeywordFacts
 		public readonly ?int $discoveryCandidateId,
 		public readonly int $opportunities,
 		public readonly array $evidence,
+		/** Chwila najnowszego zgodnego pomiaru SERP (SERP Intelligence) — do filtrów świeżości panelu. */
+		public readonly ?string $serpIntelAt = null,
 	) {
 	}
 

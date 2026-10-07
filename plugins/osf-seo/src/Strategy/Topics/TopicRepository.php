@@ -20,12 +20,14 @@ final class TopicRepository
 	private const SELECT = 't.id, t.public_id, t.active, t.inactive_reason, mt.public_id AS merged_into, t.label, t.keywords_count, t.demand, t.action,
 		t.action_reason, t.confidence, t.confidence_level, t.priority, t.target_state, tu.url AS target_url, mu.url AS manual_target_url, t.manual_no_page,
 		t.serp_band, t.status, t.note, t.status_changed_at, t.status_changed_by, t.completed_on, t.decision_changed, LOWER(HEX(t.evidence_hash)) AS evidence_hash,
-		t.first_seen_at, t.refreshed_at';
+		t.first_seen_at, t.refreshed_at, t.sources, t.serp_rank, t.serp_checked_at, t.gsc_impressions, t.gsc_position,
+		lm.search_intent AS leader_intent, lm.keyword_difficulty AS leader_kd, lm.search_volume AS leader_volume';
 
 	/** Kolumny wyliczane przez przeliczenie (aktualizowane przy zmianie). */
 	private const COMPUTED = [
 		'active', 'inactive_reason', 'merged_into_id', 'leader_market_keyword_id', 'label', 'keywords_count', 'demand', 'action', 'action_reason',
-		'confidence', 'confidence_level', 'priority', 'target_state', 'target_url_id', 'serp_band', 'decision_changed', 'analysis', 'evidence_hash', 'refreshed_at', 'updated_at',
+		'confidence', 'confidence_level', 'priority', 'target_state', 'target_url_id', 'serp_band', 'sources', 'serp_rank', 'serp_checked_at', 'gsc_impressions',
+		'gsc_position', 'decision_changed', 'analysis', 'evidence_hash', 'refreshed_at', 'updated_at',
 	];
 
 	public function __construct(private readonly Connection $db)
@@ -136,13 +138,15 @@ final class TopicRepository
 			$this->table(),
 			[
 				'public_id', 'project_id', 'active', 'inactive_reason', 'merged_into_id', 'leader_market_keyword_id', 'label', 'keywords_count', 'demand',
-				'action', 'action_reason', 'confidence', 'confidence_level', 'priority', 'target_state', 'target_url_id', 'serp_band', 'decision_changed',
-				'analysis', 'evidence_hash', 'first_seen_at', 'refreshed_at', 'created_at', 'updated_at',
+				'action', 'action_reason', 'confidence', 'confidence_level', 'priority', 'target_state', 'target_url_id', 'serp_band', 'sources', 'serp_rank',
+				'serp_checked_at', 'gsc_impressions', 'gsc_position', 'decision_changed', 'analysis', 'evidence_hash', 'first_seen_at', 'refreshed_at', 'created_at',
+				'updated_at',
 			],
 			[
 				'%s', '%d', '%d', "NULLIF(%s, '')", 'NULLIF(%d, 0)', 'NULLIF(%d, 0)', "NULLIF(%s, '')", '%d', 'NULLIF(%d, -1)',
 				"NULLIF(%s, '')", "NULLIF(%s, '')", 'NULLIF(%d, -1)', "NULLIF(%s, '')", 'NULLIF(%d, -1)', "NULLIF(%s, '')", 'NULLIF(%d, 0)', "NULLIF(%s, '')", '%d',
-				'%s', 'UNHEX(%s)', '%s', '%s', '%s', '%s',
+				'NULLIF(%d, 0)', "NULLIF(%s, '')", 'NULLIF(%d, -1)', "NULLIF(%s, '')", '%d', '%s', 'UNHEX(%s)', '%s', '%s', '%s',
+				'%s',
 			],
 			'ON DUPLICATE KEY UPDATE ' . implode(', ', array_map(static fn (string $column): string => "{$column} = VALUES({$column})", self::COMPUTED)),
 			200,
@@ -174,6 +178,11 @@ final class TopicRepository
 				(string) $topic['target_state'],
 				(int) ($topic['target_url_id'] ?? 0),
 				(string) ($topic['serp_band'] ?? ''),
+				(int) ($topic['sources'] ?? 0),
+				(int) ($topic['serp_rank'] ?? 0),
+				(string) ($topic['serp_checked_at'] ?? ''),
+				$topic['gsc_impressions'] ?? -1,
+				$topic['gsc_position'] === null ? '' : number_format((float) $topic['gsc_position'], 2, '.', ''),
 				(int) ($topic['decision_changed'] ?? 0),
 				(string) $topic['analysis'],
 				(string) $topic['evidence_hash'],
@@ -316,9 +325,61 @@ final class TopicRepository
 			$params[] = $filters->confidence;
 		}
 
+		if ($filters->minPriority !== null) {
+			$where[] = 't.priority >= %d';
+			$params[] = $filters->minPriority;
+		}
+
+		if ($filters->source !== null) {
+			$where[] = '(t.sources & %d) <> 0';
+			$params[] = $filters->source->bit();
+		}
+
+		if ($filters->intent !== null) {
+			$where[] = 'lm.search_intent = %s';
+			$params[] = $filters->intent;
+		}
+
+		if ($filters->target !== null) {
+			$where[] = 't.target_state = %s';
+			$params[] = $filters->target->value;
+		}
+
+		if ($filters->serp !== null) {
+			$where[] = match ($filters->serp) {
+				'fresh' => "t.serp_band IN ('top3', 'top10', 'top20', 'top50', 'top100', 'out')",
+				'none' => 't.serp_band IS NULL',
+				default => 't.serp_band = %s',
+			};
+
+			if (! in_array($filters->serp, ['fresh', 'none'], true)) {
+				$params[] = $filters->serp;
+			}
+		}
+
+		if ($filters->minVolume !== null) {
+			// Popyt tematu = suma znanych wolumenów fraz; temat bez wolumenu nie spełnia progu (brak ≠ 0, ale też nie „dużo”).
+			$where[] = 't.demand >= %d';
+			$params[] = $filters->minVolume;
+		}
+
+		if ($filters->maxDifficulty !== null) {
+			// Trudność SEO frazy głównej; brak KD nie spełnia filtru (nigdy jak KD 0).
+			$where[] = 'lm.keyword_difficulty <= %d';
+			$params[] = $filters->maxDifficulty;
+		}
+
+		if ($filters->changed) {
+			$where[] = 't.decision_changed = 1';
+		}
+
 		if ($filters->q !== '') {
-			$where[] = 't.label LIKE %s';
-			$params[] = '%' . $this->db->escapeLike(mb_strtolower($filters->q)) . '%';
+			// Etykieta tematu albo dowolna fraza tematu.
+			$like = '%' . $this->db->escapeLike(mb_strtolower($filters->q)) . '%';
+			$where[] = "(t.label LIKE %s OR EXISTS (SELECT 1 FROM `{$this->db->table('strategy_keywords')}` sk JOIN `{$this->db->table('market_keywords')}` sm ON sm.id = sk.market_keyword_id
+				WHERE sk.project_id = t.project_id AND sk.topic_id = t.id AND sk.active = 1 AND sm.keyword LIKE %s))";
+			$params[] = $like;
+			$params[] = $like;
 		}
 
 		$dir = $filters->direction === 'asc' ? 'ASC' : 'DESC';
@@ -328,6 +389,8 @@ final class TopicRepository
 			'keywords' => "t.keywords_count {$dir}",
 			'label' => "t.label {$dir}",
 			'updated' => "t.updated_at {$dir}",
+			'serp_rank' => "t.serp_rank IS NULL, t.serp_rank {$dir}",
+			'gsc_position' => "t.gsc_position IS NULL, t.gsc_position {$dir}",
 			default => "t.priority IS NULL, t.priority {$dir}, t.confidence DESC",
 		};
 		$params[] = $filters->perPage;
@@ -372,7 +435,8 @@ final class TopicRepository
 	}
 
 	/**
-	 * Frazy tematu (aktywni kandydaci) z metrykami i stroną docelową frazy.
+	 * Frazy tematu (aktywni kandydaci) z metrykami rynkowymi (wolumen, trudność SEO, intencja, CPC, konkurencja Ads), źródłami i stroną
+	 * docelową frazy.
 	 *
 	 * @return list<array<string, mixed>>
 	 */
@@ -385,6 +449,10 @@ final class TopicRepository
 			'volume' => $row['search_volume'] === null ? null : (int) $row['search_volume'],
 			'difficulty' => $row['keyword_difficulty'] === null ? null : (int) $row['keyword_difficulty'],
 			'intent' => $row['search_intent'],
+			'cpc' => $row['cpc'] === null ? null : (float) $row['cpc'],
+			'competition_level' => $row['competition_level'],
+			'sources' => (int) $row['sources'],
+			'manual' => (int) $row['manual'] === 1,
 			'gsc_impressions' => $row['gsc_impressions'] === null ? null : (int) $row['gsc_impressions'],
 			'gsc_position' => $row['gsc_position'] === null ? null : (float) $row['gsc_position'],
 			'serp_rank' => $row['serp_rank'] === null ? null : (int) $row['serp_rank'],
@@ -393,7 +461,8 @@ final class TopicRepository
 			'target_url' => $row['target_url'],
 			'pinned' => (int) $row['pinned'] === 1,
 		], $this->db->fetchAll(
-			"SELECT STRAIGHT_JOIN s.public_id, s.market_keyword_id, m.keyword, m.search_volume, m.keyword_difficulty, m.search_intent, s.gsc_impressions, s.gsc_position,
+			"SELECT STRAIGHT_JOIN s.public_id, s.market_keyword_id, m.keyword, m.search_volume, m.keyword_difficulty, m.search_intent, m.cpc, m.competition_level,
+				s.sources, s.manual, s.gsc_impressions, s.gsc_position,
 				s.serp_rank, s.serp_checked_at, s.target_state, u.url AS target_url, (s.pinned_topic_id <=> s.topic_id) AS pinned
 			FROM `{$this->db->table('strategy_keywords')}` s
 			JOIN `{$this->db->table('market_keywords')}` m ON m.id = s.market_keyword_id
@@ -530,12 +599,127 @@ final class TopicRepository
 		return $result;
 	}
 
+	/**
+	 * Liczniki przeglądu Strategii (jedno zapytanie grupujące aktywne tematy): otwarte, według działania (otwarte), wysoki priorytet
+	 * (otwarte, bez monitorowania), bez świeżego SERP (otwarte, bez monitorowania), zmiana po decyzji, zrealizowane, odrzucone
+	 * (bez uprawnień zarządzania — null) i nieaktywne.
+	 *
+	 * @return array{open: int, actions: array<string, int>, high: int, no_fresh_serp: int, serp_required: int, changed: int, completed: int, dismissed: ?int, inactive: int}
+	 */
+	public function overviewCounts(int $projectId, int $highPriority, bool $restricted = false): array
+	{
+		$result = ['open' => 0, 'actions' => [], 'high' => 0, 'no_fresh_serp' => 0, 'serp_required' => 0, 'changed' => 0, 'completed' => 0, 'dismissed' => $restricted ? null : 0, 'inactive' => 0];
+
+		foreach ($this->db->fetchAll(
+			"SELECT active, action, status, decision_changed, (serp_band IS NULL OR serp_band = 'stale') AS no_serp, (action_reason = 'serp_required') AS serp_required,
+				(priority >= %d) AS high, COUNT(*) AS n
+			FROM `{$this->table()}` WHERE project_id = %d AND (inactive_reason IS NULL OR inactive_reason <> 'pending')
+			GROUP BY active, action, status, decision_changed, no_serp, serp_required, high",
+			[$highPriority, $projectId],
+		) as $row) {
+			$count = (int) $row['n'];
+			$status = (string) $row['status'];
+
+			if ($restricted && $status === TopicStatus::Dismissed->value) {
+				continue;
+			}
+
+			if ((int) $row['active'] !== 1) {
+				$result['inactive'] += $count;
+
+				continue;
+			}
+
+			$open = in_array($status, TopicStatus::OPEN, true);
+			$actionable = $open && $row['action'] !== 'monitor';
+
+			if ($open) {
+				$result['open'] += $count;
+				$action = (string) ($row['action'] ?? 'none');
+				$result['actions'][$action] = ($result['actions'][$action] ?? 0) + $count;
+			}
+
+			$result['high'] += $actionable && (int) $row['high'] === 1 ? $count : 0;
+			$result['no_fresh_serp'] += $actionable && (int) $row['no_serp'] === 1 ? $count : 0;
+			$result['serp_required'] += $actionable && (int) $row['serp_required'] === 1 ? $count : 0;
+			$result['changed'] += (int) $row['decision_changed'] === 1 && $status !== TopicStatus::New->value ? $count : 0;
+			$result['completed'] += $status === TopicStatus::Completed->value ? $count : 0;
+
+			if (! $restricted && $status === TopicStatus::Dismissed->value) {
+				$result['dismissed'] += $count;
+			}
+		}
+
+		ksort($result['actions']);
+
+		return $result;
+	}
+
+	/**
+	 * Aktywne tematy według stanu pomiaru SERP odniesienia (lista SERP Intelligence): świeży (pasmo Pozycji SERP), nieaktualny (31–90 dni),
+	 * brak. Bez uprawnień zarządzania — bez odrzuconych.
+	 *
+	 * @return array{fresh: int, stale: int, none: int}
+	 */
+	public function serpCounts(int $projectId, bool $restricted = false): array
+	{
+		$result = ['fresh' => 0, 'stale' => 0, 'none' => 0];
+
+		foreach ($this->db->fetchAll(
+			"SELECT CASE WHEN serp_band IS NULL THEN 'none' WHEN serp_band = 'stale' THEN 'stale' ELSE 'fresh' END AS state, COUNT(*) AS n
+			FROM `{$this->table()}` WHERE project_id = %d AND active = 1" . ($restricted ? " AND status <> 'dismissed'" : '') . ' GROUP BY state',
+			[$projectId],
+		) as $row) {
+			$result[(string) $row['state']] = (int) $row['n'];
+		}
+
+		return $result;
+	}
+
+	/**
+	 * Tematy fraz rynkowych projektu (odnośniki z innych modułów): id frazy rynkowej → temat. Bez uprawnień zarządzania — bez odrzuconych.
+	 *
+	 * @param list<int> $marketKeywordIds
+	 * @return array<int, array{topic: string, label: string, action: ?string, reason: ?string, status: string, priority: ?int, active: bool, keyword: string}>
+	 */
+	public function byMarketKeywords(int $projectId, array $marketKeywordIds, bool $restricted = false): array
+	{
+		$result = [];
+
+		foreach (array_chunk(array_values(array_unique(array_map('intval', $marketKeywordIds))), self::CHUNK) as $chunk) {
+			foreach ($this->db->fetchAll(
+				"SELECT STRAIGHT_JOIN s.market_keyword_id, s.public_id AS keyword_id, t.public_id, t.label, t.action, t.action_reason, t.status, t.priority, t.active
+				FROM `{$this->db->table('strategy_keywords')}` s JOIN `{$this->table()}` t ON t.id = s.topic_id AND t.project_id = s.project_id
+				WHERE s.project_id = %d AND s.active = 1 AND s.market_keyword_id IN (" . Connection::placeholders($chunk, '%d') . ')',
+				[$projectId, ...$chunk],
+			) as $row) {
+				if ($restricted && $row['status'] === TopicStatus::Dismissed->value) {
+					continue;
+				}
+
+				$result[(int) $row['market_keyword_id']] = [
+					'topic' => (string) $row['public_id'],
+					'label' => (string) $row['label'],
+					'action' => $row['action'],
+					'reason' => $row['action_reason'],
+					'status' => (string) $row['status'],
+					'priority' => $row['priority'] === null ? null : (int) $row['priority'],
+					'active' => (int) $row['active'] === 1,
+					'keyword' => (string) $row['keyword_id'],
+				];
+			}
+		}
+
+		return $result;
+	}
+
 	private function from(): string
 	{
 		return "FROM `{$this->table()}` t
 			LEFT JOIN `{$this->table()}` mt ON mt.id = t.merged_into_id
 			LEFT JOIN `{$this->db->table('serp_urls')}` tu ON tu.id = t.target_url_id
-			LEFT JOIN `{$this->db->table('serp_urls')}` mu ON mu.id = t.manual_target_url_id";
+			LEFT JOIN `{$this->db->table('serp_urls')}` mu ON mu.id = t.manual_target_url_id
+			LEFT JOIN `{$this->db->table('market_keywords')}` lm ON lm.id = t.leader_market_keyword_id";
 	}
 
 	private function table(): string

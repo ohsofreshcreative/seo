@@ -122,6 +122,7 @@ use OsfSeo\Strategy\Sources\MarketKeywordLookup;
 use OsfSeo\Strategy\Sources\OpportunitySource;
 use OsfSeo\Strategy\Sources\SerpSource;
 use OsfSeo\Strategy\StrategyConfig;
+use OsfSeo\Strategy\StrategyFreshness;
 use OsfSeo\Strategy\StrategyKeywordRepository;
 use OsfSeo\Strategy\StrategyRefresher;
 use OsfSeo\Strategy\StrategyService;
@@ -595,6 +596,7 @@ final class Plugin
 			$c->get(TopicRepository::class),
 			$c->get(TopicEventRepository::class),
 			new SerpDictionary($c->get(Connection::class), $c->get(Clock::class)),
+			new StrategyFreshness($c->get(Connection::class)),
 		));
 
 		$container->singleton(KeywordReport::class, static fn (Container $c): KeywordReport => new KeywordReport(

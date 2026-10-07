@@ -14,7 +14,10 @@ use OsfSeo\Serp\DomainFamily;
 use OsfSeo\Serp\SerpKeywordRules;
 use OsfSeo\DataForSeo\DataForSeoSerpProvider;
 use OsfSeo\Serp\SerpDictionary;
+use OsfSeo\Strategy\Decision\PriorityModel;
+use OsfSeo\Strategy\Serp\SerpFreshness;
 use OsfSeo\Strategy\Serp\SerpIntelligence;
+use OsfSeo\Strategy\Serp\SerpOverlap;
 use OsfSeo\Strategy\Topics\TopicContextBuilder;
 use OsfSeo\Strategy\Topics\TopicEvent;
 use OsfSeo\Strategy\Topics\TopicEventRepository;
@@ -28,12 +31,19 @@ use OsfSeo\Support\Ulid;
 use OsfSeo\Support\ValidationException;
 
 /**
- * Strategia dla CLI i (od fazy D) panelu — wyłącznie przez ProjectContext (docs/ARCHITECTURE.md, sekcja 15). Żadna metoda nie
- * wysyła żądań do API. Przeliczenie, wpisy ręczne, status pracy, ręczna strona docelowa i przypięcia wymagają `osf_seo_manage_strategy`;
- * odczyt — dostępu do projektu (bez tego uprawnienia: bez odrzuconych tematów i notatek wewnętrznych, D62).
+ * Strategia dla CLI i (od fazy D) panelu — wyłącznie przez ProjectContext (docs/ARCHITECTURE.md, sekcje 15 i 15.14). Żadna metoda nie
+ * wysyła żądań do API. Przeliczenie (i jego zlecenie z panelu), wpisy ręczne, status pracy, notatka, ręczna strona docelowa i przypięcia
+ * wymagają `osf_seo_manage_strategy`; odczyt — dostępu do projektu (bez tego uprawnienia: bez odrzuconych tematów, notatek wewnętrznych
+ * i identyfikatorów użytkowników, D62).
  */
 final class StrategyService
 {
+	/** Najwięcej fraz tematu porównywanych z frazą odniesienia w overlapie SERP szczegółów tematu (kolejność — wolumen). */
+	public const TOPIC_OVERLAP_MEMBERS = 30;
+
+	/** Najwięcej tekstów fraz w jednym zapytaniu o tematy (odnośniki z innych modułów). */
+	public const LINK_LOOKUP_LIMIT = 500;
+
 	public function __construct(
 		private readonly StrategyRefresher $refresher,
 		private readonly StrategyKeywordRepository $keywords,
@@ -47,6 +57,7 @@ final class StrategyService
 		private readonly TopicRepository $topics,
 		private readonly TopicEventRepository $events,
 		private readonly SerpDictionary $dictionary,
+		private readonly StrategyFreshness $freshness,
 	) {
 	}
 
@@ -282,7 +293,7 @@ final class StrategyService
 		return [
 			'topic' => $topic,
 			'members' => $this->topics->members($context->projectId(), $topic->id),
-			'events' => $this->events->forTopic($context->projectId(), $topic->id),
+			'events' => $this->topicEvents($context, $topic),
 		];
 	}
 
@@ -454,6 +465,271 @@ final class StrategyService
 	}
 
 	/**
+	 * Stan Strategii dla panelu (faza D) — tanie odczyty zapisanego stanu: rynek, ostatnie przeliczenie, aktualność klucza danych,
+	 * przeliczenie w toku (blokada projektu), ręczne zlecenie przeliczenia, liczby kandydatów i statystyki ostatniego przeliczenia
+	 * (limit fraz). Bez przeliczania i bez żadnego żądania.
+	 *
+	 * @return array<string, mixed>
+	 */
+	public function panelState(ProjectContext $context): array
+	{
+		$projectId = $context->projectId();
+		$settings = $this->settings->get($projectId);
+		$scope = $this->refresher->scope($projectId, true);
+		$key = $scope === null ? null : $this->refresher->dataKey($scope);
+
+		return [
+			'supported' => $scope !== null,
+			'market' => $scope?->market->label(),
+			'gsc_window' => $scope?->window,
+			'refreshed_at' => $settings->refreshedAt,
+			'refresh_ms' => $settings->refreshMs,
+			'up_to_date' => $key !== null && $settings->dataKey === $key,
+			'running' => $this->refresher->running($projectId),
+			'requested_at' => $settings->refreshRequestedAt,
+			'requested_by' => $context->can(Capabilities::MANAGE_STRATEGY) ? $settings->refreshRequestedBy : null,
+			'candidates' => $this->keywords->counts($projectId),
+			'last_refresh' => [
+				'selected' => $settings->stats['selected'] ?? null,
+				'limit' => $settings->stats['limit'] ?? null,
+				'overflow' => $settings->stats['overflow'] ?? null,
+			],
+		];
+	}
+
+	/**
+	 * Przegląd Strategii (panel): stan, liczniki tematów (jedno zapytanie grupujące), tematy o wysokim priorytecie, tematy zmienione
+	 * po decyzji, najnowsze istotne zdarzenia i aktualność źródeł — bez agregacji danych GSC/SERP przy renderowaniu.
+	 *
+	 * @return array{state: array<string, mixed>, counts: array<string, mixed>, high: list<TopicRow>, attention: list<TopicRow>, events: list<array<string, mixed>>, freshness: array<string, mixed>}
+	 */
+	public function overview(ProjectContext $context, int $limit = 5): array
+	{
+		$projectId = $context->projectId();
+		$restricted = ! $context->can(Capabilities::MANAGE_STRATEGY);
+
+		return [
+			'state' => $this->panelState($context),
+			'counts' => $this->topics->overviewCounts($projectId, PriorityModel::HIGH_BAND, $restricted),
+			'high' => $this->topics->list($projectId, new TopicFilters(perPage: $limit, minPriority: PriorityModel::HIGH_BAND), $restricted)['rows'],
+			'attention' => $this->topics->list($projectId, new TopicFilters(status: 'all', perPage: $limit, includeMonitor: true, changed: true), $restricted)['rows'],
+			'events' => $this->events->forProject($projectId, 10, $restricted),
+			'freshness' => $this->freshness->forProject($projectId),
+		];
+	}
+
+	/**
+	 * Szczegóły tematu dla panelu: temat, frazy (metryki rynkowe, źródła), dowody fraz, pakiet kontekstu (sekcje „Dlaczego ten temat
+	 * jest w Strategii?”), zdarzenia oraz SERP Intelligence frazy odniesienia z overlapem fraz tematu — bez żadnego żądania i bez zapisu
+	 * (profile pomiarów liczone w pamięci). Bez uprawnień zarządzania: bez notatki i identyfikatorów użytkowników (D62).
+	 *
+	 * @return array{topic: TopicRow, members: list<array<string, mixed>>, evidence: array<string, array<string, mixed>>, context: array<string, mixed>, events: list<array<string, mixed>>, serp: array<string, mixed>}
+	 *
+	 * @throws StrategyNotFound
+	 */
+	public function topicView(ProjectContext $context, string $value): array
+	{
+		$topic = $this->resolveTopic($context, $value);
+		$manage = $context->can(Capabilities::MANAGE_STRATEGY);
+		$members = $this->topics->members($context->projectId(), $topic->id);
+		$evidence = $this->keywords->evidence($context->projectId(), array_map(static fn (array $member): string => (string) $member['id'], $members));
+
+		if (! $manage) {
+			foreach ($evidence as $id => $proof) {
+				unset($proof['manual']['added_by']);
+				$evidence[$id] = $proof;
+			}
+		}
+
+		return [
+			'topic' => $topic,
+			'members' => $members,
+			'evidence' => $evidence,
+			'context' => (new TopicContextBuilder())->build($topic, $members, $evidence, $manage),
+			'events' => $this->topicEvents($context, $topic),
+			'serp' => $this->topicSerp($context, $topic, $members),
+		];
+	}
+
+	/**
+	 * Notatka wewnętrzna tematu (bez zmiany statusu pracy).
+	 *
+	 * @throws StrategyNotFound
+	 */
+	public function setNote(ProjectContext $context, string $value, string $note): TopicRow
+	{
+		$context->assertCan(Capabilities::MANAGE_STRATEGY);
+		$topic = $this->resolveTopic($context, $value);
+		$this->topics->setNote($context->projectId(), $topic->id, trim($note), $this->now());
+
+		return $this->topics->find($context->projectId(), $topic->publicId) ?? throw new StrategyNotFound();
+	}
+
+	/**
+	 * Ręczne zlecenie przeliczenia z panelu: unieważnia klucz danych i zapisuje zlecenie. Samo przeliczenie wykona krok w tle Strategii
+	 * (faza E) albo `wp osf-seo strategy:refresh` — nigdy żądanie WWW (D74). Status pracy tematów nie zmienia się.
+	 */
+	public function requestRefresh(ProjectContext $context): void
+	{
+		$context->assertCan(Capabilities::MANAGE_STRATEGY);
+		$this->settings->requestRefresh($context->projectId(), $context->userId());
+		$this->logger->info('Strategy refresh of project {project} requested from the panel.', ['project' => $context->publicId()]);
+	}
+
+	/**
+	 * Lista SERP Intelligence (panel): aktywni kandydaci według stanu zgodnego pomiaru (`fresh`, `stale`, `measured`, `missing`, `all`)
+	 * z dowodem `serp.intel` (profil, obecność projektu, konkurenci), tematem, licznikami fraz i tematów oraz kontekstem analizy.
+	 * Pozycja SERP projektu tylko ze świeżego pomiaru (świeżość liczona teraz, nie w chwili przeliczenia). Bez żadnego żądania.
+	 *
+	 * @return array<string, mixed>
+	 */
+	public function serpKeywords(ProjectContext $context, string $filter = 'all', int $page = 1, int $perPage = 50): array
+	{
+		$projectId = $context->projectId();
+		$restricted = ! $context->can(Capabilities::MANAGE_STRATEGY);
+		$market = $this->market($context);
+		$now = $this->clock->now();
+		$fresh = SerpFreshness::since($now, SerpFreshness::FRESH_DAYS);
+		$expired = SerpFreshness::since($now, SerpFreshness::STALE_DAYS);
+
+		if ($market === null) {
+			return ['supported' => false, 'rows' => [], 'total' => 0, 'counts' => ['fresh' => 0, 'stale' => 0, 'missing' => 0, 'all' => 0], 'topics' => $this->topics->serpCounts($projectId, $restricted), 'context' => null];
+		}
+
+		$page = max(1, $page);
+		$list = $this->keywords->serpCandidates($projectId, $market, $filter, $fresh, $expired, ($page - 1) * $perPage, $perPage, $restricted);
+		$rows = [];
+
+		foreach ($list['rows'] as $row) {
+			$intel = is_array($row['evidence']['serp']['intel'] ?? null) ? $row['evidence']['serp']['intel'] : null;
+			$freshness = SerpFreshness::of($row['serp_intel_at'], $now);
+
+			if ($intel !== null && ! SerpFreshness::allowsProjectRank($freshness)) {
+				// Pomiar zestarzał się od przeliczenia — bez Pozycji SERP projektu.
+				$intel['project'] = null;
+			}
+
+			if ($intel !== null && ! SerpFreshness::usableForClassification($freshness)) {
+				$intel['profile'] = null;
+				$intel['competitors'] = null;
+			}
+
+			$rows[] = [
+				'id' => (string) $row['public_id'],
+				'keyword' => (string) $row['keyword'],
+				'volume' => $row['search_volume'] === null ? null : (int) $row['search_volume'],
+				'intent' => $row['search_intent'],
+				'checked_at' => $row['serp_intel_at'],
+				'freshness' => $freshness,
+				'tracked' => $row['tracked_keyword_id'] !== null,
+				'intel' => $intel,
+				'topic' => $row['topic_public_id'] === null ? null : [
+					'id' => (string) $row['topic_public_id'],
+					'label' => (string) $row['topic_label'],
+					'status' => (string) $row['topic_status'],
+					'action' => $row['topic_action'],
+					'leader' => (int) $row['leader'] === 1,
+				],
+			];
+		}
+
+		return [
+			'supported' => true,
+			'rows' => $rows,
+			'total' => $list['total'],
+			'counts' => $this->keywords->serpCounts($projectId, $fresh, $expired, $restricted),
+			'topics' => $this->topics->serpCounts($projectId, $restricted),
+			'context' => $this->intelligence->analysisContext($projectId, $market),
+		];
+	}
+
+	/**
+	 * Dominujące domeny w TOP10 świeżych pomiarów projektu (panel SERP Intelligence) z oznaczeniem projektu i konkurentów.
+	 *
+	 * @return array{measurements: int, domains: list<array<string, mixed>>}
+	 */
+	public function serpDomains(ProjectContext $context, int $limit = 10): array
+	{
+		$market = $this->market($context);
+
+		if ($market === null) {
+			return ['measurements' => 0, 'domains' => []];
+		}
+
+		return $this->intelligence->dominantDomains($context->projectId(), $market, DomainFamily::normalize($context->project()->domain), $limit);
+	}
+
+	/**
+	 * SERP Intelligence kandydata dla panelu: kandydat, szczegóły najnowszego zgodnego pomiaru (TOP20 z tytułami, kształtami, projektem
+	 * i konkurentami; bez zapisu profilu) i temat frazy. Klient nie widzi fraz odrzuconych tematów (404).
+	 *
+	 * @return array{candidate: CandidateRow, detail: ?array<string, mixed>, topic: ?array<string, mixed>}
+	 *
+	 * @throws StrategyNotFound
+	 */
+	public function serpDetail(ProjectContext $context, string $value): array
+	{
+		$row = $this->keyword($context, $value);
+		$market = $this->market($context) ?? throw new StrategyNotFound();
+		$projectId = $context->projectId();
+		$restricted = ! $context->can(Capabilities::MANAGE_STRATEGY);
+
+		if ($restricted && $this->topics->findByKeyword($projectId, $row->id)?->status === TopicStatus::Dismissed->value) {
+			throw new StrategyNotFound();
+		}
+
+		$project = $context->project();
+
+		return [
+			'candidate' => $row,
+			'detail' => $this->intelligence->detail($projectId, $market, $row->marketKeywordId, DomainFamily::normalize($project->domain) ?? $project->domain, false),
+			'topic' => $this->topics->byMarketKeywords($projectId, [$row->marketKeywordId], $restricted)[$row->marketKeywordId] ?? null,
+		];
+	}
+
+	/**
+	 * Tematy fraz rynkowych (odnośniki z innych modułów): id frazy rynkowej → temat i jego status. Klient nie widzi odrzuconych tematów.
+	 *
+	 * @param list<int> $marketKeywordIds
+	 * @return array<int, array<string, mixed>>
+	 */
+	public function topicsForMarketKeywords(ProjectContext $context, array $marketKeywordIds): array
+	{
+		$ids = array_values(array_filter(array_map('intval', $marketKeywordIds), static fn (int $id): bool => $id > 0));
+
+		return $ids === [] ? [] : $this->topics->byMarketKeywords($context->projectId(), $ids, ! $context->can(Capabilities::MANAGE_STRATEGY));
+	}
+
+	/**
+	 * Tematy fraz po tekście (klucz rynkowy na rynku projektu — np. frazy GSC z dowodów szansy SEO): tekst → temat. Bez zapisu
+	 * (frazy spoza Strategii są pomijane).
+	 *
+	 * @param list<string> $texts
+	 * @return array<string, array<string, mixed>>
+	 */
+	public function topicsForTexts(ProjectContext $context, array $texts): array
+	{
+		$market = $this->market($context);
+		$texts = array_slice(array_values(array_unique(array_filter(array_map(static fn (mixed $text): string => trim((string) $text), $texts), static fn (string $text): bool => $text !== '' && Ulid::normalize($text) === null))), 0, self::LINK_LOOKUP_LIMIT);
+
+		if ($market === null || $texts === []) {
+			return [];
+		}
+
+		$resolved = array_filter($this->keywords->resolve($context->projectId(), $market, $texts));
+		$topics = $this->topicsForMarketKeywords($context, array_values(array_map(static fn (array $candidate): int => $candidate['market_keyword_id'], $resolved)));
+		$result = [];
+
+		foreach ($resolved as $text => $candidate) {
+			if (isset($topics[$candidate['market_keyword_id']])) {
+				$result[(string) $text] = $topics[$candidate['market_keyword_id']];
+			}
+		}
+
+		return $result;
+	}
+
+	/**
 	 * Temat po ULID tematu, a jeśli to nie temat — po kandydacie (ULID albo tekst frazy).
 	 *
 	 * @throws StrategyNotFound
@@ -474,6 +750,84 @@ final class StrategyService
 		$candidate = $this->keyword($context, $value);
 
 		return $this->topics->findByKeyword($context->projectId(), $candidate->id, $restricted) ?? throw new StrategyNotFound();
+	}
+
+	/**
+	 * Zdarzenia tematu — bez identyfikatorów użytkowników dla klienta (D62).
+	 *
+	 * @return list<array<string, mixed>>
+	 */
+	private function topicEvents(ProjectContext $context, TopicRow $topic): array
+	{
+		$events = $this->events->forTopic($context->projectId(), $topic->id);
+
+		if ($context->can(Capabilities::MANAGE_STRATEGY)) {
+			return $events;
+		}
+
+		return array_map(static fn (array $event): array => ['user' => null] + $event, $events);
+	}
+
+	/**
+	 * SERP Intelligence tematu: TOP20 frazy odniesienia (fraza pomiaru z analizy tematu, inaczej fraza główna) i overlap frazy odniesienia
+	 * z pozostałymi frazami tematu (najnowsze zgodne pomiary ≤ 90 dni; progi overlapu bez zmian, D64). Bez żadnego żądania i bez zapisu.
+	 *
+	 * @param list<array<string, mixed>> $members
+	 * @return array{keyword: ?array{id: string, keyword: string}, detail: ?array<string, mixed>, overlap: list<array<string, mixed>>, compared: int, measured: int}
+	 */
+	private function topicSerp(ProjectContext $context, TopicRow $topic, array $members): array
+	{
+		$market = $this->market($context);
+		$result = ['keyword' => null, 'detail' => null, 'overlap' => [], 'compared' => 0, 'measured' => 0];
+
+		if ($market === null || $members === []) {
+			return $result;
+		}
+
+		$byId = [];
+
+		foreach ($members as $member) {
+			$byId[(string) $member['id']] = $member;
+		}
+
+		$analysis = $topic->analysis ?? [];
+		$reference = $byId[(string) ($analysis['serp']['keyword'] ?? '')] ?? $byId[(string) ($analysis['leader'] ?? '')] ?? $members[0];
+		$projectId = $context->projectId();
+		$project = $context->project();
+		$result['keyword'] = ['id' => (string) $reference['id'], 'keyword' => (string) $reference['keyword']];
+		$result['detail'] = $this->intelligence->detail($projectId, $market, (int) $reference['market_keyword_id'], DomainFamily::normalize($project->domain) ?? $project->domain, false);
+		$others = array_slice(array_values(array_filter($members, static fn (array $member): bool => $member['id'] !== $reference['id'])), 0, self::TOPIC_OVERLAP_MEMBERS);
+		$result['compared'] = count($others);
+
+		if ($others === []) {
+			return $result;
+		}
+
+		$sides = $this->intelligence->sides($projectId, $market, [(int) $reference['market_keyword_id'], ...array_map(static fn (array $member): int => (int) $member['market_keyword_id'], $others)], false);
+		$result['measured'] = count($sides['sides']);
+		$lead = $sides['sides'][(int) $reference['market_keyword_id']] ?? null;
+
+		foreach ($others as $member) {
+			$side = $sides['sides'][(int) $member['market_keyword_id']] ?? null;
+
+			if ($lead === null || $side === null) {
+				$result['overlap'][] = ['id' => (string) $member['id'], 'keyword' => (string) $member['keyword'], 'level' => null, 'shared_urls' => null, 'shared_domains' => null, 'reasons' => [$lead === null ? 'reference_unmeasured' : 'no_measurement']];
+
+				continue;
+			}
+
+			$overlap = SerpOverlap::compare($lead, $side, $sides['ubiquity']['domains'], $sides['ubiquity']['known']);
+			$result['overlap'][] = [
+				'id' => (string) $member['id'],
+				'keyword' => (string) $member['keyword'],
+				'level' => $overlap['level'],
+				'shared_urls' => $overlap['counted_urls'],
+				'shared_domains' => $overlap['shared_domains'],
+				'reasons' => $overlap['reasons'],
+			];
+		}
+
+		return $result;
 	}
 
 	private function now(): string

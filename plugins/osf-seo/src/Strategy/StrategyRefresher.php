@@ -36,7 +36,7 @@ use OsfSeo\Support\DateRange;
 final class StrategyRefresher
 {
 	/** Wersja reguł — zmiana unieważnia klucz danych wszystkich projektów (przeliczenie lokalne, bez API). */
-	public const VERSION = 4;
+	public const VERSION = 5;
 
 	public const SKIPPED_UNCHANGED = 'unchanged';
 
@@ -180,7 +180,7 @@ final class StrategyRefresher
 			return ['skipped' => self::SKIPPED_UNCHANGED, 'data_key' => $key];
 		}
 
-		$lock = 'strategy_refresh_' . $projectId;
+		$lock = self::lock($projectId);
 
 		if (! $this->db->acquireLock($lock, 0)) {
 			// Ten projekt przelicza właśnie inny proces (CLI albo krok w tle) — bez równoległego przeliczenia.
@@ -207,6 +207,17 @@ final class StrategyRefresher
 		}
 
 		return ['skipped' => null, 'data_key' => $key, 'duration_ms' => $durationMs, 'stats' => $stats, 'topics' => $topics] + $report;
+	}
+
+	/** Przeliczenie projektu trwa właśnie w innym procesie (CLI albo krok w tle) — tylko odczyt blokady. */
+	public function running(int $projectId): bool
+	{
+		return $this->db->lockInUse(self::lock($projectId));
+	}
+
+	public static function lock(int $projectId): string
+	{
+		return 'strategy_refresh_' . $projectId;
 	}
 
 	/**

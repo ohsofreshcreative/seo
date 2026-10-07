@@ -32,6 +32,7 @@ use OsfSeo\Strategy\Sources\MarketKeywordLookup;
 use OsfSeo\Strategy\Sources\OpportunitySource;
 use OsfSeo\Strategy\Sources\SerpSource;
 use OsfSeo\Strategy\StrategyConfig;
+use OsfSeo\Strategy\StrategyFreshness;
 use OsfSeo\Strategy\StrategyKeywordRepository;
 use OsfSeo\Strategy\StrategyRefresher;
 use OsfSeo\Strategy\StrategyService;
@@ -173,6 +174,7 @@ abstract class StrategyTestCase extends GapTestCase
 			$this->topics,
 			$this->topicEvents,
 			new SerpDictionary($db, $this->clock),
+			new StrategyFreshness($db),
 		);
 		$logger = $this->captureLogger();
 		$planner = new SerpPlanner($this->serpProvider, $this->tracked, new SerpConfig(), $this->market, $this->clock);

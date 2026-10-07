@@ -7,6 +7,7 @@ namespace OsfSeo\Strategy\Topics;
 use OsfSeo\Strategy\Decision\ConfidenceResult;
 use OsfSeo\Strategy\Decision\PriorityModel;
 use OsfSeo\Strategy\Decision\StrategyAction;
+use OsfSeo\Strategy\StrategySource;
 use OsfSeo\Strategy\Target\TargetState;
 
 /**
@@ -50,6 +51,14 @@ final class TopicRow
 		public readonly ?array $analysis = null,
 		public readonly ?array $statusBasis = null,
 		public readonly ?array $baseline = null,
+		public readonly int $sources = 0,
+		public readonly ?int $serpRank = null,
+		public readonly ?string $serpCheckedAt = null,
+		public readonly ?int $gscImpressions = null,
+		public readonly ?float $gscPosition = null,
+		public readonly ?string $leaderIntent = null,
+		public readonly ?int $leaderDifficulty = null,
+		public readonly ?int $leaderVolume = null,
 	) {
 	}
 
@@ -86,7 +95,8 @@ final class TopicRow
 			(string) $row['status'],
 			$withNote ? ($row['note'] ?? null) : null,
 			$row['status_changed_at'] ?? null,
-			isset($row['status_changed_by']) ? (int) $row['status_changed_by'] : null,
+			// Identyfikator użytkownika tylko dla uprawnionych (klient go nie widzi — D62).
+			$withNote && isset($row['status_changed_by']) ? (int) $row['status_changed_by'] : null,
 			$row['completed_on'] ?? null,
 			(int) ($row['decision_changed'] ?? 0) === 1,
 			$row['evidence_hash'] ?? null,
@@ -95,7 +105,34 @@ final class TopicRow
 			$json($row['analysis'] ?? null),
 			$json($row['status_basis'] ?? null),
 			$json($row['baseline'] ?? null),
+			(int) ($row['sources'] ?? 0),
+			isset($row['serp_rank']) ? (int) $row['serp_rank'] : null,
+			$row['serp_checked_at'] ?? null,
+			isset($row['gsc_impressions']) ? (int) $row['gsc_impressions'] : null,
+			isset($row['gsc_position']) ? (float) $row['gsc_position'] : null,
+			isset($row['leader_intent']) && $row['leader_intent'] !== '' ? (string) $row['leader_intent'] : null,
+			isset($row['leader_kd']) ? (int) $row['leader_kd'] : null,
+			isset($row['leader_volume']) ? (int) $row['leader_volume'] : null,
 		);
+	}
+
+	/**
+	 * Kody źródeł dowodów fraz tematu.
+	 *
+	 * @return list<string>
+	 */
+	public function sourceCodes(): array
+	{
+		return array_values(array_map(
+			static fn (StrategySource $source): string => $source->value,
+			array_filter(StrategySource::cases(), fn (StrategySource $source): bool => ($this->sources & $source->bit()) !== 0),
+		));
+	}
+
+	/** Temat wymaga uwagi: po decyzji użytkownika zmieniło się działanie albo strona docelowa. */
+	public function needsAttention(): bool
+	{
+		return $this->decisionChanged && $this->status !== TopicStatus::New->value;
 	}
 
 	public function actionLabel(): string
@@ -147,6 +184,11 @@ final class TopicRow
 			'status_changed_at' => $this->statusChangedAt,
 			'completed_on' => $this->completedOn,
 			'decision_changed' => $this->decisionChanged,
+			'sources' => $this->sourceCodes(),
+			'serp_rank' => $this->serpRank,
+			'serp_checked_at' => $this->serpCheckedAt,
+			'gsc_impressions' => $this->gscImpressions,
+			'gsc_position' => $this->gscPosition,
 			'evidence_hash' => $this->evidenceHash,
 			'first_seen_at' => $this->firstSeenAt,
 			'refreshed_at' => $this->refreshedAt,

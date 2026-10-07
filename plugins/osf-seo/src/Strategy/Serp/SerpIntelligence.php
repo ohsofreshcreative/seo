@@ -227,9 +227,10 @@ final class SerpIntelligence
 		$results = [];
 
 		foreach ($this->db->fetchAll(
-			"SELECT STRAIGHT_JOIN r.rank_group, d.host, u.url FROM `{$this->db->table('serp_results')}` r
+			"SELECT STRAIGHT_JOIN r.rank_group, d.host, u.url, sn.title FROM `{$this->db->table('serp_results')}` r
 			JOIN `{$this->db->table('serp_domains')}` d ON d.id = r.domain_id JOIN `{$this->db->table('serp_urls')}` u ON u.id = r.url_id
-			WHERE r.snapshot_id = %d AND r.result_type = %d AND r.rank_group <= 20 ORDER BY r.rank_group",
+			LEFT JOIN `{$this->db->table('serp_snippets')}` sn ON sn.id = r.snippet_id
+			WHERE r.snapshot_id = %d AND r.result_type = %d AND r.rank_group <= 20 ORDER BY r.rank_group, r.item_index",
 			[$snapshotId, SerpItem::TYPE_ORGANIC],
 		) as $row) {
 			$host = (string) $row['host'];
@@ -247,6 +248,7 @@ final class SerpIntelligence
 				'rank' => (int) $row['rank_group'],
 				'host' => $host,
 				'url' => (string) $row['url'],
+				'title' => $row['title'] === null || $row['title'] === '' ? null : (string) $row['title'],
 				'project' => DomainFamily::matches($host, $projectDomain),
 				'competitor' => $competitor,
 			] + ($shapes[(int) $row['rank_group']] ?? ['shape' => null, 'confidence' => null, 'reason' => null]);
@@ -302,6 +304,79 @@ final class SerpIntelligence
 	 */
 	public function ubiquity(int $projectId, SerpContext $context): array
 	{
+		return SerpOverlap::ubiquitous($this->freshTop10Sets($projectId, $context));
+	}
+
+	/**
+	 * Dominujące domeny (panel SERP Intelligence, faza D): domeny najczęściej obecne w TOP10 tych samych pomiarów co wszechobecność
+	 * overlapu (najnowsze świeże zgodne pomiary fraz projektu) — liczba pomiarów z domeną w TOP10, oznaczenie projektu i konkurentów.
+	 * Tylko odczyt.
+	 *
+	 * @return array{measurements: int, domains: list<array{host: string, count: int, share: float, project: bool, competitor: ?string}>}
+	 */
+	public function dominantDomains(int $projectId, Market $market, ?string $projectDomain, int $limit = 10): array
+	{
+		$sets = $this->freshTop10Sets($projectId, $this->analysisContext($projectId, $market));
+		$counts = [];
+
+		foreach ($sets as $set) {
+			foreach (array_keys($set) as $domainId) {
+				$counts[$domainId] = ($counts[$domainId] ?? 0) + 1;
+			}
+		}
+
+		uksort($counts, static fn (int $a, int $b): int => [$counts[$b], $a] <=> [$counts[$a], $b]);
+		$top = array_slice($counts, 0, max(1, $limit), true);
+		$hosts = [];
+
+		if ($top !== []) {
+			foreach ($this->db->fetchAll(
+				'SELECT id, host FROM `' . $this->db->table('serp_domains') . '` WHERE id IN (' . Connection::placeholders(array_keys($top), '%d') . ')',
+				array_keys($top),
+			) as $row) {
+				$hosts[(int) $row['id']] = (string) $row['host'];
+			}
+		}
+
+		$competitors = $this->competitors->active($projectId);
+		$domains = [];
+
+		foreach ($top as $domainId => $count) {
+			$host = $hosts[$domainId] ?? null;
+
+			if ($host === null) {
+				continue;
+			}
+
+			$competitor = null;
+
+			foreach ($competitors as $candidate) {
+				if (DomainFamily::matches($host, $candidate->domain)) {
+					$competitor = $candidate->name;
+
+					break;
+				}
+			}
+
+			$domains[] = [
+				'host' => $host,
+				'count' => $count,
+				'share' => round($count / max(1, count($sets)), 3),
+				'project' => $projectDomain !== null && DomainFamily::matches($host, $projectDomain),
+				'competitor' => $competitor,
+			];
+		}
+
+		return ['measurements' => count($sets), 'domains' => $domains];
+	}
+
+	/**
+	 * Zbiory domen TOP10 najnowszych świeżych zgodnych pomiarów fraz projektu (każdy status monitorowania).
+	 *
+	 * @return list<array<int, bool>>
+	 */
+	private function freshTop10Sets(int $projectId, SerpContext $context): array
+	{
 		$ids = array_map(static fn (array $row): int => (int) $row['market_keyword_id'], $this->db->fetchAll(
 			"SELECT market_keyword_id FROM `{$this->db->table('serp_tracked_keywords')}` WHERE project_id = %d AND last_checked_at >= %s",
 			[$projectId, SerpFreshness::since($this->clock->now(), SerpFreshness::FRESH_DAYS)],
@@ -323,7 +398,7 @@ final class SerpIntelligence
 			$sets = [...$sets, ...array_values($bySnapshot)];
 		}
 
-		return SerpOverlap::ubiquitous($sets);
+		return $sets;
 	}
 
 	/**

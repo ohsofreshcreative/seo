@@ -6,19 +6,21 @@ namespace OsfSeo\Strategy\Topics;
 
 use OsfSeo\Strategy\Decision\ReasonCode;
 use OsfSeo\Strategy\Decision\StrategyAction;
+use OsfSeo\Strategy\StrategySource;
 use OsfSeo\Strategy\Target\TargetState;
 
 /**
- * Deterministyczny pakiet kontekstu tematu (faza C, pod STEP 17 — bez wywołań AI): temat, frazy z metrykami, podstawy grupowania,
+ * Deterministyczny pakiet kontekstu tematu (faza C, pod STEP 17 — bez wywołań AI): temat, frazy z metrykami i źródłami, podstawy grupowania,
  * działanie z powodem i śladem reguł, pewność z czynnikami, priorytet z rozbiciem, strona docelowa, GSC, rynek, odniesienie SERP (profil,
- * konkurenci), Luki fraz i treści, Szanse SEO i stan pracy. Bez pełnych historii — tylko identyfikatory pomiarów i rekordów modułów.
+ * konkurenci), Luki fraz i treści, Szanse SEO, Nowe frazy (od wersji 2 — faza D) i stan pracy. Bez pełnych historii — tylko identyfikatory pomiarów i rekordów modułów.
  * Dane zewnętrzne (frazy, adresy, domeny i nazwy z SERP, GSC i Labs) są oznaczone jako niezaufane: to dane, nigdy instrukcje.
  *
  * `evidence_hash` = SHA-256 kanonicznego JSON-u kontekstu bez stanu pracy — ten sam stan danych daje ten sam odcisk.
  */
 final class TopicContextBuilder
 {
-	public const VERSION = 1;
+	/** 2 — źródła i CPC fraz, sekcja Nowych fraz (faza D, panel). */
+	public const VERSION = 2;
 
 	/** Ścieżki pól z danymi zewnętrznymi (do oznaczenia w promptach — STEP 17). */
 	private const UNTRUSTED = [
@@ -37,6 +39,7 @@ final class TopicContextBuilder
 		'gap[].best_competitor',
 		'content_gap[].label',
 		'opportunities[].page',
+		'discovery[].target_url',
 		'grouping.suggestions[].label',
 	];
 
@@ -61,6 +64,7 @@ final class TopicContextBuilder
 		$gaps = [];
 		$contentGaps = [];
 		$opportunities = [];
+		$discovery = [];
 
 		foreach ($members as $member) {
 			$id = (string) $member['id'];
@@ -72,7 +76,8 @@ final class TopicContextBuilder
 				'role' => ($analysis['leader'] ?? null) === $id ? 'leader' : 'member',
 				'basis' => $basis[$id]['basis'] ?? null,
 				'pinned' => (bool) $member['pinned'],
-				'market' => ['volume' => $member['volume'], 'difficulty' => $member['difficulty'], 'intent' => $member['intent']],
+				'sources' => array_map(static fn (StrategySource $source): string => $source->value, StrategySource::fromBits((int) ($member['sources'] ?? 0))),
+				'market' => ['volume' => $member['volume'], 'difficulty' => $member['difficulty'], 'intent' => $member['intent'], 'cpc' => $member['cpc'] ?? null],
 				'gsc' => is_array($proof['gsc'] ?? null) ? [
 					'impressions' => $proof['gsc']['impressions'] ?? null,
 					'clicks' => $proof['gsc']['clicks'] ?? null,
@@ -120,6 +125,18 @@ final class TopicContextBuilder
 				];
 			}
 
+			if (is_array($proof['discovery'] ?? null) && isset($proof['discovery']['id'])) {
+				$found = $proof['discovery'];
+				$discovery[$id] = [
+					'keyword' => $id,
+					'id' => (string) $found['id'],
+					'status' => $found['status'] ?? null,
+					'priority' => $found['priority'] ?? null,
+					'visibility_gsc' => $found['visibility_gsc'] ?? null,
+					'target_url' => $found['target_url'] ?? null,
+				];
+			}
+
 			foreach ((array) ($proof['opportunity']['direct'] ?? []) as $item) {
 				if (is_array($item) && isset($item['id'])) {
 					$opportunities[(string) $item['id']] = [
@@ -138,6 +155,7 @@ final class TopicContextBuilder
 		ksort($gaps);
 		ksort($contentGaps);
 		ksort($opportunities);
+		ksort($discovery);
 		$decision = (array) ($analysis['decision'] ?? []);
 		$action = (string) ($topic->action ?? '');
 		$body = [
@@ -175,6 +193,7 @@ final class TopicContextBuilder
 			'gap' => array_values($gaps),
 			'content_gap' => array_values($contentGaps),
 			'opportunities' => array_values($opportunities),
+			'discovery' => array_values($discovery),
 			'untrusted' => self::UNTRUSTED,
 		];
 		$hash = hash('sha256', (string) json_encode(self::canonical($body), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_PRESERVE_ZERO_FRACTION));

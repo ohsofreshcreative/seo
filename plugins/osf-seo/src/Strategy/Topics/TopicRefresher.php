@@ -30,8 +30,8 @@ use OsfSeo\Support\Ulid;
  */
 final class TopicRefresher
 {
-	/** Wersja reguł rdzenia (w analizie tematu i odcisku dowodów). */
-	public const VERSION = 1;
+	/** Wersja reguł rdzenia (w analizie tematu i odcisku dowodów); 2 — kolumny listy backlogu (faza D). */
+	public const VERSION = 2;
 
 	public function __construct(
 		private readonly TopicInputLoader $loader,
@@ -174,6 +174,11 @@ final class TopicRefresher
 				'target_state' => $target->state->value,
 				'target_url' => $target->url,
 				'serp_band' => $serpBand,
+				'sources' => array_reduce($members, static fn (int $mask, KeywordSignals $member): int => $mask | $member->sources, 0),
+				'serp_rank' => $facts->primarySerp()?->serpRank(),
+				'serp_checked_at' => ($facts->primarySerp() ?? $facts->profiledSerp())?->serpCheckedAt(),
+				'gsc_impressions' => $facts->gscImpressions(),
+				'gsc_position' => $facts->gscPosition(),
 				'decision_changed' => $changedAfterDecision ? 1 : 0,
 				'analysis' => (string) json_encode($analysis, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_PRESERVE_ZERO_FRACTION),
 				'evidence_hash' => $hash,

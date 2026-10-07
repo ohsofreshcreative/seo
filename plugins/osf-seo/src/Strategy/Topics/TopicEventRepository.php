@@ -53,6 +53,35 @@ final class TopicEventRepository
 	}
 
 	/**
+	 * Najnowsze zdarzenia wszystkich tematów projektu (przegląd) z etykietą tematu. Bez uprawnień zarządzania — bez zdarzeń odrzuconych
+	 * tematów i bez identyfikatorów użytkowników.
+	 *
+	 * @return list<array{topic: string, label: ?string, type: string, from: ?string, to: ?string, data: ?array<string, mixed>, user: ?int, at: string}>
+	 */
+	public function forProject(int $projectId, int $limit = 10, bool $restricted = false): array
+	{
+		return array_map(static function (array $row) use ($restricted): array {
+			$data = is_string($row['data']) ? json_decode($row['data'], true) : null;
+
+			return [
+				'topic' => (string) $row['public_id'],
+				'label' => $row['label'],
+				'type' => (string) $row['type'],
+				'from' => $row['from_value'],
+				'to' => $row['to_value'],
+				'data' => is_array($data) ? $data : null,
+				'user' => $restricted || $row['created_by'] === null ? null : (int) $row['created_by'],
+				'at' => (string) $row['created_at'],
+			];
+		}, $this->db->fetchAll(
+			"SELECT STRAIGHT_JOIN e.type, e.from_value, e.to_value, e.data, e.created_by, e.created_at, t.public_id, t.label
+			FROM `{$this->db->table('strategy_topic_events')}` e JOIN `{$this->db->table('strategy_topics')}` t ON t.id = e.topic_id AND t.project_id = e.project_id
+			WHERE e.project_id = %d" . ($restricted ? " AND t.status <> 'dismissed'" : '') . ' ORDER BY e.id DESC LIMIT %d',
+			[$projectId, max(1, $limit)],
+		));
+	}
+
+	/**
 	 * Najnowsze zdarzenia tematu.
 	 *
 	 * @return list<array{type: string, label: string, from: ?string, to: ?string, data: ?array<string, mixed>, user: ?int, at: string}>

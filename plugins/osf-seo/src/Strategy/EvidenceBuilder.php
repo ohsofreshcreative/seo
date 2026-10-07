@@ -15,9 +15,10 @@ final class EvidenceBuilder
 {
 	/**
 	 * 2 — dowody szans SEO rozdzielone na powiązania bezpośrednie i kontekstowe; 3 — SERP Intelligence (`serp.intel`); 4 — poprzedni adres
-	 * projektu w SERP, adresy projektu w TOP10, korekta pisowni, adresy pary kanibalizacji (faza C).
+	 * projektu w SERP, adresy projektu w TOP10, korekta pisowni, adresy pary kanibalizacji (faza C); 5 — chwila zgodnego pomiaru w kolumnie
+	 * faktów `serp_intel_at` (faza D).
 	 */
-	public const VERSION = 4;
+	public const VERSION = 5;
 
 	/** Kolejność źródeł przy zbieraniu dowodów (GSC pierwsze). */
 	private const ORDER = ['gsc', 'manual', 'serp', 'opportunity', 'discovery', 'gap', 'content_gap'];
@@ -122,6 +123,7 @@ final class EvidenceBuilder
 			discoveryCandidateId: isset($discovery['_facts']['candidate_id']) ? (int) $discovery['_facts']['candidate_id'] : null,
 			opportunities: min(255, $opportunities),
 			evidence: $evidence,
+			serpIntelAt: isset($serp['intel']['checked_at']) && is_string($serp['intel']['checked_at']) ? $serp['intel']['checked_at'] : null,
 		);
 	}
 
