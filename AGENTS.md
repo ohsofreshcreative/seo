@@ -214,14 +214,29 @@ Motyw powstał z marketingowego motywu `h2otwock` i wciąż zawiera jego kod: bl
   `GET_LOCK ai_budget` przed wywołaniem, rozliczenie z `usage`, wynik niepewny = cała rezerwacja, potwierdzenie płatnego uruchomienia,
   uprawnienie `osf_seo_manage_ai` (tylko administratorzy). Klucz `OSF_SEO_OPENAI_API_KEY` czytany w chwili żądania — nigdy w polu obiektu, bazie,
   logach, wyjątkach, HTML, JS ani odpowiedziach; bez formularza z jawnym sekretem; w testach tylko `AiFakes::apiKey()` i atrapa HTTP.
-  Kontekst (`TopicContextAssembler`, wersja 1) wyłącznie z pakietu kontekstu STEP 16 i odczytów Strategii w obrębie `ProjectContext` — bez nowej
+  Kontekst (`TopicContextAssembler`, wersja 2 od fazy B — rozszerzaj istniejący, nie twórz nowego) wyłącznie z pakietu kontekstu STEP 16, odczytów
+  Strategii i zapisanych snapshotów stron (`PageEvidenceSource`, zero HTTP) w obrębie `ProjectContext` — bez nowej
   logiki Strategii, notatek, użytkowników i innych projektów; pozycje rozdzielone (`average_position_gsc`, `serp_rank_group`, `rank_labs`),
   proweniencja sekcji, jawne braki danych (treść strony niepobrana, indeks stron niepełny — „brak znanej strony” ≠ brak strony), budżet 32 KB
   z redukcją całych elementów (JSON nigdy nie ucinany), odcisk bez czasu budowania. Instrukcje wersjonowane (`PromptTemplate::VERSION` — zmiana
   treści = nowa wersja); dowody i treści zewnętrzne w osobnych blokach JSON (escapowane `<`, `>`); odpowiedź zapisywana jako wynik wyłącznie po
   `OutputValidator` (odwołania tylko z `refs` kontekstu, `evidence` z odwołaniem, bez prognoz liczbowych i obietnic) — inaczej `invalid`.
   Historia (`ai_runs` + `ai_run_payloads`, M0015) nigdy nie zmienia Strategii ani statusu pracy; decyzja użytkownika osobno od wyniku.
-  Page Intelligence: w fazie A bez pobierania stron — przyszłe pobieranie tylko przez `UrlSafetyPolicy` (SSRF) i `PageContentSource`.
+- Page Intelligence (STEP 17 faza B, `src/PageIntelligence`, `docs/ARCHITECTURE.md` sekcja 23): **żądania do stron wyłącznie z
+  `PageIntelligenceService::fetch`** (jawnie, `osf_seo_manage_page_intelligence` — tylko administratorzy; klient tylko odczytuje) — nigdy przy
+  renderowaniu, odczycie tematu, przeliczeniu Strategii, budowaniu kontekstu AI ani w kroku w tle (tło: tylko retencja, D101). Transport wyłącznie
+  `CurlPageFetcher`: każdy hop ręcznie — `UrlSafetyPolicy` (składnia, zakres, DNS i kontrola każdego IP), połączenie tylko z przypiętym IP
+  (`CURLOPT_RESOLVE` + `CURLINFO_PRIMARY_IP`), TLS względem oryginalnej nazwy hosta, bez proxy i ciasteczek, limity czasu, rozmiaru (po dekompresji),
+  typu i przekierowań; **nie używaj WordPress HTTP API do pobierania stron, nie wyłączaj TLS i nie dodawaj „trybu bez przypięcia”** — bez
+  bezpiecznego transportu odmowa. Zakres: domena projektu, domeny konkurentów projektu, dokładne adresy organicznych wyników zapisanego SERP-u
+  projektu; bez automatycznego pobierania SERP-u i crawlera. Każda zmiana musi zachować: robots.txt (RFC 9309), limity hosta wspólne dla projektów
+  (odstęp, limit dzienny, `Retry-After`), pobrania po kolei z blokadami strony i hosta, brak ponowień, dane wyłącznie w obrębie projektu (ten sam
+  adres w dwóch projektach = osobne snapshoty), brak surowego HTML w bazie, nowy snapshot tylko przy zmianie odcisku treści, nieudane pobranie
+  nigdy nie nadpisuje ostatniego poprawnego snapshotu. Indeksowalność tylko z dyrektyw (`indexable_by_directives` / `blocked_by_directives` /
+  `unknown`) — nigdy „zaindeksowana w Google”; brak treści w pobranym HTML, timeout, 403 czy 404 nie dowodzą braku strony ani treści
+  („W pobranym HTML nie wykryto…”). Reguły Strategii (`TargetPageResolver`, klasyfikator) nie korzystają ze snapshotów bez osobnej decyzji (D103).
+  Treści stron w kontekście AI wyłącznie w bloku niezaufanym; budżet 32 KB bez zwiększania bez pomiaru. Testy transportu na lokalnych serwerach
+  (`FixtureServers`, `FixtureNetwork` — 127.0.0.1 „publiczny”, 127.0.0.2 blokowany) — atrapa WP HTTP nie jest dowodem ochrony transportowej.
 - `$wpdb` traktuje tabelę z kolumnami ascii i utf8mb4 bez kolumny binarnej jako ASCII i odrzuca zapytania z polskimi znakami
   („contains invalid data”) — w nowych tabelach z tekstem użytkownika daj co najmniej jedną kolumnę `*_bin` / binarną albo zapisuj
   tekst przez `insert()`/`update()`. Frazy liczbowe („2024”) jako klucze tablic PHP stają się int — rzutuj na `(string)`.
@@ -417,6 +432,12 @@ wp osf-seo ai:run --project=<id> --topic=… [--provider=fake]           # domy�
 wp osf-seo ai:runs|show|decide|delete --project=<id> [--run=<id>] …    # historia, wynik i walidacja (--payload), decyzja użytkownika, usunięcie
 wp osf-seo ai:budget [--project=<id>]                                  # budżet AI (oddzielny od DataForSEO)
 wp osf-seo ai:purge                                                    # porządki bez wywołań AI: porzucone uruchomienia, retencja historii
+wp osf-seo pages:status|list --project=<id> [--format=json]           # Page Intelligence: konfiguracja, transport, strony i stan pamięci (bez HTTP)
+wp osf-seo pages:plan --project=<id> (--page-url=… | --urls="a b" | --topic=… | --keyword=… --ranks=1,2) [--force]   # plan: zakres, pamięć, limity hosta — zero HTTP i DNS
+wp osf-seo pages:fetch --project=<id> (wybór jak wyżej) [--force] [--yes]   # JAWNE pobranie (zewnętrzne żądania HTTP) — tylko na polecenie użytkownika
+wp osf-seo pages:check-url --project=<id> --page-url=…                # diagnostyka SSRF: zakres, składnia, DNS i IP (bez HTTP); nie `--url` — globalny parametr WP-CLI
+wp osf-seo pages:show|snapshot|delete --project=<id> --page=…|--snapshot=…   # snapshot (JSON), usunięcie strony; pages:purge — retencja (bez HTTP)
+composer test:performance:pages # benchmark ekstrakcji HTML (mały / średni / duży / JS / wiele linków) i kontekstu AI ze stronami (bez sieci i bazy)
 composer test:performance       # benchmark raportów + EXPLAIN na syntetycznych danych (OSOBNA baza testowa)
 composer test:performance:serp  # benchmark pozycji SERP (100 projektów × 500 fraz, TOP100, historia, 2500 fraz) + EXPLAIN (OSOBNA baza)
 composer test:performance:gap   # benchmark Luk SEO (40 zbiorów × 10 000 fraz, 20 projektów, import 10 000 fraz atrapą HTTP) + EXPLAIN (OSOBNA baza)
@@ -477,4 +498,4 @@ Staging: `https://seo.ohsofresh.top` (Hostinger). Deployment nowej struktury rep
 nie łącz się z serwerem i nie używaj żadnych credentials znalezionych w repo.
 Nigdy nie wdrażaj całego repozytorium do `wp-content` (wcześniejszy incydent nadpisał pliki WordPressa) — wdrożenie
 wyłącznie zawężone: `plugins/osf-seo/` → `wp-content/plugins/osf-seo/`, `themes/seo/` → `wp-content/themes/seo/`.
-Agent nie wykonuje płatnego smoke testu DataForSEO (także pomiaru pozycji SERP i importu Luk SEO), płatnego wywołania AI (OpenAI) ani wdrożenia bez wyraźnego polecenia użytkownika.
+Agent nie wykonuje płatnego smoke testu DataForSEO (także pomiaru pozycji SERP i importu Luk SEO), płatnego wywołania AI (OpenAI), pobierania prawdziwych stron z internetu (`pages:fetch`) ani wdrożenia bez wyraźnego polecenia użytkownika.

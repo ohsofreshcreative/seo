@@ -31,7 +31,9 @@ dostawca danych rynkowych (wolumen, historia wolumenu, CPC, konkurencja Ads, tru
 > odzyskanie przerwanego zadania, statusy w panelu i benchmark; wyłącznie lokalne przeliczenie, bez kosztów) oraz STEP 17 — **Analizy AI**,
 > faza A (fundament bez UI: dostawcy za interfejsem — testowy i OpenAI — deterministyczny kontekst tematu Strategii z proweniencją i brakami
 > danych, wersjonowane instrukcje, kontrakt odpowiedzi z walidacją w PHP, oddzielny budżet AI z rezerwacją, historia uruchomień i CLI; płatne
-> wywołania domyślnie wyłączone). Plan i postęp: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
+> wywołania domyślnie wyłączone) i faza B — **Page Intelligence** (jawne, bezpieczne pobieranie stron projektu i wybranych wyników SERP:
+> transport z przypięciem zweryfikowanego IP, robots.txt i limity hosta, ekstrakcja HTML bez JavaScriptu, snapshoty w obrębie projektu z cache
+> i retencją, treść stron w kontekście AI jako dane niezaufane; bez crawlera i bez UI). Plan i postęp: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 >
 > **Repozytorium jest publiczne.** Nie commituj żadnych sekretów (sekcja „Konfiguracja”).
 
@@ -215,6 +217,14 @@ wp osf-seo ai:plan --project=<public_id> --topic="fraza" [--provider=openai]   #
 wp osf-seo ai:run --project=<public_id> --topic="fraza"          # dostawca testowy; --provider=openai — PŁATNE, tylko po konfiguracji i z potwierdzeniem
 wp osf-seo ai:runs|show|decide|delete --project=<public_id> …    # historia, wynik z walidacją, decyzja użytkownika, usunięcie
 wp osf-seo ai:budget [--project=<public_id>]                     # budżet AI (oddzielny od DataForSEO); ai:purge — porządki bez wywołań AI
+
+# Page Intelligence (STEP 17, faza B — pobieranie wyłącznie jawne; szczegóły: docs/ARCHITECTURE.md, sekcja 23)
+wp osf-seo pages:status --project=<public_id>                    # konfiguracja, transport, liczniki (bez HTTP)
+wp osf-seo pages:plan --project=<public_id> --topic="fraza"      # zakres, stan pamięci, limity hosta (bez HTTP i DNS); także --page-url / --urls / --keyword + --ranks
+wp osf-seo pages:fetch --project=<public_id> --topic="fraza"     # pobranie strony docelowej tematu (potwierdzenie z listą hostów; --force pomija pamięć)
+wp osf-seo pages:fetch --project=<public_id> --keyword="fraza" --ranks=1,2,3   # wybrane wyniki organiczne zapisanego pomiaru SERP (nigdy cały SERP)
+wp osf-seo pages:check-url --project=<public_id> --page-url=https://example.pl/strona/   # diagnostyka: zakres, DNS, adresy IP (bez HTTP)
+wp osf-seo pages:list|show|snapshot|delete|purge …               # strony, snapshot (JSON), usunięcie, retencja (bez HTTP)
 ```
 
 Synchronizacja i kroki po niej (szanse SEO, dane rynkowe, Nowe frazy, Luki SEO, Pozycje i przeliczenie Strategii) działają w tle przez
@@ -269,6 +279,11 @@ define('OSF_SEO_DATAFORSEO_MONTHLY_COST_LIMIT', 10.00);
 - Analizy AI: po wdrożeniu nic nie generuje kosztów — rzeczywiste wywołania wyłączone (`OSF_SEO_AI_ENABLED`), bez domyślnego modelu i cen,
   limity budżetu AI 0 USD (oddzielne od DataForSEO). Włączenie OpenAI (klucz `OSF_SEO_OPENAI_API_KEY` wyłącznie w `wp-config.php`, model, ceny
   z cennika dostawcy, limity) — krok po kroku w [`docs/AI-SETUP.md`](docs/AI-SETUP.md). Uprawnienie `osf_seo_manage_ai` — tylko administratorzy.
+
+- Page Intelligence: strony pobierane wyłącznie jawnie (`wp osf-seo pages:fetch`, uprawnienie `osf_seo_manage_page_intelligence` — tylko
+  administratorzy) przez bezpieczny transport ext-curl (wymagany `CURLOPT_RESOLVE`; bez proxy). Opcjonalnie: `OSF_SEO_PAGES_TTL_HOURS` (24),
+  `OSF_SEO_PAGES_MAX_BYTES` (2 MB), `OSF_SEO_PAGES_TIMEOUT` (15 s), `OSF_SEO_PAGES_DOMAIN_INTERVAL` (10 s), `OSF_SEO_PAGES_DOMAIN_DAILY_LIMIT` (30),
+  `OSF_SEO_PAGES_RETENTION_DAYS` (90), `OSF_SEO_PAGES_COMPETITORS_ENABLED` (`0` wyłącza pobieranie stron konkurencji). Bez sekretów.
 
 Pełna lista stałych: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md), sekcja 17.
 

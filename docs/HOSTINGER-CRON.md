@@ -16,6 +16,8 @@ Jedno wywołanie co minutę wykonuje kolejno:
 3. **przeliczenie Strategii** — zlecenia z panelu („Zleć przeliczenie”) i automatyczne przeliczenie po zmianie danych modułów.
 4. porządki historii analiz AI (odzyskanie przerwanych uruchomień, retencja) — **bez żadnego wywołania AI**; analizy AI uruchamia się wyłącznie
    jawnie (`docs/AI-SETUP.md`).
+5. retencja zapisanych treści stron (Page Intelligence, raz na dobę) — **bez pobierania stron**; strony pobiera się wyłącznie jawnie
+   (`wp osf-seo pages:fetch`).
 
 Przeliczenie Strategii jest lokalne: bez kosztów i bez żądań do API. Kroki płatne (DataForSEO) wykonują wyłącznie to, co zostało jawnie zlecone
 albo włączone w panelu (harmonogramy są domyślnie wyłączone), zawsze w ramach limitów kosztów (1 USD dziennie, 10 USD miesięcznie) — cron
