@@ -1387,6 +1387,35 @@ final class Schema
 					'project_key' => ['project_id', 'request_key'],
 				],
 			],
+			'ai_evaluations' => [
+				'columns' => [
+					'id' => 'bigint unsigned',
+					'public_id' => 'char(26)',
+					'project_id' => 'int unsigned',
+					'run_id' => 'bigint unsigned',
+					'evaluator_id' => 'bigint unsigned',
+					'task' => 'varchar(32)',
+					'provider' => 'varchar(32)',
+					'model' => 'varchar(100)',
+					'prompt_version' => 'varchar(32)',
+					'contract_version' => 'smallint unsigned',
+					'rubric_version' => 'smallint unsigned',
+					'case_id' => 'varchar(8)',
+					'scores' => 'text',
+					'issues' => 'text',
+					'verdict' => 'varchar(24)',
+					'fix_action' => 'varchar(24)',
+					'notes' => 'text',
+					'created_at' => 'datetime',
+					'updated_at' => 'datetime',
+				],
+				'primary' => ['id'],
+				'unique' => ['public_id' => ['public_id'], 'run_evaluator' => ['run_id', 'evaluator_id']],
+				'indexes' => [
+					'project_created' => ['project_id', 'created_at'],
+					'task_prompt' => ['task', 'prompt_version'],
+				],
+			],
 		];
 	}
 

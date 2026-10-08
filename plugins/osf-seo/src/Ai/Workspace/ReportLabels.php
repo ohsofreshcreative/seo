@@ -152,6 +152,9 @@ final class ReportLabels
 		'type_not_allowed' => 'Ten rodzaj analizy nie jest dozwolony w konfiguracji testu (OSF_SEO_AI_ALLOWED_TYPES).',
 		'invalid_reasoning_effort' => 'Niepoprawna wartość OSF_SEO_AI_REASONING_EFFORT w konfiguracji serwera.',
 		'request_encoding' => 'Nie udało się przygotować żądania do dostawcy — bez wysyłania.',
+		'evaluator_required' => 'Ocenę jakości zapisuje wyłącznie zalogowany użytkownik (ekspert), nie proces systemowy.',
+		'run_not_evaluable' => 'Ocenić można tylko analizę z zapisanym wynikiem (gotową albo odrzuconą przez kontrolę jakości).',
+		'evaluation_invalid' => 'Niepoprawna ocena (kryteria, błędy, werdykt albo przypadek testowy).',
 	];
 
 	public const BASIS = [

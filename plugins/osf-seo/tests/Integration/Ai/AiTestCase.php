@@ -41,7 +41,7 @@ use OsfSeo\Tests\Support\FixtureNetwork;
  */
 abstract class AiTestCase extends StrategyTestCase
 {
-	protected const AI_TABLES = ['ai_runs', 'ai_run_payloads'];
+	protected const AI_TABLES = ['ai_runs', 'ai_run_payloads', 'ai_evaluations'];
 
 	protected const PAGE_TABLES = ['page_targets', 'page_snapshots', 'page_fetches', 'page_serp_links', 'page_jobs'];
 
