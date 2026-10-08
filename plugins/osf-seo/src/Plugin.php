@@ -13,6 +13,7 @@ use OsfSeo\Auth\ProjectGuard;
 use OsfSeo\Auth\RoleManager;
 use OsfSeo\Auth\WpAdminAccess;
 use OsfSeo\Auth\WpRoleStore;
+use OsfSeo\Branding\BrandingService;
 use OsfSeo\Cli\DbCommand;
 use OsfSeo\Cli\CompetitorCommand;
 use OsfSeo\Cli\DiscoveryCommand;
@@ -586,6 +587,8 @@ final class Plugin
 			$c->get(Clock::class),
 			$c->get(TopicRefresher::class),
 		));
+		// Wygląd aplikacji: logo z biblioteki mediów (identyfikator załącznika w opcji), nazwa „Whack-a-mole” w UI.
+		$container->singleton(BrandingService::class, static fn (Container $c): BrandingService => new BrandingService($c->get(Logger::class)));
 		$container->singleton(StrategyRefreshQueue::class, static fn (Container $c): StrategyRefreshQueue => new StrategyRefreshQueue($c->get(Connection::class), $c->get(Clock::class)));
 		$container->singleton(StrategyRefreshRunner::class, static fn (Container $c): StrategyRefreshRunner => new StrategyRefreshRunner(
 			$c->get(Connection::class),

@@ -53,6 +53,17 @@ final class PluginTest extends TestCase
 		);
 	}
 
+	public function test_ui_rebrand_keeps_technical_plugin_identity(): void
+	{
+		// Nazwa w UI to „Whack-a-mole” (opis), ale plugin, slug, text domain, przestrzeń nazw i prefiksy pozostają techniczne.
+		self::assertSame('OSF SEO', self::header('Plugin Name'));
+		self::assertSame('osf-seo', self::header('Text Domain'));
+		self::assertStringContainsString('Whack-a-mole', (string) self::header('Description'));
+		self::assertSame('osf_seo_branding_logo', \OsfSeo\Branding\BrandingService::OPTION);
+		self::assertSame('osf_seo_manage_settings', \OsfSeo\Auth\Capabilities::MANAGE_SETTINGS);
+		self::assertSame('osf_seo_sync_tick', \OsfSeo\Sync\SyncScheduler::HOOK);
+	}
+
 	public function test_header_disables_updates_from_wordpress_org(): void
 	{
 		// Chroni przed nadpisaniem pluginu przez ewentualny plugin o tym samym slugu z WordPress.org.
