@@ -7,6 +7,7 @@ use App\Panel\Flash;
 use App\Panel\Format;
 use App\Panel\PanelResponse;
 use App\Panel\PanelUrl;
+use App\Panel\StrategyRefreshView;
 use Illuminate\Http\Request;
 use OsfSeo\Auth\AccessDenied;
 use OsfSeo\Auth\ProjectContext;
@@ -20,8 +21,8 @@ use Symfony\Component\HttpFoundation\Response;
 
 /**
  * Strategia: przegląd (liczniki z zapisanego stanu, wysoki priorytet, zmiany po decyzji, zdarzenia, aktualność źródeł), ustawienia
- * (limity, wpisy ręczne, zlecenie przeliczenia). Bez SQL i bez wywołań API — dane z usług pluginu. Przeliczenie nigdy nie działa
- * w żądaniu WWW: panel zapisuje zlecenie, wykona je krok w tle (faza E) albo `wp osf-seo strategy:refresh`.
+ * (limity, wpisy ręczne, zlecenie przeliczenia), stan przeliczenia (JSON). Bez SQL i bez wywołań API — dane z usług pluginu. Przeliczenie
+ * nigdy nie działa w żądaniu WWW: panel zapisuje zadanie w kolejce, wykona je krok w tle (faza E) albo `wp osf-seo strategy:refresh`.
  */
 final class StrategyController
 {
@@ -41,7 +42,10 @@ final class StrategyController
 		return $this->settingsView($this->context($request));
 	}
 
-	/** Ręczne zlecenie przeliczenia — tylko zapis zlecenia (bez przeliczenia w żądaniu). */
+	/**
+	 * Ręczne zlecenie przeliczenia — wyłącznie zapis zadania w kolejce (bez przeliczenia w żądaniu i bez żądań do API); wykona je krok
+	 * w tle. Ponowne kliknięcie nie tworzy drugiego zadania, kliknięcie w trakcie przeliczenia zleca jedno kolejne.
+	 */
 	public function refresh(Request $request): Response
 	{
 		$context = $this->context($request);
@@ -52,9 +56,26 @@ final class StrategyController
 			return PanelResponse::forbidden();
 		}
 
-		Flash::success('Przeliczenie Strategii zlecone (bez kosztów, bez zmiany statusów pracy). Automatyczne przeliczanie w tle nie jest jeszcze włączone — zlecenie wykona administrator komendą „wp osf-seo strategy:refresh”.');
+		$job = $this->service()->panelState($context)['job'];
+		Flash::success($job['phase'] === 'running'
+			? 'Przeliczenie Strategii właśnie trwa — po jego zakończeniu zostanie wykonane jeszcze raz, z najnowszymi danymi.'
+			: 'Przeliczenie Strategii zlecone — wykona je zadanie w tle, zwykle w ciągu minuty (bez kosztów, bez zmiany statusów pracy).');
+
+		if ($job['worker_stale']) {
+			Flash::info('Zadania w tle nie uruchamiały się ostatnio — sprawdź cron serwera (wp osf-seo sync:run co minutę).');
+		}
 
 		return redirect()->to(self::backUrl($context, $request->input('back'), PanelUrl::project($context->publicId(), 'strategy')));
+	}
+
+	/** Stan przeliczenia (JSON, odpytywany przez pasek stanu, gdy przeliczenie czeka albo trwa) — bez kodu błędu dla klienta. */
+	public function status(Request $request): Response
+	{
+		$context = $this->context($request);
+		$manage = $context->can('osf_seo_manage_strategy');
+
+		return response()->json(StrategyRefreshView::payload($this->service()->panelState($context), $manage))
+			->header('Cache-Control', 'private, no-store');
 	}
 
 	/** Wpisy ręczne — bez żądań do API (fakty uzupełni przeliczenie). */

@@ -30,12 +30,6 @@
     :description="$project->name . ' · backlog SEO łączący Szanse SEO, Nowe frazy, Luki SEO, GSC i SERP Intelligence — tematy, działania i priorytety do sprawdzenia'">
     <x-slot:actions>
       <x-panel.button variant="secondary" :href="$topicsUrl()">Backlog</x-panel.button>
-      @if ($canManage && $state['supported'])
-        <form method="post" action="{{ $base }}/refresh">
-          <x-panel.nonce />
-          <x-panel.button type="submit" variant="secondary">Zleć przeliczenie</x-panel.button>
-        </form>
-      @endif
     </x-slot:actions>
   </x-panel.page-header>
 
@@ -46,7 +40,7 @@
     <x-panel.empty-state class="mt-6" title="Brak tematów Strategii"
       :description="$state['candidates']['active'] > 0
         ? 'Kandydaci są zapisani, ale tematy powstaną dopiero po przeliczeniu Strategii.'
-        : 'Strategia zbiera kandydatów z GSC, Szans SEO, Nowych fraz, Luk SEO, Pozycji i wpisów ręcznych. Gdy moduły mają dane, przelicz Strategię (bez kosztów).'">
+        : 'Strategia zbiera kandydatów z GSC, Szans SEO, Nowych fraz, Luk SEO, Pozycji i wpisów ręcznych. Gdy moduły mają dane, Strategia przelicza się w tle (bez kosztów).'">
       @if ($canManage)
         <x-panel.button variant="secondary" :href="$base . '/settings'">Dodaj frazy ręcznie</x-panel.button>
       @endif

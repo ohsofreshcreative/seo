@@ -1,44 +1,45 @@
-{{-- Stan przeliczenia Strategii (z zapisanego stanu — bez przeliczania): rynek, przeliczenie w toku, zlecenie, nieaktualne dane, limit fraz. --}}
+{{-- Stan przeliczenia Strategii (faza E — z zapisanego stanu zadania, bez przeliczania): faza, opis, wynik ostatniego przeliczenia,
+     ponowne zlecenie, ostrzeżenie o niedziałającym kroku w tle (administrator). Gdy przeliczenie czeka albo trwa — odpytywanie statusu
+     co 5 s i przeładowanie po zakończeniu (`runProgress`). --}}
 @php
   use App\Panel\Format;
   use App\Panel\PanelUrl;
+  use App\Panel\StrategyRefreshView;
   use OsfSeo\Opportunities\Text;
 
+  $manage = $canManage ?? false;
+  $job = $state['job'];
+  $payload = StrategyRefreshView::payload($state, $manage);
+  $summary = StrategyRefreshView::summary($state);
   $overflow = (int) ($state['last_refresh']['overflow'] ?? 0);
 @endphp
 <div class="space-y-2">
-  @if (! $state['supported'])
-    <div class="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-      Rynek projektu (kraj i język) nie jest obsługiwany przez dostawcę danych rynkowych — Strategia nie może zostać przeliczona. Zmień kraj albo język w ustawieniach projektu.
-    </div>
-  @elseif ($state['running'])
-    <div class="rounded-md border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-800">
-      Przeliczenie Strategii trwa (CLI albo krok w tle). Widok pokazuje stan poprzedniego przeliczenia — odśwież stronę za chwilę.
-    </div>
-  @elseif ($state['refreshed_at'] === null)
-    <div class="rounded-md border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
-      Strategia nie była jeszcze przeliczona dla tego projektu.
-      @if ($state['requested_at'] !== null)
-        Przeliczenie zlecono {{ Format::datetime($state['requested_at']) }} —
-      @endif
-      Przeliczenie jest lokalne (bez kosztów i bez żądań do API). Automatyczne przeliczanie w tle nie jest jeszcze włączone — do tego czasu uruchamia je administrator komendą <code class="rounded bg-white px-1 text-xs">wp osf-seo strategy:refresh --project={{ $project->publicId }}</code>.
-    </div>
-  @elseif ($state['requested_at'] !== null)
-    <div class="rounded-md border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-800">
-      Przeliczenie zlecone {{ Format::datetime($state['requested_at']) }} — automatyczne przeliczanie w tle nie jest jeszcze włączone, więc zlecenie wykona administrator komendą <code class="rounded bg-white px-1 text-xs">wp osf-seo strategy:refresh</code>. Do tego czasu widać wynik z {{ Format::datetime($state['refreshed_at']) }}.
-    </div>
-  @elseif (! $state['up_to_date'])
-    <div class="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-      Dane modułów zmieniły się od ostatniego przeliczenia ({{ Format::datetime($state['refreshed_at']) }}) — tematy mogą być nieaktualne.
-      @if ($canManage ?? false)
-        <form method="post" action="{{ PanelUrl::project($project->publicId, 'strategy/refresh') }}" class="mt-2 inline">
+  <div x-data="runProgress(@js(PanelUrl::project($project->publicId, 'strategy/status')), @js($payload))"
+    class="rounded-md border px-4 py-3 text-sm {{ StrategyRefreshView::tone($job['phase']) }}" data-strategy-refresh="{{ $job['phase'] }}">
+    <div class="flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
+      <p class="min-w-0 flex-1">
+        <span class="font-semibold" x-text="label">{{ $payload['label'] }}</span>
+        <span class="mx-1" aria-hidden="true">·</span>
+        <span x-text="detail">{{ $payload['detail'] }}</span>
+      </p>
+      @if ($manage && $state['supported'] && ! $payload['active'])
+        <form method="post" action="{{ PanelUrl::project($project->publicId, 'strategy/refresh') }}" class="shrink-0">
           <x-panel.nonce />
           <input type="hidden" name="back" value="{{ $back ?? PanelUrl::project($project->publicId, 'strategy') }}">
-          <button type="submit" class="font-semibold text-amber-900 underline hover:no-underline">Zleć przeliczenie</button>
+          <button type="submit" class="font-semibold underline hover:no-underline">{{ in_array($job['phase'], ['pending'], true) ? 'Zleć przeliczenie teraz' : 'Zleć przeliczenie' }}</button>
         </form>
       @endif
     </div>
-  @endif
+    @if ($summary !== null)
+      <p class="mt-1 text-xs opacity-80">{{ $summary }}</p>
+    @endif
+    @if ($job['worker_stale'])
+      <p class="mt-2 text-xs font-medium text-amber-800">
+        Zadania w tle nie uruchamiały się {{ $job['worker_heartbeat'] === null ? 'jeszcze ani razu' : 'od ' . Format::datetime($job['worker_heartbeat']) }} — przeliczenie wykona się dopiero po uruchomieniu crona
+        (<code class="rounded bg-white px-1">wp osf-seo sync:run</code> co minutę; instrukcja: docs/HOSTINGER-CRON.md) albo komendą <code class="rounded bg-white px-1">wp osf-seo strategy:refresh --project={{ $project->publicId }}</code>.
+      </p>
+    @endif
+  </div>
 
   @if ($overflow > 0)
     <div class="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
