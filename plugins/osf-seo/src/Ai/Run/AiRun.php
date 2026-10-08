@@ -51,6 +51,9 @@ final class AiRun
 
 	public const TRIGGER_PANEL = 'panel';
 
+	/**
+	 * @param array<string, mixed>|null $sources źródła analizy rekomendacji (snapshoty, pomiar SERP, gotowość) — faza C
+	 */
 	public function __construct(
 		public readonly int $id,
 		public readonly string $publicId,
@@ -87,6 +90,9 @@ final class AiRun
 		public readonly ?int $decidedBy,
 		public readonly ?string $decidedAt,
 		public readonly ?string $evidenceFingerprint = null,
+		public readonly ?string $planFingerprint = null,
+		public readonly ?string $readiness = null,
+		public readonly ?array $sources = null,
 	) {
 	}
 
@@ -133,7 +139,20 @@ final class AiRun
 			$int($row['decided_by']),
 			$row['decided_at'],
 			isset($row['evidence_fingerprint']) ? bin2hex($row['evidence_fingerprint']) : null,
+			isset($row['plan_fingerprint']) ? bin2hex($row['plan_fingerprint']) : null,
+			$row['readiness'] ?? null,
+			self::sources($row['sources'] ?? null),
 		);
+	}
+
+	/**
+	 * @return array<string, mixed>|null
+	 */
+	private static function sources(?string $json): ?array
+	{
+		$sources = $json === null ? null : json_decode($json, true);
+
+		return is_array($sources) ? $sources : null;
 	}
 
 	public function isActive(): bool
@@ -167,6 +186,9 @@ final class AiRun
 			'context_fingerprint' => $this->contextFingerprint,
 			'evidence_fingerprint' => $this->evidenceFingerprint,
 			'evidence_hash' => $this->evidenceHash,
+			'plan_fingerprint' => $this->planFingerprint,
+			'readiness' => $this->readiness,
+			'sources' => $this->sources,
 			'status' => $this->status,
 			'trigger' => $this->triggerType,
 			'created_at' => $this->createdAt,

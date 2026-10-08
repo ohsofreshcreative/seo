@@ -1223,6 +1223,9 @@ final class Schema
 					'decided_by' => 'bigint unsigned',
 					'decided_at' => 'datetime',
 					'evidence_fingerprint' => 'binary(32)',
+					'plan_fingerprint' => 'binary(32)',
+					'readiness' => 'varchar(16)',
+					'sources' => 'text',
 				],
 				'primary' => ['id'],
 				'unique' => ['public_id' => ['public_id']],
@@ -1230,6 +1233,7 @@ final class Schema
 					'project_created' => ['project_id', 'created_at'],
 					'project_topic' => ['project_id', 'topic_id', 'created_at'],
 					'status_created' => ['status', 'created_at'],
+					'project_plan' => ['project_id', 'plan_fingerprint'],
 				],
 			],
 			'ai_run_payloads' => [

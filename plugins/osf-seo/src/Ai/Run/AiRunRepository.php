@@ -19,7 +19,7 @@ final class AiRunRepository
 	/** Surowa odpowiedź modelu w historii — najwyżej tyle bajtów (dłuższa jest ucinana na granicy znaku i oznaczana). */
 	public const OUTPUT_RAW_MAX_BYTES = 65536;
 
-	private const BINARY = ['context_fingerprint', 'evidence_fingerprint', 'evidence_hash'];
+	private const BINARY = ['context_fingerprint', 'evidence_fingerprint', 'evidence_hash', 'plan_fingerprint'];
 
 	public function __construct(
 		private readonly Connection $db,
@@ -92,6 +92,41 @@ final class AiRunRepository
 			'result' => $result === null ? null : (string) json_encode($result, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
 			'validation' => (string) json_encode($validation, JSON_UNESCAPED_SLASHES),
 		], ['run_id' => $run->id]);
+	}
+
+	/**
+	 * Blokada generowania tego samego zlecenia (projekt × temat × typ) — bez czekania: drugi równoległy proces dostaje odmowę.
+	 */
+	public function acquireGenerationLock(int $projectId, int $topicId, string $task): bool
+	{
+		return $this->db->acquireLock(self::generationLock($projectId, $topicId, $task), 0);
+	}
+
+	public function releaseGenerationLock(int $projectId, int $topicId, string $task): void
+	{
+		$this->db->releaseLock(self::generationLock($projectId, $topicId, $task));
+	}
+
+	/** Uruchomienie w toku (rezerwacja albo żądanie) tego samego tematu i typu analizy. */
+	public function activeFor(int $projectId, int $topicId, string $task): ?AiRun
+	{
+		$row = $this->db->fetchRow(
+			"{$this->select()} WHERE r.project_id = %d AND r.topic_id = %d AND r.task = %s AND r.status IN (%s, %s) ORDER BY r.id DESC LIMIT 1",
+			[$projectId, $topicId, $task, AiRun::STATUS_RESERVED, AiRun::STATUS_RUNNING],
+		);
+
+		return $row === null ? null : AiRun::fromRow($row);
+	}
+
+	/** Udane uruchomienie z tym samym odciskiem planu (ten sam kontekst, model, wersje i koszt) — ochrona przed przypadkowym powtórzeniem. */
+	public function succeededWithPlan(int $projectId, string $planFingerprint): ?AiRun
+	{
+		$row = $this->db->fetchRow(
+			"{$this->select()} WHERE r.project_id = %d AND r.plan_fingerprint = UNHEX(%s) AND r.status = %s ORDER BY r.id DESC LIMIT 1",
+			[$projectId, $planFingerprint, AiRun::STATUS_SUCCEEDED],
+		);
+
+		return $row === null ? null : AiRun::fromRow($row);
 	}
 
 	/** Uruchomienie projektu po identyfikatorze publicznym (inny projekt → null). */
@@ -257,6 +292,11 @@ final class AiRunRepository
 		ksort($counts);
 
 		return $counts;
+	}
+
+	private static function generationLock(int $projectId, int $topicId, string $task): string
+	{
+		return 'ai_gen_' . substr(hash('sha256', $projectId . '|' . $topicId . '|' . $task), 0, 16);
 	}
 
 	private function findById(int $projectId, string $publicId): ?AiRun
