@@ -31,7 +31,7 @@ jobs:
       - uses: shivammathur/setup-php@v2
         with:
           php-version: ${{ matrix.php }}
-          extensions: mbstring, dom, sodium, intl
+          extensions: mbstring, dom, sodium, intl, curl, openssl, iconv
           coverage: none
           tools: composer:v2
 
@@ -84,7 +84,7 @@ jobs:
       - uses: shivammathur/setup-php@v2
         with:
           php-version: ${{ matrix.php }}
-          extensions: mbstring, dom, sodium, intl, mysqli
+          extensions: mbstring, dom, sodium, intl, mysqli, curl, openssl, iconv
           coverage: none
           tools: composer:v2
 
