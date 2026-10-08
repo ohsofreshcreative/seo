@@ -129,6 +129,11 @@ API wymaga osobnej decyzji architektonicznej; integracje dostawców wyłącznie 
 | D70 | Klasyfikator: consolidate → recover → optimize → create → monitor → investigate z kodem powodu; recover i optimize tylko przy znanej stronie; create („Kandydat na nową stronę”) tylko przy stanie „brak znanej strony”, realnym popycie, świeżym SERP i dodatkowym dowodzie (luka treści, ≥ 2 konkurentów w TOP10, dedykowane strony w SERP), pewność najwyżej średnia bez pełnego indeksu stron albo ręcznego potwierdzenia | Zachowawcze rekomendacje, „investigate” jako pełnoprawny wynik. Sekcja 15.13 |
 | D71 | Pewność: punkty (baza 40) z jawnymi czynnikami i limitami (investigate, create, słaba strona, nieaktualny SERP — najwyżej średnia); Priorytet Strategii: popyt ≤ 30 (max z wolumenu i miesięcznego odpowiednika wyświetleń GSC), potencjał ≤ 20, pilność ≤ 15, konkurencja ≤ 15, osiągalność ≤ 10 (brak KD = 5), wartość ≤ 10 × mnożnik pewności 0,6–1,0, monitorowanie × 0,4; monotoniczny | Wyjaśnialne sortowanie bez dominacji wolumenu i bez kopiowania wyników modułów. Sekcja 15.13 |
 | D72 | Workflow tematów: status tylko z decyzji użytkownika (przeliczenie ustawia wyłącznie flagę `decision_changed`), podstawa decyzji i jednorazowy punkt odniesienia efektu; zdarzenia tylko istotnych zmian; pakiet kontekstu tematu deterministyczny (`evidence_hash` = SHA-256 kanonicznego JSON-u bez stanu pracy), dane zewnętrzne oznaczone jako niezaufane | Trwałe decyzje, ocena efektu w fazach D/E i stabilne wejście dla STEP 17 bez AI w STEP 16. Sekcja 15.13 |
+| D73 | Panel Strategii (faza D) czyta wyłącznie zapisany stan: kolumny tematu wyliczane przy przeliczeniu (M0013 — maska źródeł, Pozycja SERP i chwila pomiaru odniesienia, wyświetlenia i średnia pozycja GSC) i `strategy_keywords.serp_intel_at`; filtry, sortowanie i stronicowanie w SQL, liczniki przeglądu jednym zapytaniem grupującym, SERP Intelligence frazy bez zapisu profilu | Brak agregacji GSC/SERP i dekodowania analiz przy renderowaniu. Sekcja 15.14 |
+| D74 | „Przelicz” w panelu tylko zleca przeliczenie (unieważnia klucz danych, zapisuje `refresh_requested_at/by`, czyszczone przez przeliczenie); wykonuje je `wp osf-seo strategy:refresh`, a od fazy E krok w tle; „przeliczenie trwa” = odczyt blokady projektu | Pełne przeliczenie nigdy w żądaniu WWW (jak przeliczenie Luk SEO); jawna zależność od fazy E zamiast prowizorycznego mechanizmu. Sekcja 15.14 |
+| D75 | Odnośniki z modułów do Strategii: fraza → temat po frazie rynkowej (Nowe frazy, Luki fraz i treści, Pozycje); szansa SEO → temat tylko, gdy dowód Strategii `opportunity.direct` (OpportunityKeywordIndex, query × page) zawiera tę szansę — nigdy przez samo `opportunities.keyword` ani wspólną podstronę | Spójność z D54; link nie obiecuje powiązania, którego nie ma w dowodach. Sekcja 15.14 |
+| D76 | Płatna analiza SERP z panelu: wybór fraz → bezpłatny podgląd (`SerpAnalysisService::plan` — ponowne użycie, pomiar w toku, nowe pomiary, odrzucone, maks. koszt, budżet, blokady) → jawne potwierdzenie (liczba zadań i koszt z podglądu; większy albo droższy plan odrzucony) → kolejka (`SerpSubmitter` STEP 14) → status (strona przebiegu Pozycji); wymaga `osf_seo_manage_strategy` i `osf_seo_manage_serp_tracking` (trasa, kontroler i usługa) | Jeden mechanizm płatnych pomiarów; żadnego żądania przy renderowaniu ani przy wejściu w temat. Sekcja 15.14 |
+| D77 | Klient w panelu Strategii: aktywny backlog tylko do odczytu — bez odrzuconych tematów (lista, liczniki, zdarzenia, odnośniki z modułów, SERP Intelligence fraz odrzuconego tematu → 404), notatek, identyfikatorów użytkowników (status, zdarzenia, wpisy ręczne, zlecenie przeliczenia), ustawień, kosztów i analizy SERP; egzekwowane w usłudze, nie tylko w widoku | Least privilege niezależnie od ukrycia przycisków. Sekcja 15.14 |
 
 ## 3. Repozytorium i środowiska
 
@@ -2324,7 +2329,7 @@ Zapis jest przyrostowy: wiersz zmienia się tylko, gdy zmienił się odcisk fakt
 i poziomu — identyfikator i wpis ręczny zostają, a fakty i dowody to stan z ostatniego przeliczenia, w którym fraza była kandydatem.
 Frazy GSC i członkowie szans SEO bez wiersza rynkowego dostają go przy zapisie (bez danych i bez wzbogacania — jak dodanie do monitorowania).
 
-### 15.4 Model danych (schemat 10, M0010; schemat 11, M0011; schemat 12, M0012)
+### 15.4 Model danych (schemat 10, M0010; schemat 11, M0011; schemat 12, M0012; schemat 13, M0013)
 
 - **`osf_strategy_settings`** — PK `project_id`: `revision` (licznik mutacji ręcznych Strategii), `data_key` (BINARY), `refreshed_at`,
   `refresh_ms`, `stats` (JSON: liczby źródeł, odfiltrowane, nadmiar, okno GSC), rynek ostatniego przeliczenia, `updated_by`, `updated_at`.
@@ -2344,6 +2349,11 @@ Frazy GSC i członkowie szans SEO bez wiersza rynkowego dostają go przy zapisie
   kolumny `osf_strategy_keywords`: `topic_id` (temat frazy — zostaje także dla nieaktywnego kandydata, do stabilnych ID), `pinned_topic_id`,
   `pinned_by`, `pinned_at` (ręczne przypięcie), `target_state`, `target_url_id` (strona docelowa frazy) i indeks `project_topic`. Migracja
   niczego nie przelicza (tematy powstają przy `strategy:refresh`).
+- **M0013 (schemat 13, faza D)** — wyłącznie addytywnie, pod panel (D73): kolumny `osf_strategy_topics` `sources` (maska źródeł fraz tematu),
+  `serp_rank` i `serp_checked_at` (Pozycja SERP i chwila pomiaru odniesienia — rank tylko ze świeżego pomiaru), `gsc_impressions`, `gsc_position`
+  (fakty GSC tematu); `osf_strategy_settings` `refresh_requested_at`, `refresh_requested_by` (zlecenie przeliczenia z panelu, D74);
+  `osf_strategy_keywords` `serp_intel_at` (chwila najnowszego zgodnego pomiaru frazy — filtr świeżości SERP Intelligence w SQL). Wartości
+  uzupełnia najbliższe przeliczenie (`StrategyRefresher::VERSION` 5, `TopicRefresher::VERSION` 2, `EvidenceBuilder::VERSION` 5).
 
 ### 15.5 Powiązanie szans SEO z frazami (D54)
 
@@ -2424,7 +2434,8 @@ wp osf-seo strategy:unpin --project=<id> --keywords="a, b"
   `osf_seo_manage_serp_tracking`.
 - Odczyt: dostęp do projektu (`ProjectGuard` → `ProjectContext`); kandydat z URL-a / CLI wyłącznie po (`project_id`, `public_id`) — obce ID → 404.
 - **Klient**: aktywny backlog tylko do odczytu, **bez notatek wewnętrznych i bez odrzuconych tematów** (egzekwowane w `StrategyService`
-  od fazy C — lista, szczegóły i kontekst tematu), bez kosztów; panel — faza D.
+  od fazy C — lista, szczegóły i kontekst tematu), bez kosztów; w panelu (faza D, D77) także bez identyfikatorów użytkowników, ustawień
+  i analizy SERP, a odnośniki z modułów i SERP Intelligence pomijają odrzucone tematy.
 
 ### 15.10 Zaakceptowany plan kolejnych faz
 
@@ -2446,7 +2457,8 @@ wp osf-seo strategy:unpin --project=<id> --keywords="a, b"
   pomocnicze („możliwa grupa”); porównanie wyłącznie z liderem (bez łańcuchów), konflikt różnych stron projektu blokuje scalenie; stabilne ID
   tematów (głosowanie ≥ 50%); statusy jak w Szansach SEO; przeliczenie nie zmienia statusu (flagi „zmiana po decyzji”, ponowne otwarcie ręczne);
   zdarzenia tylko istotnych zmian.
-- **D — Panel**: moduł „Strategia” (przegląd, backlog, temat z sekcją „Dlaczego to jest w strategii”, SERP Intelligence, ustawienia).
+- **D — Panel** (D73–D77; **zaimplementowana — szczegóły w 15.14**): moduł „Strategia” (przegląd, backlog, temat z sekcją „Dlaczego ten temat
+  jest w Strategii?”, SERP Intelligence, analiza SERP z podglądem kosztu, ustawienia) i odnośniki z modułów.
 - **E — Tło i wydajność**: krok po kolejce GSC (po kroku SERP) z **wspólnym limitem czasu ticka** dla wszystkich kroków (bez nowego budżetu
   czasu), przeliczenie przyrostowe w razie potrzeby, benchmark `test:performance:strategy`.
 - **F — Review, regresja, dokumentacja, PR.**
@@ -2643,6 +2655,57 @@ teście STEP 16); `ProjectPageIndex` = strony znane z GSC (niepełny — „crea
 pozycja (GSC) per strona nie jest w dowodach (podział wyświetleń w TOP3 rozpoznawany po średniej pozycji frazy); bez panelu (faza D), bez kroku
 w tle i benchmarku (faza E); historia Labs (lost/down) nie wchodzi do decyzji.
 
+### 15.14 Panel Strategii (faza D, D73–D77)
+
+**Trasy** (`themes/seo/routes/web.php`, ULID-y tematów i kandydatów `[0-9A-Za-z]{26}`, nonce + Origin dla POST):
+
+| Metoda i ścieżka (względem `/projects/{project}/strategy`) | Kontroler | Dostęp |
+|---|---|---|
+| GET `/strategy` (przegląd), `/topics` (backlog), `/topics/{topic}`, `/serp`, `/serp/{candidate}` | `StrategyController`, `StrategyTopicsController`, `StrategySerpController` | dostęp do projektu (klient — tylko odczyt, D77) |
+| GET `/settings`; POST `/refresh`, `/keywords`, `/keywords/remove`, `/topics/{topic}/status`, `/topics/{topic}/note`, `/topics/{topic}/target`, `/pin`, `/unpin` | jw. | `osf_seo_manage_strategy` (middleware i usługa) |
+| GET `/analysis` (wybór i podgląd), POST `/analysis` (potwierdzenie → kolejka) | `StrategySerpController` | `osf_seo_manage_strategy` + `osf_seo_manage_serp_tracking` (middleware, kontroler i usługa) |
+
+**Ekrany** (`resources/views/panel/strategy/*`, wspólny system wizualny panelu; nawigacja „Strategia” zaraz po „Przegląd”):
+
+- **Przegląd** — liczniki z jednego zapytania grupującego (otwarte, według działania, wysoki priorytet ≥ 60, bez świeżego SERP, zmiana po decyzji,
+  zrealizowane, odrzucone — tylko zespół), pięć tematów o najwyższym priorytecie, zmiany po decyzji, ostatnie istotne zdarzenia, aktualność źródeł
+  (GSC: najnowsza data i synchronizacja; SERP: ostatni pomiar; Labs: import i przeliczenie luk; Strategia: przeliczenie i aktualność klucza danych).
+  Każda karta prowadzi do przefiltrowanego backlogu.
+- **Backlog** — filtry (działanie, status, pewność, minimalny priorytet, źródło, intencja i trudność SEO frazy głównej, stan strony docelowej, stan SERP
+  w tym „bez świeżego pomiaru”, popyt, zmiana po decyzji, tekst — także frazy tematu), sortowanie i stronicowanie w SQL; domyślnie aktywne otwarte
+  tematy bez monitorowania. Kolumny: temat i liczba fraz, działanie z powodem, priorytet, pewność, strona docelowa i stan, Pozycja SERP ze świeżością
+  pomiaru (wartość tylko ≤ 30 dni), „Średnia pozycja (GSC)”, popyt, źródła, status.
+- **Szczegóły tematu** — nagłówek odpowiada na „co, dlaczego, jaka strona, jak pewne, jak świeże dane i co dalej” (działanie z powodem, strona
+  docelowa, Pozycja SERP vs średnia pozycja GSC, daty źródeł, kontekstowe „Co dalej?”); rozbicie priorytetu i czynniki pewności; praca nad tematem
+  (status, notatka wewnętrzna); „Dlaczego ten temat jest w Strategii?” z pakietu kontekstu (decyzja i ślad reguł, GSC, dane rynkowe, Szanse SEO,
+  Nowe frazy, Luki fraz i treści, konkurenci — pomiar SERP osobno od pozycji „(Labs)”); strona docelowa (wskazania pogrupowane po adresie, dowody
+  przeciw, sygnały pochodne, ręczne wskazanie / potwierdzenie braku strony / cofnięcie); frazy tematu (przypięcia i odpięcia); SERP Intelligence
+  frazy odniesienia (TOP10 + rozwijane 11–20) z overlapem pozostałych fraz; historia istotnych zmian. Dla „create” wyłącznie „Kandydat na nową
+  stronę” / „Brak znanej strony docelowej” z zastrzeżeniem, że brak danych nie dowodzi braku strony.
+- **SERP Intelligence** — frazy Strategii według stanu zgodnego pomiaru (świeży, nieaktualny, wymaga pomiaru) z Pozycją SERP (świeżość liczona
+  teraz, nie w chwili przeliczenia), kształtem TOP10 i sygnałem intencji z pewnością, konkurentami, tematem; pokrycie fraz i tematów, dominujące
+  domeny TOP10 świeżych pomiarów (projekt i konkurenci oznaczeni); zaznaczone frazy → podgląd analizy. **Szczegóły frazy** — pełne TOP20
+  organiczne (tytuł, domena, adres — escapowane, linki tylko http(s) z `noopener noreferrer`), projekt i skonfigurowani konkurenci oznaczeni,
+  pozostałe domeny widoczne; kształt „Dedykowana podstrona” zawsze jako heurystyka.
+- **Analiza SERP** — przepływ D76 z pięcioma krokami; status: frazy analizy i ostatnie przebiegi (postęp na stronie przebiegu Pozycji).
+- **Ustawienia** — stan przeliczenia (rynek, okno GSC, ostatnie przeliczenie, aktualność, zlecenie), zlecenie przeliczenia, limity (tylko odczyt —
+  stałe), wpisy ręczne (dodanie, zdjęcie).
+
+**Stany UI**: rynek nieobsługiwany, brak tematów / kandydatów, Strategia jeszcze nie przeliczona, przeliczenie trwa, zlecone, dane modułów zmieniły
+się, limit fraz (nadmiar), brak pomiaru SERP / pomiar nieaktualny / wygasły, pomiar w toku, limit kosztów, wstrzymanie DataForSEO, odstęp pomiaru
+ręcznego, niepełne dane GSC; brak danych zawsze „—” (nigdy 0).
+
+**Komponenty**: `strategy-action`, `topic-status`, `target-state`, `serp-freshness`, `strategy-confidence` (+ istniejące `score`, `serp-rank`, `stat`,
+`card`…); etykiety kodów analizy w `App\Panel\StrategyLabels` (prezentacja).
+
+**Odnośniki z modułów** (D75, partial `strategy.partials.topic-link`): Szanse SEO (frazy szansy z dowodem `opportunity.direct`), Nowe frazy, Luki fraz,
+Luki treści (tematy fraz grupy), Pozycje — nazwa tematu, działanie i status pracy; bez duplikowania workflow modułów.
+
+**Ograniczenia fazy D (jawne)**: przeliczenie z panelu tylko zlecane (wykonanie: CLI do czasu kroku w tle w fazie E); wyniki analizy SERP widoczne
+w Strategii po przeliczeniu; `ProjectPageIndex` nadal niepełny (strony z GSC); progi overlapu i heurystyki kształtu bez kalibracji; trasy panelu
+sprawdzane rzeczywistymi żądaniami HTTP w środowisku deweloperskim — testy CI obejmują warstwę usług (autoryzacja, IDOR, widok klienta), bez
+harnessu jądra HTTP Acorn w testach pluginu.
+
 ## 16. Bezpieczeństwo
 
 - **Autoryzacja projektów**: `ProjectGuard` → `ProjectContext` albo 404; repozytoria i usługi
@@ -2805,7 +2868,7 @@ Warianty docelowe:
 | 18 | Nowe frazy: seedy (ręczne, GSC, szanse), wyszukiwanie DataForSEO Labs w tle z planem i limitami kosztów, deduplikacja, widoczność GSC, priorytet odkrycia, praca nad frazą, wykluczenia | ✅ STEP 13 (sekcja 12) |
 | 19 | Pozycje SERP i konkurenci: monitorowane frazy, pomiary Google Organic (Standard, TOP100) z planem, rezerwacją kosztu i harmonogramem, pełne TOP N w historii, zmiany, konkurenci monitorowani i organiczni | ✅ STEP 14 (sekcja 13) |
 | 20 | Luki SEO: wspólne zbiory fraz domen konkurentów (Labs Ranked Keywords) z planem, limitami i importem w tle, punkt odniesienia projektu, widoczność SERP → GSC → Labs, typ i priorytet luki, filtry marki, grupy fraz, luka treści (heurystyka), strony konkurencji, historia zbiorów | ✅ STEP 15 (sekcja 14) |
-| 21 | Strategia i SERP Intelligence: kandydaci z modułów z dowodami, analiza zapisanych SERP-ów, strona docelowa, działania, priorytet i pewność, tematy, backlog z workflow | ⏳ STEP 16 (sekcja 15): fazy A (fundament), B (SERP Intelligence) i C (rdzeń) zrobione; fazy D–F według planu |
+| 21 | Strategia i SERP Intelligence: kandydaci z modułów z dowodami, analiza zapisanych SERP-ów, strona docelowa, działania, priorytet i pewność, tematy, backlog z workflow | ⏳ STEP 16 (sekcja 15): fazy A (fundament), B (SERP Intelligence), C (rdzeń) i D (panel) zrobione; fazy E–F według planu |
 
 **MVP 2**: ~~Opportunity Score~~ (STEP 11), Pages/landing pages, zaawansowane filtry, automatyczna synchronizacja, raporty.
 **MVP 3**: własny crawler, audyt techniczny, połączenie crawler + GSC.

@@ -189,6 +189,11 @@ Motyw powstał z marketingowego motywu `h2otwock` i wciąż zawiera jego kod: bl
   **Przeliczenie nigdy nie zmienia statusu pracy tematu** (tylko flaga `decision_changed`); zdarzenia wyłącznie istotnych zmian; pakiet kontekstu
   (`TopicContextBuilder`) deterministyczny, dane zewnętrzne oznaczone jako niezaufane. Nie zmieniaj progów overlapu ani heurystyk kształtu z fazy B
   bez kalibracji na prawdziwych danych.
+  Panel (faza D, `themes/seo` — kontrolery `Strategy*Controller`, widoki `panel/strategy`, sekcja 15.14): czyta wyłącznie zapisany stan (kolumny tematu
+  z M0013, filtry i stronicowanie w SQL, bez zapisu profili SERP); „Przelicz” tylko zleca przeliczenie (`requestRefresh`) — pełne przeliczenie nigdy
+  w żądaniu WWW (wykonuje CLI, od fazy E krok w tle); płatna analiza SERP wyłącznie podgląd → potwierdzenie → `SerpAnalysisService::start`
+  (obie capabilities sprawdzane w trasie, kontrolerze i usłudze); odnośniki z modułów: szansa SEO → temat tylko przez dowód `opportunity.direct`;
+  klient bez odrzuconych tematów, notatek, identyfikatorów użytkowników, ustawień, kosztów i analizy SERP (egzekwowane w usłudze).
 - `$wpdb` traktuje tabelę z kolumnami ascii i utf8mb4 bez kolumny binarnej jako ASCII i odrzuca zapytania z polskimi znakami
   („contains invalid data”) — w nowych tabelach z tekstem użytkownika daj co najmniej jedną kolumnę `*_bin` / binarną albo zapisuj
   tekst przez `insert()`/`update()`. Frazy liczbowe („2024”) jako klucze tablic PHP stają się int — rzutuj na `(string)`.
@@ -284,7 +289,7 @@ Fundament panelu powstał w STEP 4 (`docs/ARCHITECTURE.md`, sekcje 4.1–4.4). O
 3. Powtarzalne elementy → komponenty Blade `resources/views/components/panel/*` (`<x-panel.* />`:
    `button`, `card`, `page-header`, `field`, `badge`, `flash`, `empty-state`, `nav-link`, `nonce`, `delta`, `stat`,
    `score`, `confidence`, `opportunity-status`, `visibility`, `candidate-status`, `serp-rank`, `rank-change`, `gap-type`, `content-gap`,
-   `project-visibility`),
+   `project-visibility`, `strategy-action`, `topic-status`, `target-state`, `serp-freshness`, `strategy-confidence`),
    nie `@apply` ani własne klasy. Własny CSS tylko, gdy utilities nie wystarczają.
 4. Tokeny kolorów (`brand-*`) w bloku `@theme` w `resources/css/panel.css`; bez hexów w Blade;
    bez dark mode w MVP. `panel.css` skanuje tylko pliki panelu (`source(none)` + `@source`),

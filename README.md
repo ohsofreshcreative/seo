@@ -25,7 +25,8 @@ dostawca danych rynkowych (wolumen, historia wolumenu, CPC, konkurencja Ads, tru
 > uruchomieniem, widoczność projektu SERP → GSC → punkt odniesienia, priorytet luki, grupy fraz, luka treści jako heurystyka, strony konkurencji). W toku:
 > STEP 16 — **Strategia** (backlog SEO łączący sygnały modułów z dowodami; zrobione fazy A — kandydaci, fakty i dowody per fraza — B — SERP
 > Intelligence na zapisanych pomiarach oraz jednorazowa analiza SERP przez moduł Pozycji — i C — tematy ze stabilnymi ID, strona docelowa,
-> konflikty URL, działanie z powodem, pewność, Priorytet Strategii, status pracy i pakiet kontekstu, z CLI). Plan i postęp:
+> konflikty URL, działanie z powodem, pewność, Priorytet Strategii, status pracy i pakiet kontekstu, z CLI — i D — panel „Strategia”: przegląd,
+> backlog, szczegóły tematu, SERP Intelligence, analiza SERP z podglądem kosztu, ustawienia i odnośniki z modułów). Plan i postęp:
 > [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 >
 > **Repozytorium jest publiczne.** Nie commituj żadnych sekretów (sekcja „Konfiguracja”).
