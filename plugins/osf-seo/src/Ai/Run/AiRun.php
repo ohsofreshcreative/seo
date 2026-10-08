@@ -86,6 +86,7 @@ final class AiRun
 		public readonly ?string $decision,
 		public readonly ?int $decidedBy,
 		public readonly ?string $decidedAt,
+		public readonly ?string $evidenceFingerprint = null,
 	) {
 	}
 
@@ -131,6 +132,7 @@ final class AiRun
 			$row['decision'],
 			$int($row['decided_by']),
 			$row['decided_at'],
+			isset($row['evidence_fingerprint']) ? bin2hex($row['evidence_fingerprint']) : null,
 		);
 	}
 
@@ -163,6 +165,7 @@ final class AiRun
 			'context_version' => $this->contextVersion,
 			'contract_version' => $this->contractVersion,
 			'context_fingerprint' => $this->contextFingerprint,
+			'evidence_fingerprint' => $this->evidenceFingerprint,
 			'evidence_hash' => $this->evidenceHash,
 			'status' => $this->status,
 			'trigger' => $this->triggerType,

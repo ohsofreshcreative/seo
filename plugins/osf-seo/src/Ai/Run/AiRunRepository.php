@@ -19,7 +19,7 @@ final class AiRunRepository
 	/** Surowa odpowiedź modelu w historii — najwyżej tyle bajtów (dłuższa jest ucinana na granicy znaku i oznaczana). */
 	public const OUTPUT_RAW_MAX_BYTES = 65536;
 
-	private const BINARY = ['context_fingerprint', 'evidence_hash'];
+	private const BINARY = ['context_fingerprint', 'evidence_fingerprint', 'evidence_hash'];
 
 	public function __construct(
 		private readonly Connection $db,

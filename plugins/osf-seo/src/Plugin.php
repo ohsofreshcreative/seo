@@ -10,12 +10,21 @@ use OsfSeo\Ai\Budget\AiBudget;
 use OsfSeo\Ai\Budget\AiPricing;
 use OsfSeo\Ai\Context\AiTopicContextBuilder;
 use OsfSeo\Ai\Contract\OutputValidator;
-use OsfSeo\Ai\Page\NoPageContentSource;
 use OsfSeo\Ai\Provider\AiProviderRegistry;
 use OsfSeo\Ai\Provider\FakeProvider;
 use OsfSeo\Ai\Provider\OpenAiProvider;
 use OsfSeo\Ai\Run\AiRunRepository;
 use OsfSeo\Analytics\KeywordReport;
+use OsfSeo\PageIntelligence\Extract\HtmlExtractor;
+use OsfSeo\PageIntelligence\Fetch\CurlPageFetcher;
+use OsfSeo\PageIntelligence\Fetch\PublicNetworkPolicy;
+use OsfSeo\PageIntelligence\Fetch\SystemHostResolver;
+use OsfSeo\PageIntelligence\Fetch\UrlSafetyPolicy;
+use OsfSeo\PageIntelligence\PageIntelligenceConfig;
+use OsfSeo\PageIntelligence\PageIntelligenceRepository;
+use OsfSeo\PageIntelligence\PageIntelligenceService;
+use OsfSeo\PageIntelligence\Robots\RobotsPolicy;
+use OsfSeo\PageIntelligence\Robots\TransientRobotsCache;
 use OsfSeo\Analytics\OverviewReport;
 use OsfSeo\Analytics\ReportCache;
 use OsfSeo\Auth\LoginThrottle;
@@ -26,6 +35,7 @@ use OsfSeo\Auth\WpAdminAccess;
 use OsfSeo\Auth\WpRoleStore;
 use OsfSeo\Branding\BrandingService;
 use OsfSeo\Cli\AiCommand;
+use OsfSeo\Cli\PagesCommand;
 use OsfSeo\Cli\DbCommand;
 use OsfSeo\Cli\CompetitorCommand;
 use OsfSeo\Cli\DiscoveryCommand;
@@ -171,7 +181,7 @@ use OsfSeo\Support\SystemSleeper;
 final class Plugin
 {
 	/** Musi być zgodna z nagłówkiem `Version` w osf-seo.php (pilnuje tego test). */
-	public const VERSION = '0.17.0';
+	public const VERSION = '0.18.0';
 
 	public const MIN_PHP = '8.2';
 
@@ -637,6 +647,31 @@ final class Plugin
 			$c->get(StrategyRefreshRunner::class),
 		));
 
+		// Page Intelligence (STEP 17, faza B): pobieranie publicznych stron wyłącznie jawnie, przez transport z przypięciem zweryfikowanego
+		// adresu IP (ext-curl, bez WordPress HTTP API — ochrona przed DNS rebinding), z robots.txt i limitami wobec hosta.
+		$container->singleton(PageIntelligenceConfig::class, static fn (Container $c): PageIntelligenceConfig => new PageIntelligenceConfig($c->get(Config::class)));
+		$container->singleton(PageIntelligenceRepository::class, static fn (Container $c): PageIntelligenceRepository => new PageIntelligenceRepository($c->get(Connection::class), $c->get(Clock::class)));
+		$container->singleton(PageIntelligenceService::class, static function (Container $c): PageIntelligenceService {
+			$config = $c->get(PageIntelligenceConfig::class);
+			$policy = new UrlSafetyPolicy(new PublicNetworkPolicy(), new SystemHostResolver());
+			$fetcher = new CurlPageFetcher($policy, $config->caBundle());
+
+			return new PageIntelligenceService(
+				$c->get(PageIntelligenceRepository::class),
+				$fetcher,
+				new RobotsPolicy($fetcher, new TransientRobotsCache()),
+				new HtmlExtractor(),
+				$policy,
+				$c->get(StrategyService::class),
+				$c->get(CompetitorRepository::class),
+				$config,
+				$c->get(Connection::class),
+				$c->get(Clock::class),
+				$c->get(Logger::class),
+				CurlPageFetcher::available(),
+			);
+		});
+
 		// Analizy AI (STEP 17, faza A): dostawcy za interfejsem AiProvider, budżet AI oddzielny od DataForSEO; wywołanie modelu wyłącznie
 		// z AiAnalysisService na jawne polecenie — nigdy przy renderowaniu panelu, przeliczeniu Strategii, synchronizacji ani w kroku w tle.
 		$container->singleton(AiConfig::class, static fn (Container $c): AiConfig => new AiConfig($c->get(Config::class)));
@@ -646,7 +681,7 @@ final class Plugin
 		]));
 		$container->singleton(AiRunRepository::class, static fn (Container $c): AiRunRepository => new AiRunRepository($c->get(Connection::class), $c->get(Clock::class)));
 		$container->singleton(AiAnalysisService::class, static fn (Container $c): AiAnalysisService => new AiAnalysisService(
-			new AiTopicContextBuilder($c->get(StrategyService::class), $c->get(Connection::class), $c->get(ProjectPageIndex::class), new NoPageContentSource(), $c->get(Clock::class)),
+			new AiTopicContextBuilder($c->get(StrategyService::class), $c->get(Connection::class), $c->get(ProjectPageIndex::class), $c->get(PageIntelligenceService::class), $c->get(Clock::class)),
 			$c->get(AiProviderRegistry::class),
 			$c->get(AiConfig::class),
 			new AiPricing($c->get(AiConfig::class)),
@@ -724,6 +759,8 @@ final class Plugin
 			$scheduler->onAfterRun(static fn (): array => $c->get(StrategyScheduler::class)->runBackground($scheduler->remainingBudget()));
 			// Analizy AI: wyłącznie porządki historii (porzucone uruchomienia, retencja raz na dobę) — żadnego wywołania modelu (D94).
 			$scheduler->onAfterRun(static fn (): array => $c->get(AiAnalysisService::class)->maintenance());
+			// Page Intelligence: wyłącznie retencja zapisanych treści raz na dobę — żadnego pobierania stron w tle (D101).
+			$scheduler->onAfterRun(static fn (): array => $c->get(PageIntelligenceService::class)->maintenance() ?? []);
 
 			return $scheduler;
 		});
@@ -800,6 +837,7 @@ final class Plugin
 			StrategyTopicCommand::register($this);
 			SyncCommand::register($this);
 			AiCommand::register($this);
+			PagesCommand::register($this);
 		}
 	}
 

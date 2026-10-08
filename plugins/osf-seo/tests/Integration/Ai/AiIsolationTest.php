@@ -169,7 +169,7 @@ final class AiIsolationTest extends AiTestCase
 
 		self::assertContains($body['target_page']['state'], ['unknown', 'none']);
 		self::assertFalse($body['target_page']['page_index']['complete']);
-		self::assertSame(['available' => false, 'reason' => 'not_fetched'], $body['target_page']['page_content']);
+		self::assertSame(['available' => false, 'reason' => 'not_fetched', 'last_attempt' => null], $body['target_page']['page_content']);
 		self::assertContains('page_content_not_fetched', $aiContext->dataGaps());
 		self::assertContains('page_index_incomplete', $aiContext->dataGaps());
 		self::assertContains('no_gsc_data', $aiContext->dataGaps());

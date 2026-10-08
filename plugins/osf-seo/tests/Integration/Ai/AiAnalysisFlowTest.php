@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace OsfSeo\Tests\Integration\Ai;
 
 use OsfSeo\Ai\AiRefused;
+use OsfSeo\Ai\Context\TopicContextAssembler;
 use OsfSeo\Ai\Contract\AnalysisContract;
 use OsfSeo\Ai\Prompt\PromptTemplate;
 use OsfSeo\Ai\Provider\AiProviderException;
@@ -40,8 +41,9 @@ final class AiAnalysisFlowTest extends AiTestCase
 		self::assertSame(AiRun::STATUS_SUCCEEDED, $run->status);
 		self::assertSame(['fake', FakeProvider::MODEL, false], [$run->provider, $run->model, $run->paid]);
 		self::assertSame([0.0, 0.0, AiRun::COST_FREE], [$run->chargedCost(), $run->reservedCost, $run->costBasis]);
-		self::assertSame([PromptTemplate::TASK, PromptTemplate::VERSION, 1, AnalysisContract::VERSION], [$run->task, $run->promptVersion, $run->contextVersion, $run->contractVersion]);
+		self::assertSame([PromptTemplate::TASK, PromptTemplate::VERSION, TopicContextAssembler::VERSION, AnalysisContract::VERSION], [$run->task, $run->promptVersion, $run->contextVersion, $run->contractVersion]);
 		self::assertSame($plan->context->fingerprint(), $run->contextFingerprint);
+		self::assertSame($plan->context->evidenceFingerprint(), $run->evidenceFingerprint);
 		self::assertSame($strategyContext['evidence_hash'], $run->evidenceHash);
 		self::assertSame($strategyContext['topic']['id'], $run->topicPublicId);
 		self::assertSame(AiRun::TRIGGER_CLI, $run->triggerType);

@@ -117,6 +117,7 @@ final class AiAnalysisService
 			'context_version' => (int) ($aiContext->body['context_version'] ?? 0),
 			'contract_version' => AnalysisContract::VERSION,
 			'context_fingerprint' => $aiContext->fingerprint(),
+			'evidence_fingerprint' => $aiContext->evidenceFingerprint(),
 			'evidence_hash' => $aiContext->evidenceHash(),
 			'trigger_type' => $trigger === AiRun::TRIGGER_PANEL ? AiRun::TRIGGER_PANEL : AiRun::TRIGGER_CLI,
 			'requested_by' => $context->userId() > 0 ? $context->userId() : null,

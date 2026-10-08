@@ -6,7 +6,6 @@ namespace OsfSeo\Ai\Context;
 
 use DateTimeImmutable;
 use DateTimeZone;
-use OsfSeo\Ai\Page\PageSnapshot;
 
 /**
  * Deterministyczny kontekst AI tematu Strategii (wersja 1 — docs/ARCHITECTURE.md, sekcja 22.4) zbudowany WYŁĄCZNIE z pakietu kontekstu
@@ -18,8 +17,10 @@ use OsfSeo\Ai\Page\PageSnapshot;
  * - Braki danych jawnie (`data_gaps`) — w tym zawsze: treść strony niepobrana, indeks stron niepełny („brak znanej strony” ≠ brak strony).
  * - Budżet: limity elementów i długości tekstów, a ponad MAX_BYTES — redukcja całych elementów w kolejności od najmniej ważnych
  *   (uzupełniające → luki → SERP → frazy; decyzja i główne dowody zostają), z licznikami pominięć. JSON nigdy nie jest ucinany.
- * - Treści zewnętrzne o dowolnej treści (tytuły wyników SERP) w osobnej sekcji `external_texts` (blok niezaufany w instrukcjach);
- *   frazy, adresy, domeny i nazwy wskazane w `untrusted`.
+ * - Treści zewnętrzne o dowolnej treści (tytuły wyników SERP; tytuły, opisy, nagłówki i fragmenty pobranych stron) w osobnej sekcji
+ *   `external_texts` (blok niezaufany w instrukcjach); frazy, adresy, domeny i nazwy wskazane w `untrusted`.
+ * - Wersja 2 (STEP 17 faza B): treść strony docelowej i wybranych stron konkurencji z zapisanych snapshotów Page Intelligence (data pobrania
+ *   osobno od daty pomiaru SERP, jakość ekstrakcji, ograniczenia odczytu) — wyłącznie odczyt, nigdy pobieranie przy budowaniu kontekstu.
  * - Bez notatek wewnętrznych, nazwy projektu, identyfikatorów użytkowników i danych innych projektów.
  *
  * Odcisk (`AiContext::fingerprint`) = SHA-256 kanonicznego JSON-u treści — bez czasu budowania; zmiana dowodów zmienia odcisk.
@@ -28,7 +29,7 @@ final class TopicContextAssembler
 {
 	public const SCHEMA = 'whack-a-mole/ai-topic-context';
 
-	public const VERSION = 1;
+	public const VERSION = 2;
 
 	public const MAX_BYTES = 32000;
 
@@ -45,24 +46,38 @@ final class TopicContextAssembler
 		'votes' => 6,
 		'alternatives' => 4,
 		'conflicts' => 5,
+		'page_headings' => 25,
+		'page_sections' => 6,
+		'competitor_pages' => 3,
+		'competitor_headings' => 8,
+		'competitor_excerpts' => 1,
 	];
 
-	/** Kroki redukcji ponad MAX_BYTES — od najmniej ważnych (kolejność: decyzja → główne dowody → frazy → SERP → luki → uzupełniające). */
+	/**
+	 * Kroki redukcji ponad MAX_BYTES — od najmniej ważnych (kolejność: decyzja → główne dowody → frazy → SERP → luki → uzupełniające).
+	 * Treść stron (wersja 2): najpierw fragmenty i część stron konkurencji, potem wszystkie strony konkurencji, na końcu sekcje i nagłówki
+	 * strony projektu — strona docelowa jest ważniejsza niż strony konkurencji.
+	 */
 	private const REDUCTIONS = [
 		'discovery_3' => ['discovery' => 3],
 		'opportunities_3' => ['opportunities' => 3],
 		'content_gaps_2' => ['content_gaps' => 2],
 		'supplementary_0' => ['discovery' => 0, 'opportunities' => 0],
+		'competitor_excerpts_0' => ['competitor_excerpts' => 0, 'competitor_headings' => 4],
+		'competitor_pages_1' => ['competitor_pages' => 1],
 		'labs_gaps_5' => ['labs_gaps' => 5],
 		'serp_overlap_3' => ['serp_overlap' => 3],
 		'serp_results_5' => ['serp_results' => 5],
+		'competitor_pages_0' => ['competitor_pages' => 0],
+		'page_sections_3' => ['page_sections' => 3],
 		'keywords_8' => ['keywords' => 8],
 		'target_details' => ['votes' => 3, 'alternatives' => 2, 'rule_checks' => 4],
 		'gaps_minimal' => ['labs_gaps' => 2, 'content_gaps' => 0, 'serp_overlap' => 0],
+		'page_headings_12' => ['page_headings' => 12, 'page_sections' => 2],
 		'keywords_5' => ['keywords' => 5],
 	];
 
-	private const TEXT = ['keyword' => 120, 'label' => 160, 'title' => 160, 'url' => 300, 'domain' => 100, 'name' => 80];
+	private const TEXT = ['keyword' => 120, 'label' => 160, 'title' => 160, 'url' => 300, 'domain' => 100, 'name' => 80, 'description' => 300, 'heading' => 160, 'excerpt' => 500, 'competitor_excerpt' => 300];
 
 	/** Znaczenie braków danych (dla modelu i człowieka). */
 	public const DATA_GAPS = [
@@ -80,7 +95,13 @@ final class TopicContextAssembler
 		'target_unknown' => 'Target page is unknown — available signals are insufficient.',
 		'target_none_not_proof' => 'No known target page in available sources — NOT proof that such a page does not exist on the site.',
 		'target_conflict' => 'Several project pages compete for the topic (URL conflict signals).',
-		'page_content_not_fetched' => 'Page content (title, headings, text) was not fetched — do not assume what the page contains.',
+		'page_content_not_fetched' => 'The target page has no stored snapshot (not fetched yet) — do not assume what the page contains.',
+		'page_fetch_failed' => 'The last fetch of the target page failed (e.g. timeout, 403, 404, robots.txt) — NOT proof that the page does not exist.',
+		'page_content_incomplete' => 'The fetched HTML could not be read reliably (e.g. JavaScript rendering) — missing text is NOT proof the page lacks it.',
+		'page_content_partial' => 'Only part of the page content was extracted (no main landmark, thin or truncated text).',
+		'page_snapshot_stale' => 'The stored page snapshot is older than the freshness window.',
+		'competitor_pages_not_fetched' => 'No competitor pages from the SERP were fetched — competitor page content is unknown.',
+		'serp_and_page_dates_differ' => 'Competitor pages were fetched more than 7 days apart from the SERP measurement — they are different moments.',
 		'page_index_incomplete' => 'The project page index is incomplete (pages known only from GSC) — a page missing from it may still exist.',
 		'keywords_omitted' => 'Some topic keywords were omitted from the context (limits).',
 		'context_reduced' => 'Context was reduced to fit the size budget — see limits.omitted.',
@@ -125,11 +146,17 @@ final class TopicContextAssembler
 		'target_page.conflicts[].urls[]',
 		'target_page.possible_existing_page[].url',
 		'target_page.derived_signals[].url',
-		'target_page.page_content',
+		'target_page.page_content.url',
+		'target_page.page_content.final_url',
+		'evidence.competitor_pages.items[].url',
+		'evidence.competitor_pages.items[].domain',
 		'external_texts[].text',
 	];
 
 	private int $truncated = 0;
+
+	/** @var list<array{id: string, source: string, about: string, text: string}> */
+	private array $external = [];
 
 	/**
 	 * @param array{
@@ -139,7 +166,7 @@ final class TopicContextAssembler
 	 *   project: array{domain: string, market: ?string, gsc_window: mixed},
 	 *   market_as_of: array<string, array{volume: ?string, difficulty: ?string}>,
 	 *   page_index_complete: bool,
-	 *   page: ?PageSnapshot,
+	 *   pages?: array{project: ?array<string, mixed>, competitors: list<array<string, mixed>>, competitors_total: int}|null,
 	 *   now: DateTimeImmutable,
 	 *   topic_id: int,
 	 * } $source
@@ -174,6 +201,7 @@ final class TopicContextAssembler
 	private function compose(array $source, array $limits, array $applied): array
 	{
 		$this->truncated = 0;
+		$this->external = [];
 		$ctx = $source['context'];
 		$now = $source['now'];
 		$freshness = $source['freshness'];
@@ -215,10 +243,9 @@ final class TopicContextAssembler
 		$serpView = (array) ($source['serp'] ?? []);
 		$detail = is_array($serpView['detail'] ?? null) ? $serpView['detail'] : null;
 		$serpSection = null;
-		$external = [];
 
 		if ($detail !== null) {
-			[$serpSection, $serpRefs, $external, $serpOmitted] = $this->serp($detail, $serpView, $limits, $keywordRef);
+			[$serpSection, $serpRefs, $serpOmitted] = $this->serp($detail, $serpView, $limits, $keywordRef);
 			$refs += $serpRefs;
 			$omitted += $serpOmitted;
 		}
@@ -311,7 +338,10 @@ final class TopicContextAssembler
 		$alternatives = array_values(array_filter((array) ($target['alternatives'] ?? []), 'is_array'));
 		$omitted['votes'] = max(0, count($votes) - $limits['votes']);
 		$omitted['alternatives'] = max(0, count($alternatives) - $limits['alternatives']);
-		$page = $source['page'] ?? null;
+		// Treść stron (Page Intelligence — zapisane snapshoty projektu).
+		$pages = is_array($source['pages'] ?? null) ? $source['pages'] : ['project' => null, 'competitors' => [], 'competitors_total' => 0];
+		$projectPage = $this->projectPage(is_array($pages['project'] ?? null) ? $pages['project'] : null, $limits, $refs, $omitted);
+		$competitorPages = $this->competitorPages((array) ($pages['competitors'] ?? []), (int) ($pages['competitors_total'] ?? 0), $limits, $refs, $omitted, $keywordRef, $detail['checked_at'] ?? null);
 
 		// Braki danych (stała kolejność).
 		$gaps = [];
@@ -333,7 +363,13 @@ final class TopicContextAssembler
 			'target_unknown' => $state === 'unknown' || $state === null,
 			'target_none_not_proof' => $state === 'none',
 			'target_conflict' => $state === 'conflict' || $conflicts !== [],
-			'page_content_not_fetched' => $page === null,
+			'page_content_not_fetched' => ! $projectPage['available'] && ($projectPage['reason'] ?? null) !== 'fetch_failed',
+			'page_fetch_failed' => ($projectPage['reason'] ?? null) === 'fetch_failed',
+			'page_content_incomplete' => in_array($projectPage['content_quality'] ?? null, ['incomplete', 'empty'], true),
+			'page_content_partial' => ($projectPage['content_quality'] ?? null) === 'partial',
+			'page_snapshot_stale' => ($projectPage['provenance']['freshness'] ?? null) === 'stale',
+			'competitor_pages_not_fetched' => $detail !== null && $competitorPages['items'] === [],
+			'serp_and_page_dates_differ' => $competitorPages['dates_differ'],
 			'page_index_incomplete' => ($source['page_index_complete'] ?? false) !== true,
 			'keywords_omitted' => $omitted['keywords'] > 0,
 			'context_reduced' => $applied !== [],
@@ -342,7 +378,8 @@ final class TopicContextAssembler
 			'no_gsc_data' => 'gsc', 'gsc_window_incomplete' => 'gsc', 'gsc_no_impressions' => 'gsc', 'gsc_stale' => 'gsc', 'no_gsc_connection' => 'gsc',
 			'serp_stale' => 'serp', 'serp_expired' => 'serp', 'no_market_data' => 'market', 'market_data_partial' => 'market',
 			'target_unknown' => 'target', 'target_none_not_proof' => 'target', 'target_conflict' => 'target', 'page_content_not_fetched' => 'target',
-			'page_index_incomplete' => 'target',
+			'page_index_incomplete' => 'target', 'page_fetch_failed' => 'target', 'page_content_incomplete' => $projectPage['ref'] ?? 'target',
+			'page_content_partial' => $projectPage['ref'] ?? 'target', 'page_snapshot_stale' => $projectPage['ref'] ?? 'target',
 		];
 
 		foreach ($conditions as $code => $applies) {
@@ -466,6 +503,16 @@ final class TopicContextAssembler
 					'provenance' => ['source' => 'whack_a_mole_keyword_discovery', 'kind' => 'heuristic', 'based_on' => 'dataforseo_labs', 'reliability' => 'low', 'note' => 'visibility_gsc is not proof of absence.'],
 					'items' => $discovery,
 				],
+				'competitor_pages' => [
+					'provenance' => [
+						'source' => 'page_fetch',
+						'kind' => 'fact',
+						'reliability' => 'medium',
+						'note' => 'Extracted from fetched HTML without JavaScript rendering. serp.measured_at (SERP) and fetch.fetched_at (page) are different moments.',
+					],
+					'items' => $competitorPages['items'],
+					'linked_total' => $competitorPages['total'],
+				],
 			],
 			'target_page' => [
 				'ref' => 'target',
@@ -504,9 +551,9 @@ final class TopicContextAssembler
 					'source' => is_array($signal) ? ($signal['source'] ?? null) : null,
 				], array_slice(array_values((array) ($target['derived'] ?? [])), 0, 4)),
 				'page_index' => ['complete' => ($source['page_index_complete'] ?? false) === true, 'basis' => 'gsc_known_pages'],
-				'page_content' => $page instanceof PageSnapshot ? $page->toContext() : ['available' => false, 'reason' => 'not_fetched'],
+				'page_content' => $projectPage,
 			],
-			'external_texts' => $external,
+			'external_texts' => $this->external,
 			'data_gaps' => $gaps,
 			'refs' => array_keys($refs),
 			'limits' => [
@@ -575,14 +622,13 @@ final class TopicContextAssembler
 	 * @param array<string, mixed> $view
 	 * @param array<string, int> $limits
 	 * @param \Closure(mixed): ?string $keywordRef
-	 * @return array{0: array<string, mixed>, 1: array<string, true>, 2: list<array<string, mixed>>, 3: array<string, int>}
+	 * @return array{0: array<string, mixed>, 1: array<string, true>, 2: array<string, int>}
 	 */
 	private function serp(array $detail, array $view, array $limits, \Closure $keywordRef): array
 	{
 		$freshness = $detail['freshness'] ?? null;
 		$usable = in_array($freshness, ['fresh', 'stale'], true);
 		$refs = ['serp' => true];
-		$external = [];
 		$results = $usable ? array_values(array_filter((array) ($detail['results'] ?? []), 'is_array')) : [];
 		$top = [];
 
@@ -594,13 +640,7 @@ final class TopicContextAssembler
 			}
 
 			$refs[$ref] = true;
-			$titleRef = null;
-			$title = $this->text(is_string($result['title'] ?? null) ? $result['title'] : null, 'title');
-
-			if ($title !== null && $title !== '') {
-				$titleRef = 'txt:' . (count($external) + 1);
-				$external[] = ['id' => $titleRef, 'source' => 'serp_title', 'about' => $ref, 'text' => $title];
-			}
+			$titleRef = $this->external('serp_title', $ref, is_string($result['title'] ?? null) ? $result['title'] : null, 'title');
 
 			$top[] = [
 				'ref' => $ref,
@@ -681,7 +721,7 @@ final class TopicContextAssembler
 			'overlap_measured' => $view['measured'] ?? 0,
 		];
 
-		return [$section, $refs, $external, ['serp_results' => count($results) - count($top), 'serp_overlap' => count($overlapItems) - count($overlap)]];
+		return [$section, $refs, ['serp_results' => count($results) - count($top), 'serp_overlap' => count($overlapItems) - count($overlap)]];
 	}
 
 	/**
@@ -707,6 +747,159 @@ final class TopicContextAssembler
 		$omitted[$section] = count($items) - count($result);
 
 		return $result;
+	}
+
+	/**
+	 * Strona docelowa: treść z ostatniego zapisanego snapshotu (meta, nagłówki, sekcje — teksty w bloku niezaufanym) albo jawny brak.
+	 *
+	 * @param array<string, mixed>|null $page `PageIntelligenceService::topicEvidence()['project']`
+	 * @param array<string, int> $limits
+	 * @param array<string, true> $refs
+	 * @param array<string, int> $omitted
+	 * @return array<string, mixed>
+	 */
+	private function projectPage(?array $page, array $limits, array &$refs, array &$omitted): array
+	{
+		$snapshot = is_array($page['snapshot'] ?? null) ? $page['snapshot'] : null;
+
+		if ($snapshot === null) {
+			$failed = ($page['cache'] ?? null) === 'failed';
+
+			return [
+				'available' => false,
+				'reason' => $failed ? 'fetch_failed' : 'not_fetched',
+				'last_attempt' => $failed ? ['at' => $page['target']['last_attempt_at'] ?? null, 'error' => $page['target']['last_error'] ?? null, 'http_status' => $page['target']['last_http_status'] ?? null] : null,
+			];
+		}
+
+		$ref = 'page:' . $snapshot['id'];
+		$refs[$ref] = true;
+		$data = (array) ($snapshot['data'] ?? []);
+		$headings = array_values(array_filter((array) ($data['headings']['list'] ?? []), 'is_array'));
+		$sections = array_values(array_filter((array) ($data['content']['sections'] ?? []), static fn (mixed $section): bool => is_array($section) && trim((string) ($section['text'] ?? '')) !== ''));
+		$omitted['page_headings'] = max(0, count($headings) - $limits['page_headings']);
+		$omitted['page_sections'] = max(0, count($sections) - $limits['page_sections']);
+		$links = (array) ($data['links']['counts'] ?? []);
+
+		return [
+			'available' => true,
+			'ref' => $ref,
+			'provenance' => [
+				'source' => 'page_fetch',
+				'kind' => 'fact',
+				// Data pierwszego pobrania tej treści — ponowne potwierdzenie bez zmian (last_seen_at) nie zmienia dowodów ani odcisku.
+				'as_of' => $snapshot['fetched_at'] ?? null,
+				'freshness' => ($page['cache'] ?? null) === 'fresh' ? 'fresh' : 'stale',
+				'reliability' => match ($snapshot['content_quality'] ?? null) {
+					'good' => 'high',
+					'partial' => 'medium',
+					default => 'low',
+				},
+				'extractor_version' => $snapshot['extractor_version'] ?? null,
+				'note' => 'Extracted from fetched HTML without JavaScript rendering. Text not found here may still exist on the page.',
+			],
+			'url' => $this->text(is_string($page['url'] ?? null) ? $page['url'] : null, 'url'),
+			'final_url' => $this->text(is_string($snapshot['final_url'] ?? null) ? $snapshot['final_url'] : null, 'url'),
+			'http_status' => $snapshot['http_status'] ?? null,
+			'content_quality' => $snapshot['content_quality'] ?? null,
+			'quality_reasons' => array_values((array) ($data['quality']['reasons'] ?? [])),
+			'indexability_by_directives' => $snapshot['indexability'] ?? null,
+			'canonical_status' => $snapshot['canonical_status'] ?? null,
+			'lang' => $this->text(is_string($data['meta']['lang'] ?? null) ? $data['meta']['lang'] : null, 'name'),
+			'title_ref' => $this->external('page_title', $ref, is_string($data['meta']['title'] ?? null) ? $data['meta']['title'] : null, 'title'),
+			'description_ref' => $this->external('page_description', $ref, is_string($data['meta']['description'] ?? null) ? $data['meta']['description'] : null, 'description'),
+			'h1_count' => $data['headings']['counts']['h1'] ?? null,
+			'headings_total' => $data['headings']['total'] ?? count($headings),
+			'headings' => array_map(fn (array $heading): array => [
+				'level' => $heading['level'] ?? null,
+				'in_main' => $heading['in_main'] ?? null,
+				'text_ref' => $this->external('page_heading', $ref, is_string($heading['text'] ?? null) ? $heading['text'] : null, 'heading'),
+			], array_slice($headings, 0, $limits['page_headings'])),
+			'word_count' => $snapshot['word_count'] ?? null,
+			'main_source' => $data['content']['source'] ?? null,
+			'sections' => array_map(fn (array $section): array => [
+				'level' => $section['level'] ?? null,
+				'heading_ref' => $this->external('page_heading', $ref, is_string($section['heading'] ?? null) ? $section['heading'] : null, 'heading'),
+				'words' => $section['words'] ?? null,
+				'excerpt_ref' => $this->external('page_excerpt', $ref, is_string($section['text'] ?? null) ? $section['text'] : null, 'excerpt'),
+			], array_slice($sections, 0, $limits['page_sections'])),
+			'links' => ['internal' => $links['internal'] ?? null, 'external' => $links['external'] ?? null, 'in_main' => $links['in_main'] ?? null],
+			'limitations' => array_values((array) ($data['limits']['truncated'] ?? [])),
+		];
+	}
+
+	/**
+	 * Strony konkurencji powiązane z wynikami SERP fraz tematu (zapisane snapshoty): pozycja i data pomiaru SERP osobno od daty pobrania.
+	 *
+	 * @param list<mixed> $pages
+	 * @param array<string, int> $limits
+	 * @param array<string, true> $refs
+	 * @param array<string, int> $omitted
+	 * @param \Closure(mixed): ?string $keywordRef
+	 * @return array{items: list<array<string, mixed>>, total: int, dates_differ: bool}
+	 */
+	private function competitorPages(array $pages, int $total, array $limits, array &$refs, array &$omitted, \Closure $keywordRef, ?string $serpCheckedAt): array
+	{
+		$pages = array_values(array_filter($pages, 'is_array'));
+		$items = [];
+		$differ = false;
+
+		foreach (array_slice($pages, 0, $limits['competitor_pages']) as $page) {
+			$snapshot = is_array($page['snapshot'] ?? null) ? $page['snapshot'] : null;
+			$data = (array) ($snapshot['data'] ?? []);
+			$ref = $snapshot === null ? 'cpage:' . (string) ($page['target']['id'] ?? count($items)) : 'cpage:' . $snapshot['id'];
+			$refs[$ref] = true;
+			$measuredAt = $page['serp']['checked_at'] ?? $serpCheckedAt;
+			$fetchedAt = $snapshot['fetched_at'] ?? null;
+
+			if (is_string($measuredAt) && is_string($fetchedAt) && abs((int) strtotime($measuredAt . ' UTC') - (int) strtotime($fetchedAt . ' UTC')) > 7 * 86400) {
+				$differ = true;
+			}
+
+			$headings = array_values(array_filter((array) ($data['headings']['list'] ?? []), static fn (mixed $heading): bool => is_array($heading) && (int) ($heading['level'] ?? 9) <= 3));
+			$section = array_values(array_filter((array) ($data['content']['sections'] ?? []), static fn (mixed $item): bool => is_array($item) && trim((string) ($item['text'] ?? '')) !== ''))[0] ?? null;
+			$items[] = [
+				'ref' => $ref,
+				'url' => $this->text(is_string($page['url'] ?? null) ? $page['url'] : null, 'url'),
+				'domain' => $this->text(is_string($page['target']['host'] ?? null) ? $page['target']['host'] : null, 'domain'),
+				'serp' => ['keyword_ref' => $keywordRef($page['serp']['keyword_id'] ?? null), 'serp_rank_group' => $page['serp']['rank_group'] ?? null, 'measured_at' => $measuredAt],
+				'fetch' => $snapshot === null ? ['available' => false, 'reason' => ($page['cache'] ?? null) === 'failed' ? 'fetch_failed' : 'not_fetched', 'error' => $page['target']['last_error'] ?? null] : [
+					'available' => true,
+					'fetched_at' => $fetchedAt,
+					'freshness' => ($page['cache'] ?? null) === 'fresh' ? 'fresh' : 'stale',
+					'http_status' => $snapshot['http_status'] ?? null,
+					'content_quality' => $snapshot['content_quality'] ?? null,
+					'indexability_by_directives' => $snapshot['indexability'] ?? null,
+					'word_count' => $snapshot['word_count'] ?? null,
+					'h1_count' => $data['headings']['counts']['h1'] ?? null,
+				],
+				'title_ref' => $this->external('competitor_title', $ref, is_string($data['meta']['title'] ?? null) ? $data['meta']['title'] : null, 'title'),
+				'headings' => array_map(fn (array $heading): array => [
+					'level' => $heading['level'] ?? null,
+					'text_ref' => $this->external('competitor_heading', $ref, is_string($heading['text'] ?? null) ? $heading['text'] : null, 'heading'),
+				], array_slice($headings, 0, $limits['competitor_headings'])),
+				'excerpt_ref' => $limits['competitor_excerpts'] > 0 && $section !== null ? $this->external('competitor_excerpt', $ref, (string) $section['text'], 'competitor_excerpt') : null,
+			];
+		}
+
+		$omitted['competitor_pages'] = max(0, max($total, count($pages)) - count($items));
+
+		return ['items' => $items, 'total' => max($total, count($pages)), 'dates_differ' => $differ];
+	}
+
+	/** Tekst zewnętrzny do bloku niezaufanego — zwraca jego identyfikator (`txt:N`) albo null dla pustego. */
+	private function external(string $source, string $about, ?string $value, string $kind): ?string
+	{
+		$text = $this->text($value, $kind);
+
+		if ($text === null || $text === '') {
+			return null;
+		}
+
+		$id = 'txt:' . (count($this->external) + 1);
+		$this->external[] = ['id' => $id, 'source' => $source, 'about' => $about, 'text' => $text];
+
+		return $id;
 	}
 
 	private function text(?string $value, string $kind): ?string

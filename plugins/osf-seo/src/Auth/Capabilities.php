@@ -52,6 +52,12 @@ final class Capabilities
 	public const MANAGE_AI = 'osf_seo_manage_ai';
 
 	/**
+	 * Page Intelligence (STEP 17, faza B): pobieranie publicznych stron projektu i wyników organicznych SERP (zewnętrzne żądania HTTP),
+	 * ponowne pobranie, usuwanie zapisanych treści — wyłącznie administratorzy; odczyt zapisanych snapshotów — dostęp do projektu (D96).
+	 */
+	public const MANAGE_PAGE_INTELLIGENCE = 'osf_seo_manage_page_intelligence';
+
+	/**
 	 * @return list<string>
 	 */
 	public static function all(): array
@@ -70,6 +76,7 @@ final class Capabilities
 			self::MANAGE_KEYWORD_GAP,
 			self::MANAGE_STRATEGY,
 			self::MANAGE_AI,
+			self::MANAGE_PAGE_INTELLIGENCE,
 		];
 	}
 }

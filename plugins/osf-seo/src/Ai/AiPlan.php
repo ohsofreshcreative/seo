@@ -56,6 +56,7 @@ final class AiPlan
 				'version' => $this->context->body['context_version'] ?? null,
 				'topic' => $this->context->topicPublicId,
 				'fingerprint' => $this->context->fingerprint(),
+				'evidence_fingerprint' => $this->context->evidenceFingerprint(),
 				'evidence_hash' => $this->context->evidenceHash(),
 				'bytes' => $this->context->bytes(),
 				'refs' => count($this->context->refs()),

@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace OsfSeo\Ai\Context;
 
-use OsfSeo\Ai\Page\PageContentSource;
 use OsfSeo\Auth\ProjectContext;
 use OsfSeo\Database\Connection;
 use OsfSeo\Strategy\StrategyNotFound;
@@ -15,7 +14,8 @@ use OsfSeo\Support\Clock;
 /**
  * Źródła kontekstu AI tematu: wyłącznie istniejące odczyty Strategii w obrębie projektu (`StrategyService::topicView` — pakiet
  * kontekstu STEP 16, SERP Intelligence tematu, aktualność źródeł; `panelState` — rynek i okno GSC), daty pobrania metryk rynkowych
- * fraz tematu i zapisana treść strony (faza A: brak). Bez zapisu, bez żadnego żądania do API i bez równoległej logiki Strategii.
+ * fraz tematu i zapisane snapshoty stron (Page Intelligence, faza B — strona docelowa i strony konkurencji z SERP-u fraz tematu).
+ * Bez zapisu, bez żadnego żądania (także bez pobierania stron) i bez równoległej logiki Strategii.
  */
 final class AiTopicContextBuilder
 {
@@ -23,7 +23,7 @@ final class AiTopicContextBuilder
 		private readonly StrategyService $strategy,
 		private readonly Connection $db,
 		private readonly ProjectPageIndex $pages,
-		private readonly PageContentSource $pageContent,
+		private readonly PageEvidenceSource $pageEvidence,
 		private readonly Clock $clock,
 		private readonly TopicContextAssembler $assembler = new TopicContextAssembler(),
 	) {
@@ -37,7 +37,6 @@ final class AiTopicContextBuilder
 		$view = $this->strategy->topicView($context, $topic);
 		$state = $this->strategy->panelState($context);
 		$members = (array) $view['members'];
-		$targetUrl = $view['context']['target']['url'] ?? null;
 
 		return $this->assembler->assemble([
 			'context' => $view['context'],
@@ -50,7 +49,7 @@ final class AiTopicContextBuilder
 			],
 			'market_as_of' => $this->marketDates($members),
 			'page_index_complete' => $this->pages->complete(),
-			'page' => is_string($targetUrl) && $targetUrl !== '' ? $this->pageContent->snapshot($context, $targetUrl) : null,
+			'pages' => $this->pageEvidence->forTopic($context, $view['topic'], $members),
 			'now' => $this->clock->now(),
 			'topic_id' => $view['topic']->id,
 		]);

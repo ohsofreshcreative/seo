@@ -7,6 +7,7 @@ namespace OsfSeo\Tests\Support;
 use DateTimeImmutable;
 use DateTimeZone;
 use OsfSeo\Ai\Provider\FakeProvider;
+use OsfSeo\PageIntelligence\Extract\HtmlExtractor;
 
 /**
  * Syntetyczne dane testów AI (STEP 17): źródło kontekstu tematu w kształcie pakietu STEP 16, odpowiedzi Responses API i klucz API
@@ -128,10 +129,81 @@ final class AiFakes
 				self::MEMBER => ['volume' => '2026-01-04 10:00:00', 'difficulty' => null],
 			],
 			'page_index_complete' => false,
-			'page' => null,
+			'pages' => null,
 			'now' => new DateTimeImmutable('2026-01-15 12:00:00', new DateTimeZone('UTC')),
 			'topic_id' => 7,
 		], $source);
+	}
+
+	/** Syntetyczny HTML strony usługi (treść w `<main>`, nawigacja i stopka do odrzucenia). */
+	public static function pageHtml(string $title = 'Pozycjonowanie stron — Example', string $h1 = 'Pozycjonowanie stron internetowych', int $sections = 3): string
+	{
+		$body = '';
+
+		for ($i = 1; $i <= $sections; $i++) {
+			$body .= '<h2>Etap ' . $i . ' współpracy</h2><p>' . str_repeat('Opis etapu ' . $i . ' pozycjonowania stron z analizą fraz i treści. ', 8) . '</p>';
+		}
+
+		return '<!doctype html><html lang="pl"><head><meta charset="utf-8"><title>' . $title . '</title>'
+			. '<meta name="description" content="Pozycjonowanie stron dla firm — audyt, treści i linki."><link rel="canonical" href="https://example.pl/pozycjonowanie/">'
+			. '</head><body><nav><a href="/">Start</a><a href="/kontakt/">Kontakt</a></nav><main><h1>' . $h1 . '</h1>'
+			. '<p>' . str_repeat('Pozycjonowanie stron to długofalowa praca nad widocznością witryny w wynikach wyszukiwania. ', 4) . '</p>'
+			. $body . '<p><a href="/audyt/">Audyt SEO</a> <a href="https://zewnetrzny.example/poradnik">Poradnik</a></p></main>'
+			. '<footer>Stopka © Example</footer></body></html>';
+	}
+
+	/**
+	 * Dowód strony w kształcie `PageIntelligenceService::topicEvidence` (snapshot z prawdziwego ekstraktora).
+	 *
+	 * @param array<string, mixed> $snapshot nadpisania pól snapshotu
+	 * @return array<string, mixed>
+	 */
+	public static function pageEvidence(string $url = 'https://example.pl/pozycjonowanie/', ?string $html = null, string $cache = 'fresh', array $snapshot = [], string $id = '01M4BRH0000000000000000001', string $fetchedAt = '2026-01-14 10:00:00'): array
+	{
+		$extraction = (new HtmlExtractor())->extract($html ?? self::pageHtml(), $url, 'utf-8', []);
+		$host = (string) parse_url($url, PHP_URL_HOST);
+
+		return [
+			'url' => $url,
+			'target' => ['id' => '01M4BRH1000000000000000001', 'url' => $url, 'host' => $host, 'kind' => 'project', 'source' => 'topic', 'status' => 'ok', 'last_attempt_at' => $fetchedAt, 'last_success_at' => $fetchedAt, 'last_error' => null, 'last_http_status' => 200, 'final_url' => $url],
+			'snapshot' => array_merge([
+				'id' => $id,
+				'fetched_at' => $fetchedAt,
+				'last_seen_at' => $fetchedAt,
+				'http_status' => 200,
+				'content_type' => 'text/html',
+				'final_url' => $url,
+				'bytes' => strlen($html ?? self::pageHtml()),
+				'fetch_ms' => 120,
+				'content_hash' => $extraction->contentHash(),
+				'extractor_version' => HtmlExtractor::VERSION,
+				'title' => $extraction->title(),
+				'word_count' => $extraction->content['word_count'],
+				'content_quality' => $extraction->quality['level'],
+				'indexability' => $extraction->technical['indexability'],
+				'canonical_status' => $extraction->technical['canonical_status'],
+				'data' => $extraction->toArray(),
+			], $snapshot),
+			'cache' => $cache,
+		];
+	}
+
+	/**
+	 * Strona projektu i strony konkurencji z SERP (kształt `topicEvidence`).
+	 *
+	 * @return array{project: ?array<string, mixed>, competitors: list<array<string, mixed>>, competitors_total: int}
+	 */
+	public static function pages(?array $project = null, int $competitors = 2, string $competitorFetchedAt = '2026-01-11 09:00:00'): array
+	{
+		$items = [];
+
+		for ($rank = 1; $rank <= $competitors; $rank++) {
+			$url = 'https://wynik-' . $rank . '.example/seo/';
+			$items[] = self::pageEvidence($url, self::pageHtml('Wynik ' . $rank . ' — oferta', 'Oferta SEO ' . $rank, 2), 'fresh', [], sprintf('01M4BRH20000000000000000%02d', $rank), $competitorFetchedAt)
+				+ ['serp' => ['keyword_id' => self::LEADER, 'rank_group' => $rank, 'checked_at' => '2026-01-10 18:02:30']];
+		}
+
+		return ['project' => $project ?? self::pageEvidence(), 'competitors' => $items, 'competitors_total' => $competitors];
 	}
 
 	/**
