@@ -222,6 +222,23 @@ Motyw powstał z marketingowego motywu `h2otwock` i wciąż zawiera jego kod: bl
   treści = nowa wersja); dowody i treści zewnętrzne w osobnych blokach JSON (escapowane `<`, `>`); odpowiedź zapisywana jako wynik wyłącznie po
   `OutputValidator` (odwołania tylko z `refs` kontekstu, `evidence` z odwołaniem, bez prognoz liczbowych i obietnic) — inaczej `invalid`.
   Historia (`ai_runs` + `ai_run_payloads`, M0015) nigdy nie zmienia Strategii ani statusu pracy; decyzja użytkownika osobno od wyniku.
+- Rekomendacje AI i briefy SEO (STEP 17 faza C, `src/Ai/Analysis`, `docs/ARCHITECTURE.md` sekcja 24): trzy typy (`page_optimization`,
+  `new_page_brief` — zawsze „Kandydat na nową stronę”, `content_gap`) na **tej samej ścieżce wykonania i budżecie** co analiza tematu
+  (`AiAnalysisService::generate` → wspólne `execute`; typ w `ai_runs.task`) — bez drugiego systemu budżetowego, drugiego silnika Strategii i nowego
+  fetchera. Każda zmiana musi zachować: zgodność z działaniem Strategii wyłącznie przez `ActionCompatibility` (`allowed` / `explicit` / `blocked`,
+  AI nigdy nie zmienia działania ani statusu pracy — niezgodność tylko jako ustalenie); gotowość (`ReadinessEvaluator`, czysta funkcja zapisanego
+  źródła) — INSUFFICIENT / BLOCKED bez żadnego wywołania, PARTIAL z obowiązkiem ujawnienia ograniczeń, brakujące dane tylko jako wskazówki komend
+  (nigdy automatyczne `pages:fetch`, SERP ani DataForSEO); kontekst v3 tylko dla tych typów (v2 analizy tematu bez zmian), bez diagnostyki parsera
+  i stosunku tekstu do HTML, etykiety interfejsu i sekcje bez treści (`thin_section`) poza porównaniami, kolejność redukcji typu (luka treści nigdy
+  bez stron konkurencji); instrukcje `AnalysisPrompts` wersjonowane per typ (zmiana treści = nowa wersja), język z projektu; wynik wyłącznie po
+  `RecommendationValidator` (kontrakt v2: odwołania tylko z kontekstu, `fact` nie z samych heurystyk, brak treści nigdy faktem, bez prognoz,
+  obietnic, „Google wymaga”, celów liczby słów, kopiowania treści konkurencji, keyword stuffingu, przekierowań / canonical / noindex / usuwania
+  bez kontroli ręcznej, Content Score) — inaczej `invalid`; płatne generowanie tylko z potwierdzeniem **i** zatwierdzonym odciskiem planu
+  (`AiPlan::fingerprint`, ponowna weryfikacja przy wykonaniu → `plan_changed`), blokada zlecenia projekt × temat × typ (`run_in_progress`),
+  duplikat planu → `already_generated` (chyba że `--repeat`), bez automatycznych ponowień i „naprawiania” JSON-a. Historia: M0017
+  (`plan_fingerprint`, `readiness`, `sources`), aktualność wyniku przez odcisk dowodów (wynik nieaktualny tylko oznaczany). Nie zmieniaj reguł
+  walidatora ani progów etykiet interfejsu bez kalibracji na prawdziwych wynikach. Testy bez prawdziwego klucza (`FakeProvider`, atrapa HTTP);
+  fixture'y w stylu realnego testu OhSoFresh tylko syntetyczne (`AiFakes::ohSoFreshHtml`) — nie pobieraj prawdziwej strony.
 - Page Intelligence (STEP 17 faza B, `src/PageIntelligence`, `docs/ARCHITECTURE.md` sekcja 23): **żądania do stron wyłącznie z
   `PageIntelligenceService::fetch`** (jawnie, `osf_seo_manage_page_intelligence` — tylko administratorzy; klient tylko odczytuje) — nigdy przy
   renderowaniu, odczycie tematu, przeliczeniu Strategii, budowaniu kontekstu AI ani w kroku w tle (tło: tylko retencja, D101). Transport wyłącznie
@@ -429,7 +446,11 @@ wp osf-seo ai:status [--format=json]                                  # konfigur
 wp osf-seo ai:context|validate-context --project=<id> --topic=…        # kontekst AI tematu (JSON) / walidacja: determinizm, rozmiar, braki danych (bez API)
 wp osf-seo ai:plan --project=<id> --topic=… [--provider=fake|openai] [--focus="…"]   # plan: tokeny, koszt maks., budżet, blokady — zero żądań
 wp osf-seo ai:run --project=<id> --topic=… [--provider=fake]           # domyślnie dostawca testowy (koszt 0); --provider=openai PŁATNE — tylko na polecenie użytkownika
-wp osf-seo ai:runs|show|decide|delete --project=<id> [--run=<id>] …    # historia, wynik i walidacja (--payload), decyzja użytkownika, usunięcie
+wp osf-seo ai:runs|show|decide|delete --project=<id> [--run=<id>] …    # historia, wynik i walidacja (--payload), decyzja użytkownika, usunięcie; ai:runs --check-stale — aktualność wyników
+wp osf-seo ai:analysis-types [--format=json]                          # typy analiz rekomendacji, wersje instrukcji, zgodność z działaniami Strategii
+wp osf-seo ai:readiness --project=<id> --topic=… --type=page-optimization|new-page-brief|content-gap [--explicit]   # gotowość z zapisanych danych — zero żądań
+wp osf-seo ai:plan --project=<id> --topic=… --type=… [--provider=…] [--explicit]   # plan analizy rekomendacji z odciskiem planu (zero żądań); ai:context --type=… — kontekst v3
+wp osf-seo ai:generate --project=<id> --topic=… --type=… [--provider=fake] [--explicit] [--plan=<odcisk>] [--yes] [--repeat]   # domyślnie dostawca testowy; płatny — tylko na polecenie użytkownika, z zatwierdzonym planem
 wp osf-seo ai:budget [--project=<id>]                                  # budżet AI (oddzielny od DataForSEO)
 wp osf-seo ai:purge                                                    # porządki bez wywołań AI: porzucone uruchomienia, retencja historii
 wp osf-seo pages:status|list --project=<id> [--format=json]           # Page Intelligence: konfiguracja, transport, strony i stan pamięci (bez HTTP)
@@ -442,6 +463,7 @@ composer test:performance       # benchmark raportów + EXPLAIN na syntetycznych
 composer test:performance:serp  # benchmark pozycji SERP (100 projektów × 500 fraz, TOP100, historia, 2500 fraz) + EXPLAIN (OSOBNA baza)
 composer test:performance:gap   # benchmark Luk SEO (40 zbiorów × 10 000 fraz, 20 projektów, import 10 000 fraz atrapą HTTP) + EXPLAIN (OSOBNA baza)
 composer test:performance:strategy  # benchmark Strategii (100 / 1 000 / 5 000 fraz + 10 projektów, przebiegi bez zmian, krok w tle) (OSOBNA baza)
+composer test:performance:ai    # benchmark analiz rekomendacji: kontekst, gotowość, walidacja (A–C bez bazy) + historia 10 000 analiz (D, OSOBNA baza); --no-db
 ```
 
 Testy integracyjne czyszczą i usuwają tabele — **nigdy nie wskazuj bazy strony**. Zmienne:

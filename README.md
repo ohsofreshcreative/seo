@@ -33,7 +33,10 @@ dostawca danych rynkowych (wolumen, historia wolumenu, CPC, konkurencja Ads, tru
 > danych, wersjonowane instrukcje, kontrakt odpowiedzi z walidacją w PHP, oddzielny budżet AI z rezerwacją, historia uruchomień i CLI; płatne
 > wywołania domyślnie wyłączone) i faza B — **Page Intelligence** (jawne, bezpieczne pobieranie stron projektu i wybranych wyników SERP:
 > transport z przypięciem zweryfikowanego IP, robots.txt i limity hosta, ekstrakcja HTML bez JavaScriptu, snapshoty w obrębie projektu z cache
-> i retencją, treść stron w kontekście AI jako dane niezaufane; bez crawlera i bez UI). Plan i postęp: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
+> i retencją, treść stron w kontekście AI jako dane niezaufane; bez crawlera i bez UI) i faza C — **Rekomendacje AI i briefy SEO** (optymalizacja
+> istniejącej strony, brief kandydata na nową stronę, luki treści względem konkurencji: zgodność z działaniem Strategii, gotowość z zapisanych
+> danych bez żadnych żądań, kontekst v3, wersjonowane instrukcje, kontrakt v2 z walidacją dowodów i reguł jakości, zatwierdzany odcisk planu,
+> blokada równoległych zleceń, historia z wykrywaniem nieaktualnych wyników; CLI, bez UI). Plan i postęp: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 >
 > **Repozytorium jest publiczne.** Nie commituj żadnych sekretów (sekcja „Konfiguracja”).
 
@@ -138,6 +141,7 @@ OSF_SEO_TEST_DB_HOST="localhost:/ścieżka/do/mysqld.sock" composer test:integra
 composer test:performance
 composer test:performance:serp   # pozycje SERP
 composer test:performance:gap    # Luki SEO (import atrapą HTTP, bez żadnego żądania do DataForSEO)
+composer test:performance:ai     # analizy rekomendacji AI (dostawca testowy, bez sieci; --no-db = tylko kontekst i walidacja)
 
 # stan pluginu w WordPressie
 wp osf-seo status
@@ -217,6 +221,13 @@ wp osf-seo ai:plan --project=<public_id> --topic="fraza" [--provider=openai]   #
 wp osf-seo ai:run --project=<public_id> --topic="fraza"          # dostawca testowy; --provider=openai — PŁATNE, tylko po konfiguracji i z potwierdzeniem
 wp osf-seo ai:runs|show|decide|delete --project=<public_id> …    # historia, wynik z walidacją, decyzja użytkownika, usunięcie
 wp osf-seo ai:budget [--project=<public_id>]                     # budżet AI (oddzielny od DataForSEO); ai:purge — porządki bez wywołań AI
+
+# Rekomendacje AI i briefy SEO (STEP 17, faza C — szczegóły: docs/ARCHITECTURE.md, sekcja 24)
+wp osf-seo ai:analysis-types                                     # typy analiz i zgodność z działaniami Strategii
+wp osf-seo ai:readiness --project=<public_id> --topic="fraza" --type=page-optimization   # READY / PARTIAL / INSUFFICIENT / BLOCKED (zero żądań)
+wp osf-seo ai:plan --project=<public_id> --topic="fraza" --type=content-gap   # gotowość, koszt maks., blokady, odcisk planu (zero żądań)
+wp osf-seo ai:generate --project=<public_id> --topic="fraza" --type=new-page-brief [--explicit]   # dostawca testowy (koszt 0); płatny: --provider=openai + zatwierdzony plan
+wp osf-seo ai:show --project=<public_id> --run=<id>              # wynik, walidacja, źródła i aktualność; ai:runs --check-stale — aktualność historii
 
 # Page Intelligence (STEP 17, faza B — pobieranie wyłącznie jawne; szczegóły: docs/ARCHITECTURE.md, sekcja 23)
 wp osf-seo pages:status --project=<public_id>                    # konfiguracja, transport, liczniki (bez HTTP)

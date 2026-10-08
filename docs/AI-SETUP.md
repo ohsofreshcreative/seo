@@ -89,6 +89,18 @@ wp osf-seo ai:budget --project=<id>                                        # wyd
 Porównaj koszt z historii (`charged`) z panelem rozliczeń dostawcy. Wynik niepewny (`uncertain` — np. timeout) liczy się do limitów pełną
 rezerwacją i **nie jest ponawiany** automatycznie.
 
+Analizy rekomendacji (faza C — optymalizacja strony, brief kandydata, luki treści; `docs/ARCHITECTURE.md`, sekcja 24) zatwierdzają **dokładny plan**:
+
+```
+wp osf-seo ai:readiness --project=<id> --topic="<fraza>" --type=page-optimization          # gotowość z zapisanych danych (zero żądań)
+wp osf-seo ai:plan --project=<id> --topic="<fraza>" --type=page-optimization --provider=openai   # koszt maks., blokady i odcisk planu
+wp osf-seo ai:generate --project=<id> --topic="<fraza>" --type=page-optimization --provider=openai   # pyta o potwierdzenie tego planu
+wp osf-seo ai:generate … --provider=openai --yes --plan=<odcisk planu z ai:plan>           # bez pytania — tylko z odciskiem zatwierdzonego planu
+```
+
+Zmiana kontekstu (np. nowy snapshot strony), modelu, cen albo limitu tokenów po podglądzie → odmowa `plan_changed` (trzeba ponownie
+obejrzeć plan). Gotowość `insufficient` / `blocked` → odmowa bez żadnego wywołania.
+
 ## 6. Wyłączenie
 
 Usuń albo ustaw na `0` stałą `OSF_SEO_AI_ENABLED` — płatne wywołania są natychmiast blokowane (historia zostaje). Klucz można usunąć
