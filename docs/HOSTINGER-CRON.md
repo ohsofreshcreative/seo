@@ -14,6 +14,8 @@ Jedno wywołanie co minutę wykonuje kolejno:
 1. kolejkę synchronizacji Google Search Console (import danych),
 2. kroki po kolejce: przeliczenie Szans SEO, dane rynkowe, Nowe frazy, Luki SEO, Pozycje SERP,
 3. **przeliczenie Strategii** — zlecenia z panelu („Zleć przeliczenie”) i automatyczne przeliczenie po zmianie danych modułów.
+4. porządki historii analiz AI (odzyskanie przerwanych uruchomień, retencja) — **bez żadnego wywołania AI**; analizy AI uruchamia się wyłącznie
+   jawnie (`docs/AI-SETUP.md`).
 
 Przeliczenie Strategii jest lokalne: bez kosztów i bez żądań do API. Kroki płatne (DataForSEO) wykonują wyłącznie to, co zostało jawnie zlecone
 albo włączone w panelu (harmonogramy są domyślnie wyłączone), zawsze w ramach limitów kosztów (1 USD dziennie, 10 USD miesięcznie) — cron

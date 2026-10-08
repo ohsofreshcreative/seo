@@ -45,11 +45,11 @@ i aktualizuj przy zmianie decyzji.
 ## 2. Repozytorium jest PUBLICZNE — sekrety
 
 - Żaden sekret nie może trafić do kodu, testów, fixture'ów, dokumentacji, commitów ani logów:
-  Google Client ID/Secret, klucz szyfrujący, tokeny OAuth (access/refresh), login i hasło API DataForSEO,
+  Google Client ID/Secret, klucz szyfrujący, tokeny OAuth (access/refresh), login i hasło API DataForSEO, klucze API dostawców AI (OpenAI),
   hasła, dane dostępowe Hostingera, klucze SSH, dane dostępowe do bazy.
 - Sekrety konfigurujemy wyłącznie przez stałe w `wp-config.php` lub zmienne środowiskowe
   (np. `OSF_SEO_GOOGLE_CLIENT_ID`, `OSF_SEO_GOOGLE_CLIENT_SECRET`, `OSF_SEO_ENCRYPTION_KEY`,
-  `OSF_SEO_DATAFORSEO_LOGIN`, `OSF_SEO_DATAFORSEO_PASSWORD`).
+  `OSF_SEO_DATAFORSEO_LOGIN`, `OSF_SEO_DATAFORSEO_PASSWORD`, `OSF_SEO_OPENAI_API_KEY`).
 - Danych logowania DataForSEO nie proś w rozmowie, nie wypisuj, nie zapisuj w bazie ani repo, nie wysyłaj do JS/HTML;
   w testach i CI wyłącznie syntetyczne wartości (`tests/Support/DataForSeoFakes`) i atrapa HTTP — nigdy prawdziwe API.
 - Przykłady tylko z placeholderami: `OSF_SEO_GOOGLE_CLIENT_ID=your-client-id`.
@@ -205,6 +205,23 @@ Motyw powstał z marketingowego motywu `h2otwock` i wciąż zawiera jego kod: bl
   (stabilny klucz 120 s, brak oczekujących zadań GSC, maks. 60 min) — nie przeliczaj po każdym zapisie importu i nie dopuść do cyklu przeliczenie →
   unieważnienie → przeliczenie (przeliczenie nie zmienia klucza danych). Projekt w tle wyłącznie przez `ProjectGuard::authorizeSystem` z identyfikatora
   zapisanego w bazie. Panel: statusy z `panelState()['job']`, endpoint `GET /strategy/status`, klient bez kodu błędu i stanu kroku w tle.
+- Analizy AI (STEP 17, `src/Ai`, `docs/ARCHITECTURE.md` sekcja 22): **wywołanie modelu wyłącznie z `AiAnalysisService::run`** (jawnie: CLI,
+  w przyszłości akcja w panelu po potwierdzeniu) — nigdy przy renderowaniu panelu, przeliczeniu Strategii, synchronizacji GSC ani w kroku w tle
+  (krok w tle `AiAnalysisService::maintenance` tylko porządkuje historię). Dostawcy wyłącznie za `OsfSeo\Ai\Provider\AiProvider` (adapter = transport
+  i format; `FakeProvider` koszt 0, `OpenAiProvider` — Responses API, `store: false`, `strict` JSON Schema, bez ponowień); nowe płatne API AI
+  tylko z decyzją. Każda zmiana musi zachować: wyłącznik domyślnie wyłączony, **brak modelu i cen w kodzie** (tylko `OSF_SEO_AI_*`; bez cen →
+  odmowa), budżet AI oddzielny od DataForSEO (limity DataForSEO bez zmian) z limitami domyślnie 0, rezerwację kosztu maksymalnego pod
+  `GET_LOCK ai_budget` przed wywołaniem, rozliczenie z `usage`, wynik niepewny = cała rezerwacja, potwierdzenie płatnego uruchomienia,
+  uprawnienie `osf_seo_manage_ai` (tylko administratorzy). Klucz `OSF_SEO_OPENAI_API_KEY` czytany w chwili żądania — nigdy w polu obiektu, bazie,
+  logach, wyjątkach, HTML, JS ani odpowiedziach; bez formularza z jawnym sekretem; w testach tylko `AiFakes::apiKey()` i atrapa HTTP.
+  Kontekst (`TopicContextAssembler`, wersja 1) wyłącznie z pakietu kontekstu STEP 16 i odczytów Strategii w obrębie `ProjectContext` — bez nowej
+  logiki Strategii, notatek, użytkowników i innych projektów; pozycje rozdzielone (`average_position_gsc`, `serp_rank_group`, `rank_labs`),
+  proweniencja sekcji, jawne braki danych (treść strony niepobrana, indeks stron niepełny — „brak znanej strony” ≠ brak strony), budżet 32 KB
+  z redukcją całych elementów (JSON nigdy nie ucinany), odcisk bez czasu budowania. Instrukcje wersjonowane (`PromptTemplate::VERSION` — zmiana
+  treści = nowa wersja); dowody i treści zewnętrzne w osobnych blokach JSON (escapowane `<`, `>`); odpowiedź zapisywana jako wynik wyłącznie po
+  `OutputValidator` (odwołania tylko z `refs` kontekstu, `evidence` z odwołaniem, bez prognoz liczbowych i obietnic) — inaczej `invalid`.
+  Historia (`ai_runs` + `ai_run_payloads`, M0015) nigdy nie zmienia Strategii ani statusu pracy; decyzja użytkownika osobno od wyniku.
+  Page Intelligence: w fazie A bez pobierania stron — przyszłe pobieranie tylko przez `UrlSafetyPolicy` (SSRF) i `PageContentSource`.
 - `$wpdb` traktuje tabelę z kolumnami ascii i utf8mb4 bez kolumny binarnej jako ASCII i odrzuca zapytania z polskimi znakami
   („contains invalid data”) — w nowych tabelach z tekstem użytkownika daj co najmniej jedną kolumnę `*_bin` / binarną albo zapisuj
   tekst przez `insert()`/`update()`. Frazy liczbowe („2024”) jako klucze tablic PHP stają się int — rzutuj na `(string)`.
@@ -393,6 +410,13 @@ wp osf-seo strategy:set-status --project=<id> --topic=… --status=… [--note=�
 wp osf-seo strategy:set-target --project=<id> --topic=… (--target-url=… | --confirm-missing | --clear)   # ręczna strona docelowa (nie `--url` — globalny parametr WP-CLI)
 wp osf-seo strategy:pin|unpin --project=<id> --keywords="a, b" [--topic=… | --new]   # przypięcia fraz do tematów (osf_seo_manage_strategy)
 wp osf-seo strategy:queue [--run] [--time-limit=<s>] [--format=json]   # kolejka przeliczeń Strategii w tle: diagnostyka; --run = krok w tle raz (bez API)
+wp osf-seo ai:status [--format=json]                                  # konfiguracja AI bez sekretów: wyłącznik, dostawca, model, obecność klucza, ceny, limity, wersje
+wp osf-seo ai:context|validate-context --project=<id> --topic=…        # kontekst AI tematu (JSON) / walidacja: determinizm, rozmiar, braki danych (bez API)
+wp osf-seo ai:plan --project=<id> --topic=… [--provider=fake|openai] [--focus="…"]   # plan: tokeny, koszt maks., budżet, blokady — zero żądań
+wp osf-seo ai:run --project=<id> --topic=… [--provider=fake]           # domyślnie dostawca testowy (koszt 0); --provider=openai PŁATNE — tylko na polecenie użytkownika
+wp osf-seo ai:runs|show|decide|delete --project=<id> [--run=<id>] …    # historia, wynik i walidacja (--payload), decyzja użytkownika, usunięcie
+wp osf-seo ai:budget [--project=<id>]                                  # budżet AI (oddzielny od DataForSEO)
+wp osf-seo ai:purge                                                    # porządki bez wywołań AI: porzucone uruchomienia, retencja historii
 composer test:performance       # benchmark raportów + EXPLAIN na syntetycznych danych (OSOBNA baza testowa)
 composer test:performance:serp  # benchmark pozycji SERP (100 projektów × 500 fraz, TOP100, historia, 2500 fraz) + EXPLAIN (OSOBNA baza)
 composer test:performance:gap   # benchmark Luk SEO (40 zbiorów × 10 000 fraz, 20 projektów, import 10 000 fraz atrapą HTTP) + EXPLAIN (OSOBNA baza)
@@ -453,4 +477,4 @@ Staging: `https://seo.ohsofresh.top` (Hostinger). Deployment nowej struktury rep
 nie łącz się z serwerem i nie używaj żadnych credentials znalezionych w repo.
 Nigdy nie wdrażaj całego repozytorium do `wp-content` (wcześniejszy incydent nadpisał pliki WordPressa) — wdrożenie
 wyłącznie zawężone: `plugins/osf-seo/` → `wp-content/plugins/osf-seo/`, `themes/seo/` → `wp-content/themes/seo/`.
-Agent nie wykonuje płatnego smoke testu DataForSEO (także pomiaru pozycji SERP i importu Luk SEO) ani wdrożenia bez wyraźnego polecenia użytkownika.
+Agent nie wykonuje płatnego smoke testu DataForSEO (także pomiaru pozycji SERP i importu Luk SEO), płatnego wywołania AI (OpenAI) ani wdrożenia bez wyraźnego polecenia użytkownika.

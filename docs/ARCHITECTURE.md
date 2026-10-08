@@ -31,6 +31,7 @@ nigdy wartości sekretów.
 19. [Roadmapa i stan prac](#19-roadmapa-i-stan-prac)
 20. [Porządki w motywie (C1–C5)](#20-porządki-w-motywie-c1c5)
 21. [Ryzyka i otwarte kwestie](#21-ryzyka-i-otwarte-kwestie)
+22. [Analizy AI (STEP 17)](#22-analizy-ai-step-17)
 
 ---
 
@@ -142,6 +143,16 @@ API wymaga osobnej decyzji architektonicznej; integracje dostawców wyłącznie 
 | D83 | Statusy panelu z zapisanego stanu zadania: Aktualne dane, Oczekuje na przeliczenie (zmiana danych, zlecenie, ponowienie), Przeliczanie, Zakończono (15 min po zakończeniu), Błąd przeliczenia; endpoint `GET /strategy/status` (JSON, dostęp do projektu) odpytywany co 5 s tylko, gdy przeliczenie czeka albo trwa; klient bez kodu błędu, źródła zlecenia i stanu kroku w tle; administrator — diagnostyka w ustawieniach Strategii i `wp osf-seo strategy:queue`, ostrzeżenie, gdy krok w tle nie działał od 10 min | Przejrzystość bez nowego panelu administracyjnego i bez szczegółów technicznych dla klienta. Sekcja 15.15 |
 | D84 | Wydajność: zostaje pełne przeliczenie projektu (benchmark `test:performance:strategy`: 5 000 fraz ok. 3 s, 230 zapytań, ok. 60 MB; bez zmian danych — sam klucz, 0 zapisów; wymuszone bez zmian danych — 0 zapisów kandydatów, tematów i zdarzeń); przeliczenie przyrostowe per fraza niepotrzebne — do ponownej oceny przy > 20 000 fraz albo > 10 s na projekt | Najpierw pomiar; brak złożoności bez potrzeby, stabilne ID i workflow bez zmian. Sekcja 15.15 |
 | D85 | Nazwa aplikacji w UI: **Whack-a-mole** (sidebar, tytuły kart, logowanie, komunikaty dostępu i 503, opis pluginu w wp-admin); identyfikatory techniczne bez zmian (`Plugin Name: OSF SEO`, slug i text domain `osf-seo`, `OsfSeo\`, `osf_*`, `osf_seo_*`, role i ich etykiety, capabilities, WP-CLI, trasy, hooki WP-Cron, wyjście CLI i logi). Logo aplikacji: załącznik biblioteki mediów WordPressa, w opcji `osf_seo_branding_logo` tylko jego ID; upload i wybór w Ustawieniach panelu po stronie serwera (bez modalu `wp.media` — panel nie ładuje `wp_head`, jQuery ani Backbone); wyłącznie PNG, JPG, WebP (typ z zawartości, maks. 2 MB i 4000 px; SVG odrzucane — brak sanityzacji); zmiana tylko z `osf_seo_manage_settings` (trasa, kontroler, usługa); brak logo albo plik usunięty → napis „Whack-a-mole” | Spójna marka bez technicznego rebrandu i bez nowego modułu; bezpieczny upload. Sekcja 4.5 |
+| D86 | Capability `osf_seo_manage_ai` (0.17.0; `administrator` i `osf_seo_admin`, nie klient): podgląd kontekstu i planu, uruchomienia (także płatne przy świadomej konfiguracji), historia, decyzje, usuwanie — sprawdzana w usłudze AI; temat i analiza wyłącznie w obrębie `ProjectContext` (obce → nie znaleziono) | Least privilege — koszty AI i dane wysyłane do dostawcy tylko pod kontrolą administratorów; dostęp klientów to osobna decyzja produktowa. Sekcja 22.11 |
+| D87 | Dostawcy AI za interfejsem `OsfSeo\Ai\Provider\AiProvider` + rejestr; adapter tylko transport i format (bez kontekstu, kosztów i historii); `FakeProvider` (koszt 0, bez sieci) domyślny w CLI; `OpenAiProvider` — Responses API (`instructions` + `input`, `text.format` `json_schema` `strict`, `max_output_tokens`, `store: false`) według oficjalnej specyfikacji OpenAPI, bez SDK i zależności Composera (`HttpTransport`), bez ponowień; Anthropic później jako kolejny adapter | Wymienny dostawca bez zmian w kontekście, kontrakcie, budżecie i historii; brak nowych zależności. Sekcja 22.3 |
+| D88 | Konfiguracja AI wyłącznie w `wp-config.php`/env (`OSF_SEO_AI_*`, `OSF_SEO_OPENAI_API_KEY`): wyłącznik domyślnie wyłączony, brak domyślnego modelu, ceny modelu (USD za 1 mln tokenów) tylko z konfiguracji — w kodzie żadnego cennika; klucz czytany w chwili żądania (nie pole obiektu), nigdy w bazie, logach, wyjątkach, HTML, JS i odpowiedziach; bez formularza z jawnym sekretem | Zmienne modele i ceny; brak kosztów po wdrożeniu; publiczne repozytorium. Sekcja 22.7, `docs/AI-SETUP.md` |
+| D89 | Budżet AI całkowicie oddzielny od DataForSEO (limity 1 / 10 USD bez zmian): dzienny, miesięczny, miesięczny na projekt i maks. koszt analizy (UTC), domyślnie 0 = blokada; rejestr kosztów = `ai_runs` (`COALESCE(actual_cost, reserved_cost)` płatnych uruchomień); rezerwacja kosztu maksymalnego (wejście z bajtów / 2,5 + 300, wyjście = `max_output_tokens`) i zapis uruchomienia w jednej sekcji krytycznej pod `GET_LOCK ai_budget` (zajęta → `budget_busy`); płatne uruchomienie dodatkowo z jawnym potwierdzeniem kosztu | Brak przekroczenia limitu przy równoległych uruchomieniach; brak wycieku kosztów AI do budżetu danych SEO. Sekcja 22.7 |
+| D90 | Prompt injection i minimalizacja danych: instrukcje aplikacji w osobnym polu żądania; zadanie i cel użytkownika, dowody strukturalne oraz treści zewnętrzne o dowolnej treści (tytuły SERP) w osobnych blokach; dane jako JSON z `<`, `>`, `&`, cudzysłowami jako `\u…`, bez znaków niewidocznych; ścieżki pól zewnętrznych w `untrusted`; do modelu tylko temat projektu z `ProjectContext` (bez notatek, użytkowników, sekretów i innych projektów); wynik zapisywany wyłącznie po walidacji odwołań — sama instrukcja w prompcie nie jest zabezpieczeniem | Kontrola dostępu, minimalizacja i walidacja zamiast zaufania do modelu. Sekcja 22.5 |
+| D91 | Rozliczenie błędów dostawcy: na pewno niewykonane (brak klucza — bez żądania, 401/403, 4xx, 429) → 0; zgłoszone zużycie (sukces, odmowa, odpowiedź niepełna, błąd modelu) → koszt z `usage`; wynik nieznany (timeout, sieć, 5xx, odpowiedź bez zużycia, przerwany proces) → `uncertain`, cała rezerwacja; bez ponowień; porzucone uruchomienia (timeout + 300 s): `reserved` → `failed` bez kosztu, `running` → `uncertain` | Ostrożne liczenie kosztów bez ryzyka podwójnej opłaty. Sekcje 22.7–22.8 |
+| D92 | Kontekst AI tematu (wersja 1) wyłącznie z pakietu kontekstu STEP 16 i istniejących odczytów Strategii (bez nowej logiki): proweniencja sekcji (źródło, rodzaj `fact`/`third_party_estimate`/`heuristic`, data, świeżość, wiarygodność), rozdzielone pola `average_position_gsc` / `serp_rank_group` / `rank_labs`, jawne braki danych (zawsze: treść strony niepobrana, indeks stron niepełny — „brak znanej strony” ≠ brak strony), odwołania `refs`, limity elementów i tekstów, maks. 32 KB z redukcją całych elementów od uzupełniających do fraz (JSON nigdy nie ucinany); odcisk = SHA-256 kanonicznego JSON-u bez czasu budowania (obejmuje status pracy), `evidence_hash` Strategii osobno | AI opiera się na rzeczywistych, udokumentowanych danych; determinizm i audytowalność wejścia. Sekcja 22.4 |
+| D93 | Kontrakt odpowiedzi (wersja 1): podsumowanie, problemy i szanse, rekomendacje z uzasadnieniem i jakościowym wpływem (bez prognoz liczbowych), odwołania do dowodów albo `hypothesis`, brakujące informacje, zastrzeżenia, kontrole ręczne; schemat `strict` tylko z typami i wyliczeniami, a pełna walidacja w PHP (`OutputValidator`: pola, typy, długości, liczby elementów, odwołania tylko z kontekstu, `evidence` z odwołaniem, bez prognoz i obietnic) — jakikolwiek błąd odrzuca całą odpowiedź (`invalid`) | Deklaracja modelu nie jest dowodem poprawności; brak wymyślonych uzasadnień w zapisanych wynikach. Sekcja 22.6 |
+| D94 | Historia AI: `ai_runs` (metadane i koszty) + `ai_run_payloads` (wejście, ograniczona surowa odpowiedź, zwalidowany wynik, walidacja) — M0015, schemat 15, wyłącznie addytywnie; decyzja użytkownika osobno od wyniku; historia nigdy nie zmienia Strategii ani statusu pracy; retencja 180 dni (min. 35), usuwanie pojedyncze; krok w tle (`SyncScheduler::onAfterRun`) wyłącznie porządkuje historię — żadnych wywołań modelu w ticku, przy renderowaniu, przeliczeniu Strategii ani synchronizacji; bez harmonogramu i drugiej kolejki | Rozdzielenie danych i odpowiedzialności, przewidywalne koszty, kontrolowany rozmiar bazy. Sekcja 22.9 |
+| D95 | Page Intelligence (przygotowanie, bez pobierania w fazie A): kontrakt `PageSnapshot` (title, meta description, canonical, robots/indeksowalność, H1–H6, główna treść, linki wewnętrzne, status HTTP, hash), punkt rozszerzenia `PageContentSource` (tylko zapisany stan projektu; faza A — `NoPageContentSource`), polityka SSRF `UrlSafetyPolicy` (http/https, porty 80/443, bez danych logowania, literałów IP i nazw wewnętrznych, wyłącznie domena projektu, wszystkie adresy DNS poza sieciami prywatnymi, loopback, link-local/metadanymi, CGNAT, multicast i zarezerwowanymi, kontrola każdego przekierowania, limity 3 / 10 s / 2 MB; w fazie B pinning IP) | Faza B dostaje gotowe granice bezpieczeństwa bez crawlera i nowych zależności teraz. Sekcja 22.10 |
 
 ## 3. Repozytorium i środowiska
 
@@ -396,6 +407,7 @@ Zaimplementowane w STEP 1 (`plugins/osf-seo/src/Auth`). Kod sprawdza **capabilit
 | `osf_seo_manage_serp_tracking` | pozycje SERP: ustawienia i włączenie płatnych pomiarów, plan i koszt, pomiar ręczny, anulowanie, monitorowane frazy, konkurenci, koszty (od STEP 14, wersja 0.14.0) |
 | `osf_seo_manage_keyword_gap` | luki SEO: plan i koszt, płatny import fraz konkurentów, anulowanie, przeliczenie, ustawienia analizy, harmonogram, warianty marki, status i notatki luk i grup, koszty (od STEP 15, wersja 0.15.0) |
 | `osf_seo_manage_strategy` | strategia: przeliczenie, wpisy ręczne, status pracy i notatka, ręczna strona docelowa, przypięcia (faza C), a w kolejnych fazach ustawienia; płatna analiza SERP dodatkowo z `osf_seo_manage_serp_tracking` (od STEP 16, wersja 0.16.0) |
+| `osf_seo_manage_ai` | analizy AI tematów Strategii: podgląd kontekstu i planu, uruchomienia (także płatne — przy świadomej konfiguracji dostawcy), historia, decyzje, usuwanie (od STEP 17, wersja 0.17.0; sekcja 22.11) |
 
 | Rola | Capabilities |
 |---|---|
@@ -921,7 +933,7 @@ ProjectGuard::authorizeSystem (tylko WP-CLI i WP-Cron) → GscImporter (sekcja 8
   `wp --path=<ścieżka> osf-seo sync:run` (zalecane; planowanie + kolejka) albo `wp cron event run --due-now`,
   a bez WP-CLI: `wget -q -O - https://seo.ohsofresh.top/wp-cron.php?doing_wp_cron >/dev/null 2>&1`.
   Hostinger: hPanel → Zaawansowane → Cron Jobs (minimalny interwał zależny od planu; co 1–5 min wystarcza) — krok po kroku
-  w `docs/HOSTINGER-CRON.md`. Ten sam cron wykonuje kroki po kolejce, w tym przeliczenie Strategii (15.15).
+  w `docs/HOSTINGER-CRON.md`. Ten sam cron wykonuje kroki po kolejce, w tym przeliczenie Strategii (15.15) i porządki historii AI bez wywołań modelu (22.9).
 - Heartbeat: opcja `osf_seo_sync_heartbeat` (ostatnie uruchomienie runnera) — `wp osf-seo status` (`sync_queue`)
   i `wp osf-seo gsc:status` pokazują, czy kolejka żyje.
 - Utrzymanie (raz na dobę, w runnerze): usunięcie zakończonych zadań starszych niż 90 dni i osieroconego stagingu.
@@ -2890,6 +2902,10 @@ odpytywanie statusu co 5 s działa tylko przy otwartej stronie; zadania nie maj�
   w `StrategyService`), klient bez notatek i odrzuconych tematów; podgląd i uruchomienie analizy SERP — `osf_seo_manage_strategy`
   i `osf_seo_manage_serp_tracking` (kontrola w `SerpAnalysisService`; koszty tylko dla uprawnionych); pomiary i profile SERP wyłącznie projektu;
   frazy i URL-e z dowodów to dane zewnętrzne (escapowanie jak w pozostałych modułach); sekcje 15.9, 15.12.
+- **Analizy AI** (STEP 17): wyłącznie z `osf_seo_manage_ai` (kontrola w `AiAnalysisService`); temat i analiza tylko w obrębie `ProjectContext`
+  (obce ID → nie znaleziono); klucz API tylko w `wp-config.php`/env, czytany w chwili żądania, maskowany w logach (`sk-…`, `x-api-key`); do dostawcy
+  wyłącznie dane tematu projektu (bez notatek, użytkowników i innych projektów), dane zewnętrzne w blokach niezaufanych, wynik zapisywany tylko
+  po walidacji; płatne wywołania domyślnie wyłączone, z limitami i potwierdzeniem; przyszłe pobieranie stron — `UrlSafetyPolicy` (SSRF); sekcja 22.
 - **Repozytorium publiczne**: sekcja 17; skan sekretów przed commitem; `.gitignore` blokuje pliki z sekretami.
 
 ## 17. Konfiguracja i sekrety
@@ -2939,6 +2955,17 @@ samej nazwie. W repozytorium wyłącznie placeholdery.
 | `OSF_SEO_STRATEGY_SERP_MAX_PER_RUN` | (opcjonalnie) maks. nowych pomiarów w jednej płatnej analizie SERP Strategii, 1–1000, domyślnie 100 (jawny wybór ponad limit jest odrzucany) | STEP 16 |
 | `OSF_SEO_STRATEGY_WINDOW_DAYS`, `…_GSC_MIN_IMPRESSIONS`, `…_GSC_MAX_POSITION` | (opcjonalnie) okno GSC faktów i źródła GSC (28–480 dni, 90), próg wyświetleń źródła GSC (50) i średniej pozycji GSC (50) | STEP 16 |
 | `OSF_SEO_STRATEGY_DISCOVERY_MIN_PRIORITY`, `…_GAP_MIN_PRIORITY` | (opcjonalnie) minimalny priorytet nowych / do analizy Nowych fraz (50) i Luk fraz (40) jako źródła Strategii | STEP 16 |
+| `OSF_SEO_AI_ENABLED` | wyłącznik rzeczywistych (płatnych) wywołań AI: `1` włącza, domyślnie wyłączone (dostawca testowy działa zawsze) | STEP 17 |
+| `OSF_SEO_AI_PROVIDER` | wybrany dostawca płatny (`openai`) | STEP 17 |
+| `OSF_SEO_AI_MODEL` | identyfikator modelu (bez wartości domyślnej) | STEP 17 |
+| `OSF_SEO_OPENAI_API_KEY` | klucz API OpenAI (sekret, tylko wp-config/env; czytany w chwili żądania) | STEP 17 |
+| `OSF_SEO_AI_PRICE_INPUT_PER_MTOK`, `…_CACHED_INPUT_PER_MTOK`, `…_OUTPUT_PER_MTOK` | ceny modelu w USD za 1 mln tokenów (z cennika dostawcy; bez cen płatne wywołania są blokowane; brak ceny cache → cena wejścia) | STEP 17 |
+| `OSF_SEO_AI_DAILY_LIMIT`, `OSF_SEO_AI_MONTHLY_LIMIT`, `OSF_SEO_AI_PROJECT_MONTHLY_LIMIT` | limity budżetu AI w USD (UTC), domyślnie 0 = blokada; oddzielne od limitów DataForSEO | STEP 17 |
+| `OSF_SEO_AI_MAX_RUN_COST` | maks. koszt jednej analizy w USD (szacunek maksymalny), domyślnie 0 = blokada | STEP 17 |
+| `OSF_SEO_AI_MAX_OUTPUT_TOKENS` | (opcjonalnie) limit tokenów odpowiedzi (z tokenami rozumowania), 256–16 000, domyślnie 3000 | STEP 17 |
+| `OSF_SEO_AI_TIMEOUT` | (opcjonalnie) timeout żądania do dostawcy, 10–300 s, domyślnie 90 | STEP 17 |
+| `OSF_SEO_AI_TEMPERATURE` | (opcjonalnie) temperatura 0–2, wysyłana tylko, gdy ustawiona (część modeli jej nie obsługuje) | STEP 17 |
+| `OSF_SEO_AI_RETENTION_DAYS` | (opcjonalnie) retencja historii AI, 35–3650 dni, domyślnie 180 | STEP 17 |
 
 ```php
 // wp-config.php — przykład z placeholderami
@@ -3006,12 +3033,13 @@ Warianty docelowe:
 | 19 | Pozycje SERP i konkurenci: monitorowane frazy, pomiary Google Organic (Standard, TOP100) z planem, rezerwacją kosztu i harmonogramem, pełne TOP N w historii, zmiany, konkurenci monitorowani i organiczni | ✅ STEP 14 (sekcja 13) |
 | 20 | Luki SEO: wspólne zbiory fraz domen konkurentów (Labs Ranked Keywords) z planem, limitami i importem w tle, punkt odniesienia projektu, widoczność SERP → GSC → Labs, typ i priorytet luki, filtry marki, grupy fraz, luka treści (heurystyka), strony konkurencji, historia zbiorów | ✅ STEP 15 (sekcja 14) |
 | 21 | Strategia i SERP Intelligence: kandydaci z modułów z dowodami, analiza zapisanych SERP-ów, strona docelowa, działania, priorytet i pewność, tematy, backlog z workflow | ⏳ STEP 16 (sekcja 15): fazy A (fundament), B (SERP Intelligence), C (rdzeń), D (panel) i E (tło i wydajność) zrobione; faza F według planu |
+| 22 | Analizy AI: dostawcy za interfejsem (testowy i OpenAI), deterministyczny kontekst tematu z proweniencją, wersjonowane instrukcje, kontrakt odpowiedzi z walidacją PHP, budżet AI z rezerwacją, historia, CLI, przygotowanie Page Intelligence | ⏳ STEP 17 (sekcja 22): faza A (fundament) zrobiona; fazy B–E do akceptacji |
 
 **MVP 2**: ~~Opportunity Score~~ (STEP 11), Pages/landing pages, zaawansowane filtry, automatyczna synchronizacja, raporty.
 **MVP 3**: własny crawler, audyt techniczny, połączenie crawler + GSC.
 **MVP 4**: panel klienta, raporty, rekomendacje AI.
 **Kolejne etapy** (kolejność orientacyjna): ~~odkrywanie nowych fraz~~ (STEP 13), ~~monitoring konkurencji i ranking SERP~~ (STEP 14),
-~~luka fraz/treści~~ (STEP 15), strategia i backlog SEO (STEP 16, w toku), AI (STEP 17), retencja/rollupy historii SERP po pomiarze wzrostu.
+~~luka fraz/treści~~ (STEP 15), strategia i backlog SEO (STEP 16), AI (STEP 17 — faza A: fundament), retencja/rollupy historii SERP po pomiarze wzrostu.
 
 ## 20. Porządki w motywie (C1–C5)
 
@@ -3045,6 +3073,9 @@ Każdy etap to osobny commit z testem (build, `php -l`, smoke test WordPress). K
   wyszukiwania może być ucięta przy bardzo dużych grupach (jawne `members_complete = false`; powiązanie przez podstronę to tylko kontekst).
   Faza B: reguły kształtu wyniku i sygnału intencji z SERP oraz progi overlapu i domen wszechobecnych do kalibracji na prawdziwych SERP-ach
   (wersja reguł profilu); koszt analizy = koszt pomiaru STEP 14 we wspólnych limitach (bez automatycznego harmonogramu).
+- **Analizy AI (STEP 17)**: rzeczywiste API OpenAI nie było wywołane (atrapa HTTP w testach) — pierwsze użycie według `docs/AI-SETUP.md`
+  z niskimi limitami i porównaniem kosztu z panelem dostawcy; ceny i modele zmieniają się (konfiguracja, nie kod); jakość analiz i heurystyki
+  walidatora (prognozy, obietnice) do kalibracji na prawdziwych tematach; do dostawcy trafiają dane tematu projektu — decyzja administratora.
 - **OAuth Testing**: tokeny ważne 7 dni — publikacja aplikacji przed produkcją.
 - **Skala `query_page_daily`** — decyzja po pomiarze (sekcja 6.4).
 - **Wydajność raportów przy bardzo dużych property** — czasy rosną liniowo z liczbą wierszy fraz w okresie
@@ -3058,3 +3089,235 @@ Każdy etap to osobny commit z testem (build, `php -l`, smoke test WordPress). K
 - **Szanse SEO (STEP 11)**: progi i referencyjny CTR są przybliżeniem — do kalibracji na prawdziwych projektach (stałe `OSF_SEO_OPP_*`);
   analiza dużych property zajmuje ~1–2 s i ~50 MB pamięci na okres (w tle, po imporcie); bez crona systemowego przeliczanie
   następuje przy ruchu na stronie (jak kolejka). Obserwacja po wdrożeniu nie jest atrybucją przyczynową.
+
+## 22. Analizy AI (STEP 17)
+
+Faza A (fundament): warstwa techniczna analiz AI tematów Strategii — dostawcy za interfejsem, deterministyczny kontekst z dowodami,
+wersjonowane instrukcje, kontrakt odpowiedzi z walidacją po stronie PHP, budżet AI, historia uruchomień i CLI. **Bez** artykułów, edytora
+treści, chatbota, panelu AI, harmonogramu i automatycznych płatnych analiz. Najważniejsza zasada: AI korzysta wyłącznie z rzeczywistych,
+udokumentowanych danych Whack-a-mole (pakiet kontekstu Strategii STEP 16) i nie może wymyślać uzasadnień — każde twierdzenie „evidence”
+wskazuje odwołanie do dowodu z kontekstu, a odpowiedź niezgodna z kontraktem jest odrzucana w całości.
+
+### 22.1 Zasady
+
+- **Jedno miejsce wywołania modelu**: `OsfSeo\Ai\AiAnalysisService::run` — wyłącznie jawnie (CLI; w przyszłości akcja w panelu po potwierdzeniu).
+  Nigdy przy wejściu na dashboard, otwarciu Strategii, przeliczeniu Strategii, synchronizacji GSC ani w kroku w tle (D94).
+- **Bezpieczne domyślnie**: rzeczywiste wywołania wyłączone (`OSF_SEO_AI_ENABLED`), brak modelu i cen w kodzie, limity AI domyślnie 0 USD —
+  po wdrożeniu nic nie może wygenerować kosztu (D88, D89). Dostawca testowy `fake` (koszt 0, bez sieci) działa zawsze.
+- **Kontekst tylko z istniejących odczytów Strategii w obrębie projektu** (`StrategyService::topicView`, `panelState`) — bez równoległej
+  logiki Strategii, bez notatek wewnętrznych, identyfikatorów użytkowników i danych innych projektów (D90, D92).
+- **Historia nie zmienia Strategii ani workflow** — tylko się do nich odwołuje (temat, `evidence_hash`); decyzja użytkownika osobno od wyniku (D94).
+- Budżet AI **całkowicie oddzielny** od DataForSEO (limity 1 USD / 10 USD bez zmian, osobny rejestr kosztów `ai_runs`) (D89).
+
+### 22.2 Model danych (schemat 15, M0015)
+
+Wyłącznie addytywnie (nowe tabele; migracje STEP 11–16 bez zmian):
+
+- **`osf_ai_runs`** — uruchomienie i jednocześnie rejestr kosztów AI: `public_id` (ULID, utf8mb4_bin), `project_id`, `topic_id` (NULL),
+  `task` (`topic_analysis`), `provider`, `model`, `paid`, `prompt_version`, `context_version`, `contract_version`, `context_fingerprint`
+  BINARY(32), `evidence_hash` BINARY(32) NULL (odcisk dowodów Strategii), `status` (`reserved` → `running` → `succeeded` | `invalid` | `failed`
+  | `uncertain`), `trigger_type` (`cli`, `panel`), `requested_by`, czasy (`created_at`, `started_at`, `finished_at`), tokeny (szacunek wejścia,
+  wejście, z cache, wyjście), koszty `estimated_cost` / `reserved_cost` / `actual_cost` (DECIMAL 12,6) z `cost_basis` (`usage`, `reservation`,
+  `not_charged`, `free`), `provider_response_id`, `error_code` (rodzaj błędu, bez treści), `validation_errors`, decyzja użytkownika (`decision`
+  `accepted`/`rejected`, `decided_by`, `decided_at`). Indeksy: (`project_id`, `created_at`), (`project_id`, `topic_id`, `created_at`), (`status`, `created_at`).
+- **`osf_ai_run_payloads`** — dane uruchomienia oddzielone od metadanych (lista historii ich nie czyta): `input` (cel użytkownika + pełny kontekst
+  z odciskiem — dokładnie to, co trafiło do modelu, oprócz stałych instrukcji wersji), `input_hash` (SHA-256 wersji, instrukcji i wejścia),
+  `output_raw` (surowa odpowiedź, najwyżej 64 KB z jawnym znacznikiem ucięcia), `result` (zwalidowany wynik — tylko gdy poprawny), `validation`
+  (lista błędów: ścieżka + kod, bez treści).
+
+Rozmiar: kontekst ≤ 32 KB, odpowiedź ≤ 64 KB — bez dużych ani prywatnych ładunków (żadnych tokenów, kluczy, notatek, danych użytkowników).
+
+### 22.3 Dostawcy (D87)
+
+| Element | Odpowiedzialność |
+|---|---|
+| `Provider\AiProvider` | interfejs: `id()`, `isPaid()`, `model()`, `problems()` (kody braków konfiguracji), `generate(AiRequest): AiResponse` — tylko transport i format |
+| `Provider\AiProviderRegistry` | identyfikator → adapter (kontener); nieznany → odmowa `provider_unknown` |
+| `Provider\FakeProvider` (`fake`, model `fake-analysis-1`) | koszt 0, bez sieci; deterministyczna odpowiedź zgodna z kontraktem z odwołaniami wyłącznie do dowodów kontekstu (oznaczona „[TEST]”) — test całego przepływu |
+| `Provider\OpenAiProvider` (`openai`) | Responses API: `POST https://api.openai.com/v1/responses`, `instructions` + `input`, `text.format` = `json_schema` (`strict: true`), `max_output_tokens`, `store: false`, opcjonalnie `temperature`; parsowanie `output[].content[]` (`output_text`, `refusal`), `status` (`completed`, `incomplete`, `failed`), `usage` (w tym `cached_tokens`) |
+| `Context\AiTopicContextBuilder` + `TopicContextAssembler` | kontekst tematu (22.4) |
+| `Prompt\PromptTemplate` | wersjonowane instrukcje i bloki wejścia (22.5) |
+| `Contract\AnalysisContract` + `OutputValidator` | kontrakt odpowiedzi i walidacja (22.6) |
+| `Budget\AiPricing` + `AiBudget` | wycena z konfiguracji, limity, rezerwacja (22.7) |
+| `Run\AiRunRepository` | historia (22.9) |
+
+Adapter OpenAI zbudowano według oficjalnej specyfikacji OpenAPI (`openai/openai-openapi`); bez SDK i bez zależności Composera — ruch przez
+`Http\HttpTransport` (WP HTTP API, bez przekierowań, weryfikacja TLS, timeout `OSF_SEO_AI_TIMEOUT`). Klucz `OSF_SEO_OPENAI_API_KEY` czytany
+w chwili budowania nagłówka (nie jest polem obiektu); brak klucza → wyjątek `config` **bez żadnego żądania**. Bez ponowień.
+Rozszerzenie o Anthropic (później, osobna decyzja): klasa implementująca `AiProvider` + rejestracja w `Plugin::createContainer()` + stała klucza
+w `AiConfig`; reszta (kontekst, kontrakt, budżet, historia) bez zmian. W fazie A nie zaimplementowano.
+
+### 22.4 Kontekst tematu — wersja 1 (D92)
+
+`TopicContextAssembler` (czysta klasa, bez WordPressa) buduje kontekst wyłącznie z pakietu kontekstu STEP 16 (`TopicContextBuilder`),
+SERP Intelligence tematu (`topicView['serp']`), aktualności źródeł (`StrategyFreshness`), rynku i okna GSC (`panelState`) i dat pobrania metryk
+rynkowych fraz tematu. Struktura (`schema` = `whack-a-mole/ai-topic-context`, `context_version` = 1):
+
+| Sekcja | Zawartość |
+|---|---|
+| `strategy` | wersje pakietu i reguł Strategii, `evidence_hash` |
+| `project` | domena i rynek (bez nazwy projektu) |
+| `topic` | `ref: topic`, ID, etykieta, fraza główna, liczba fraz, suma wolumenu, status pracy, `decision_changed_since_status` |
+| `decision` | heurystyka Strategii: działanie i powód (kody + etykiety), podstawy, ślad reguł, Priorytet Strategii z rozbiciem, pewność z czynnikami |
+| `keywords[]` | `kw:<id>`: fraza, rola, podstawa grupowania, źródła, `gsc` (kliknięcia, wyświetlenia, CTR = kliknięcia / wyświetlenia, `average_position_gsc`), `market` (`search_volume`, `keyword_difficulty`, `cpc_usd`, `intent`), `serp` (`serp_rank_group`, adres, `measured_at`, świeżość), strona docelowa frazy |
+| `evidence.gsc` | fakty GSC tematu z oknem, datą najnowszych danych (PT), świeżością, kompletnością okna |
+| `evidence.serp` | pomiar frazy odniesienia: data, świeżość, urządzenie, głębokość, projekt (`serp_rank_group`, adres, wyróżniony fragment), konkurenci TOP10/TOP20, profil (kształt, sygnał intencji — heurystyka), TOP10 wyników (`serp:<rank>`, domena, adres, kształt strony, tytuł jako odwołanie do treści zewnętrznej), overlap z frazami tematu (tylko poziomy wiarygodne) |
+| `evidence.market` | proweniencja metryk rynkowych (zakres dat pobrania), liczba fraz z wolumenem / trudnością |
+| `evidence.labs_gaps` | `gap:<id>`: typ luki, widoczność projektu i jej źródło, `project_rank_labs`, konkurenci, najlepszy konkurent z `rank_labs`, Priorytet luki |
+| `evidence.content_gaps`, `opportunities`, `discovery` | `cg:<id>`, `opp:<id>`, `disc:<id>` — heurystyki modułów z powodem i pewnością |
+| `target_page` | `ref: target`: stan, adres, rodziny dowodów, wskazania, alternatywy, konflikty (`conflict:<n>`), dowody przeciwne (brak widoczności), ślady możliwej strony, sygnały pochodne, `page_index` (`complete: false`, `gsc_known_pages`), `page_content` (`available: false`, `not_fetched` — punkt rozszerzenia fazy B) |
+| `external_texts[]` | treści zewnętrzne o dowolnej treści (tytuły wyników SERP) — osobny blok niezaufany (22.5) |
+| `data_gaps[]` | jawne braki danych (kod, odwołanie, znaczenie), np. `no_gsc_data`, `gsc_window_incomplete`, `gsc_no_impressions`, `no_serp_measurement`, `serp_stale`, `serp_expired`, `no_market_data`, `no_labs_import`, `target_unknown`, `target_none_not_proof`, `target_conflict`, `page_content_not_fetched`, `page_index_incomplete`, `keywords_omitted`, `context_reduced` |
+| `refs` | jedyne odwołania dozwolone w odpowiedzi |
+| `limits` | limity elementów, pominięcia (liczniki), wykonane kroki redukcji, liczba uciętych tekstów, `within_budget` |
+| `metric_definitions`, `untrusted` | definicje metryk i ścieżki pól z danymi zewnętrznymi |
+
+- **Proweniencja**: każda sekcja dowodów ma `provenance` (źródło, rodzaj `fact` / `third_party_estimate` / `heuristic`, data, świeżość,
+  wiarygodność), obowiązującą dla jej elementów, o ile element nie ma własnej daty pomiaru. Hipotezy tworzy wyłącznie model (oznaczone w odpowiedzi).
+- **Trzy pozycje rozdzielone nazwą pola**: `average_position_gsc` (średnia GSC), `serp_rank_group` (pomiar SERP), `rank_labs` / `project_rank_labs`
+  (baza DataForSEO Labs). Pomiar SERP > 90 dni — bez pozycji i wyników (`serp_expired`); 31–90 dni — niższa wiarygodność.
+- **Treść strony**: nigdy nie udajemy, że jest znana — `page_content.available = false` do fazy B; „brak znanej strony” i niepełny indeks stron
+  zawsze jako braki danych z wyjaśnieniem, że to nie dowód braku strony.
+- **Budżet**: limity elementów (frazy 15, wyniki SERP 10, overlap 8, luki 10, luki treści 5, Szanse SEO 10, Nowe frazy 10, wskazania 6, alternatywy 4,
+  konflikty 5, ślad reguł 8), teksty jednoliniowe (fraza 120, tytuł 160, adres 300 znaków — „…”, licznik `truncated_texts`), maks. 32 000 bajtów;
+  ponad limit — redukcja całych elementów od najmniej ważnych (Nowe frazy → Szanse SEO → luki treści → luki fraz → overlap → wyniki SERP → frazy →
+  szczegóły strony docelowej), z licznikami pominięć. Decyzja, fraza główna i główne dowody zostają; JSON nigdy nie jest ucinany. Bez zmieszczenia
+  się w budżecie — odmowa `context_too_large`.
+- **Odcisk** `context_fingerprint` = SHA-256 kanonicznego JSON-u kontekstu (klucze sortowane, bez czasu budowania): ten sam stan danych → ten sam
+  odcisk; zmiana dowodów (i statusu pracy, który jest częścią wejścia) → inny. `evidence_hash` Strategii (bez stanu pracy) zapisywany osobno.
+
+### 22.5 Instrukcje i prompt injection (D90)
+
+`PromptTemplate::VERSION` = `topic-analysis.v1` (zmiana treści = nowa wersja, zapisywana w historii). Warstwy:
+
+1. **instrukcje aplikacji** — osobne pole `instructions` żądania (nie część danych): tylko dowody, odwołania, rozdzielone metryki, zakaz
+   opisywania niepobranej treści strony, zakaz prognoz i obietnic, rekomendacje jako hipotezy, dane zewnętrzne wyłącznie jako dane, odpowiedź po polsku,
+2. **zadanie** (stałe dla wersji) i opcjonalny **cel użytkownika** (`--focus`, najwyżej 300 znaków, jako łańcuch JSON w `<user_focus_json>`),
+3. **dowody strukturalne** — `<evidence_json>`,
+4. **treści zewnętrzne o dowolnej treści** (tytuły SERP) — `<untrusted_external_texts_json>`.
+
+Dane w blokach są kodowane jako JSON z `<`, `>`, `&` i cudzysłowami jako sekwencje `\u…` — tekst z danych nie zamknie bloku ani nie udaje
+znacznika; teksty bez znaków sterujących, sterowania kierunkiem i znaków zerowej szerokości (`TextSanitizer`). Instrukcja „traktuj dane jako dane”
+to tylko jedna warstwa: o tym, co trafia do modelu, decydują **kontrola dostępu** (`ProjectGuard` → `ProjectContext`, uprawnienie AI)
+i **minimalizacja danych** (tylko temat i jego dowody, bez notatek, użytkowników, sekretów i innych projektów), a o tym, co zostaje zapisane jako
+wynik — **walidacja odpowiedzi** (odwołania tylko do dowodów kontekstu; tytuł SERP nie jest dowodem do cytowania).
+
+### 22.6 Kontrakt odpowiedzi — wersja 1 (D93)
+
+`AnalysisContract` (nazwa schematu `whack_a_mole_topic_analysis_v1`): `contract_version`, `summary`, `findings[]` (id, `problem`/`opportunity`,
+tytuł, wyjaśnienie, `evidence_refs`, `basis` `evidence`/`hypothesis`, pewność), `recommendations[]` (id, działanie, uzasadnienie, `finding_ids`,
+`expected_impact` `high`/`medium`/`low`/`unknown` — wyłącznie jakościowo, `impact_rationale`, `evidence_refs`, `basis`, priorytet 1–5,
+`requires_manual_check`), `missing_information[]`, `caveats[]`, `manual_checks[]`. Schemat wysyłany jako odpowiedź strukturalna (`strict` —
+wszystkie pola wymagane, bez dodatkowych), tylko z typami i wyliczeniami.
+
+`OutputValidator` (PHP, deklaracja modelu nie jest dowodem): poprawny JSON (≤ 200 KB), dokładny zestaw pól, typy, wyliczenia, długości tekstów,
+najwyżej 8 elementów na listę i 12 odwołań na element, unikalne identyfikatory (`F1`, `R1`), odwołania wyłącznie z `refs` kontekstu tego
+uruchomienia, `basis: evidence` z co najmniej jednym odwołaniem, rekomendacje wskazujące istniejące ustalenia, bez prognoz liczbowych w ocenie
+wpływu (procenty, mnożniki, „+N”) i bez obietnic („gwarantuje”). Jakikolwiek błąd → status `invalid`, wynik niezapisany (surowa odpowiedź
+i lista błędów zostają do diagnostyki). Przykładowa odpowiedź: `FakeProvider::sample()`.
+
+### 22.7 Koszty i budżet AI (D88, D89, D91)
+
+- **Ceny wyłącznie z konfiguracji** (`OSF_SEO_AI_PRICE_INPUT_PER_MTOK`, `…_CACHED_INPUT_PER_MTOK`, `…_OUTPUT_PER_MTOK`, USD za 1 mln tokenów) —
+  w kodzie nie ma modelu ani cennika. Bez cen nie da się oszacować kosztu → odmowa `missing_prices`.
+- **Szacunek maksymalny przed wywołaniem**: wejście = bajty instrukcji, wejścia i schematu / 2,5 + 300 (ostrożnie dla polskiego tekstu w UTF-8),
+  wyjście = pełny `max_output_tokens` (obejmuje tokeny rozumowania), bez rabatu za cache.
+- **Limity AI** (domyślnie 0 = każde płatne wywołanie zablokowane): dzienny, miesięczny, miesięczny na projekt i maksymalny koszt jednej analizy
+  (UTC). Do limitów liczy się `COALESCE(actual_cost, reserved_cost)` płatnych uruchomień.
+- **Rezerwacja przed wywołaniem**: kontrola limitów z aktualnych sum i zapis uruchomienia z `reserved_cost` w jednej sekcji krytycznej pod blokadą
+  `GET_LOCK ai_budget` (5 s; zajęta → `budget_busy`) — równoległe uruchomienia nie przekroczą limitu.
+- **Rozliczenie**: odpowiedź ze zgłoszonym zużyciem → koszt z `usage` (wejście z cache po cenie cache); dostawca na pewno niczego nie wykonał
+  (brak klucza, 401/403, 4xx, 429) → 0; wynik nieznany (timeout, sieć, 5xx, odpowiedź bez zużycia, przerwany proces) → status `uncertain`, liczy
+  się cała rezerwacja. Bez ponawiania płatnego żądania.
+- Uruchomienie płatne wymaga dodatkowo jawnego potwierdzenia maksymalnego kosztu (`--yes` albo pytanie w CLI) — inaczej `confirmation_required`.
+
+### 22.8 Przebieg uruchomienia
+
+```
+ai:run → kontekst (StrategyService, projekt z ProjectContext) → plan (zero żądań: dostawca, model, tokeny, koszt maks., blokady, budżet)
+  → [płatny: potwierdzenie] → rezerwacja pod blokadą (ai_runs: reserved + wejście w ai_run_payloads)
+  → reserved → running (warunkowo) → jedno wywołanie dostawcy
+  → walidacja PHP → succeeded | invalid  (albo failed | uncertain z kodem rodzaju błędu) → rozliczenie
+```
+
+Kolejność powodów odmowy w planie: `provider_unknown`; dla płatnego: `ai_disabled`, `provider_not_configured`, `missing_api_key`,
+`model_not_configured`, `missing_prices`; `context_too_large`; `run_cost_limit`, `budget_daily`, `budget_monthly`, `budget_project`.
+Porzucone uruchomienia (status w toku dłużej niż timeout + 300 s): `reserved` → `failed` (`not_sent`, bez kosztu), `running` → `uncertain`
+(`interrupted`, rezerwacja) — warunkowa aktualizacja, bez ponawiania żądania.
+
+### 22.9 Historia, decyzje, retencja (D94)
+
+- Historia w obrębie projektu: lista (metadane), szczegóły (wynik, walidacja; wejście i surowa odpowiedź na życzenie), decyzja użytkownika
+  (`accepted`, `rejected`, cofnięcie — tylko dla `succeeded`; nie zmienia Strategii ani statusu pracy tematu), usunięcie (nie w toku).
+- Retencja `OSF_SEO_AI_RETENTION_DAYS` (domyślnie 180, min. 35 — dłużej niż okres limitu miesięcznego): zakończone uruchomienia starsze
+  niż retencja usuwane paczkami z danymi.
+- Krok w tle: `SyncScheduler::onAfterRun` → `AiAnalysisService::maintenance()` — **wyłącznie porządki** (odzyskanie porzuconych uruchomień,
+  retencja raz na dobę), bez żadnego wywołania modelu i bez drugiej kolejki.
+
+### 22.10 Page Intelligence — przygotowanie do fazy B (D95)
+
+Bez crawlera, przeglądarki i pobierania treści w fazie A. Przygotowane:
+
+- **Kontrakt danych** `Page\PageSnapshot`: adres i adres końcowy, status HTTP, czas pobrania, title, meta description, canonical, robots,
+  indeksowalność, nagłówki H1–H6 (≤ 30), główna treść (≤ 6000 znaków), liczba słów, linki wewnętrzne (≤ 30), hash treści, znacznik ucięcia.
+  W kontekście AI — w `target_page.page_content` (ścieżka niezaufana); w fazie B treść strony trafi do bloku niezaufanego.
+- **Punkt rozszerzenia** `Page\PageContentSource::snapshot(ProjectContext, url)` — wyłącznie odczyt zapisanego stanu w obrębie projektu (nigdy
+  pobieranie przy budowaniu kontekstu ani w żądaniu WWW); faza A: `NoPageContentSource` (zawsze brak).
+- **Cache i świeżość (plan)**: migawka na (projekt, adres) z `fetched_at` i hashem treści; ponowne pobranie po TTL albo jawnie; tylko strony projektu.
+- **Uprawnienia (plan)**: pobieranie tylko z uprawnieniem AI i w domenie projektu; klient bez dostępu.
+- **Ochrona przed SSRF** `Page\UrlSafetyPolicy` (czysta, z testami): wyłącznie `http`/`https` na portach 80/443, bez danych logowania w adresie
+  i literałów IP, bez `localhost` i nazw wewnętrznych (`.local`, `.internal`, `metadata.google.internal`…), wyłącznie host z rodziny domeny
+  projektu, każdy adres z DNS (A i AAAA, także IPv4 zagnieżdżony w IPv6) poza sieciami prywatnymi, loopback, link-local (metadane chmury
+  169.254.169.254), CGNAT, multicast i zarezerwowanymi; każde przekierowanie (`redirectTarget`) kontrolowane od nowa; limity: 3 przekierowania,
+  10 s, 2 MB. Faza B musi łączyć się z zweryfikowanym adresem IP (pinning) — ochrona przed DNS rebinding.
+
+### 22.11 Uprawnienia i bezpieczeństwo (D86)
+
+- Capability **`osf_seo_manage_ai`** (wersja 0.17.0; `administrator` i `osf_seo_admin`, nie klient): podgląd kontekstu i planu, uruchomienia
+  (także płatne — przy świadomej konfiguracji), historia, decyzje, usuwanie. Sprawdzana w usłudze (`ProjectContext::assertCan`); CLI z `--user`
+  autoryzuje projekt z tą capability.
+- Temat i analiza wyłącznie po (`project_id` z `ProjectContext`, identyfikator publiczny) — temat albo analiza innego projektu są nieodróżnialne
+  od nieistniejących (`StrategyNotFound`, `AiRunNotFound`); test IDOR w `tests/Integration/Ai/AiIsolationTest.php`.
+- Klucz API wyłącznie w `wp-config.php`/env, czytany w chwili żądania; nigdy w repozytorium, bazie, logach, wyjątkach, HTML, JS, odpowiedziach
+  API ani w ustawieniach efektywnych (`ai:status` pokazuje tylko obecność). Brak formularza z jawnym sekretem. `Redactor` maskuje klucze `sk-…`
+  i nagłówek `x-api-key`. Logi: rodzaj błędu, status HTTP i kod błędu dostawcy — bez komunikatów, treści żądań i odpowiedzi.
+- Do dostawcy trafiają dane tematu projektu (frazy, metryki GSC, adresy, domeny konkurentów) — świadoma decyzja administratora przy konfiguracji
+  (`store: false`); bez notatek wewnętrznych, danych użytkowników i innych projektów.
+
+### 22.12 CLI (bez żądań poza jawnie potwierdzonym `ai:run` z płatnym dostawcą)
+
+```bash
+wp osf-seo ai:status [--format=json]                         # konfiguracja bez sekretów: wyłącznik, dostawca, model, obecność klucza, ceny, limity, wersje
+wp osf-seo ai:context --project=<id> --topic=<temat>         # kontekst AI tematu (JSON)
+wp osf-seo ai:validate-context --project=<id> --topic=…      # determinizm, rozmiar, odwołania, braki danych (kod wyjścia 1 przy problemach)
+wp osf-seo ai:plan --project=<id> --topic=… [--provider=openai] [--focus="…"]   # plan: tokeny, koszt maks., budżet, blokady (zero żądań)
+wp osf-seo ai:run --project=<id> --topic=… [--provider=fake]   # domyślnie dostawca testowy (koszt 0); płatny: --provider=openai + potwierdzenie (--yes)
+wp osf-seo ai:runs --project=<id> [--topic=…]                 # historia (metadane)
+wp osf-seo ai:show --project=<id> --run=<id> [--payload]      # wynik i walidacja; --payload: wejście i surowa odpowiedź
+wp osf-seo ai:decide --project=<id> --run=<id> --decision=accepted|rejected|clear
+wp osf-seo ai:delete --project=<id> --run=<id> [--yes]
+wp osf-seo ai:budget [--project=<id>]                         # budżet AI (oddzielny od DataForSEO)
+wp osf-seo ai:purge                                           # porządki bez wywołań AI: porzucone uruchomienia i retencja
+```
+
+### 22.13 Konfiguracja
+
+Instrukcja krok po kroku (placeholdery): [`docs/AI-SETUP.md`](AI-SETUP.md). Stałe — sekcja 17.
+
+### 22.14 Plan kolejnych faz (do osobnej akceptacji)
+
+| Faza | Zakres |
+|---|---|
+| B | Page Intelligence: pobieranie strony docelowej (tylko strony projektu, `UrlSafetyPolicy` + pinning IP, limity), zapis migawki z TTL, `PageContentSource` w kontekście (treść w bloku niezaufanym), pełniejszy `ProjectPageIndex` (mapa witryny / REST WordPressa) |
+| C | Panel: analiza AI w szczegółach tematu — plan z kosztem → potwierdzenie → uruchomienie; wynik z odwołaniami do dowodów, braki danych, decyzja użytkownika, historia; ustawienia i budżet AI dla administratora |
+| D | Kolejne zadania na tym samym fundamencie (np. brief strony, porównanie z konkurencją) — nowe wersje instrukcji i kontraktu; drugi dostawca (Anthropic) jako adapter |
+| E | Ewentualne zadania w tle — wyłącznie przez `SyncScheduler` (bez drugiej kolejki), po jawnym włączeniu i w budżecie AI; kalibracja jakości na prawdziwych tematach |
+
+### 22.15 Ograniczenia
+
+- Rzeczywiste wywołanie OpenAI nie było wykonane (testy na atrapie HTTP; brak klucza w środowisku) — przed pierwszym użyciem: konfiguracja
+  według `docs/AI-SETUP.md`, plan (`ai:plan`), jedno uruchomienie z niskimi limitami i porównanie kosztu z panelem dostawcy.
+- Szacunek tokenów jest przybliżeniem (górna granica z bajtów); koszt rozliczany ze zgłoszonego zużycia.
+- Część modeli nie obsługuje `temperature` — parametr wysyłany tylko, gdy ustawiony (`OSF_SEO_AI_TEMPERATURE`).
+- Walidacja wykrywa prognozy liczbowe i obietnice heurystycznie (wzorce) — nie zastępuje przeglądu wyniku przez człowieka.
+- Treść stron nieznana do fazy B; indeks stron niepełny (GSC) — analizy oznaczają to jako braki danych.
