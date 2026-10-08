@@ -43,6 +43,7 @@ final class Redactor
 		'set-cookie',
 		'state',
 		'token',
+		'x-api-key',
 	];
 
 	/** Pokrywają m.in. access_token, refresh_token, id_token i client_secret. */
@@ -57,6 +58,8 @@ final class Redactor
 		// Basic Auth (DataForSEO: Base64 z login:hasło).
 		'/\bBasic\s+[A-Za-z0-9+\/]{6,}=*/i',
 		'/\beyJ[A-Za-z0-9_\-]{8,}\.[A-Za-z0-9_\-]{8,}\.[A-Za-z0-9_\-]{8,}/',
+		// Klucze API OpenAI (sk-…, sk-proj-…) i Anthropic (sk-ant-…).
+		'/\bsk-[A-Za-z0-9_\-]{20,}/',
 	];
 
 	public function string(string $value): string
