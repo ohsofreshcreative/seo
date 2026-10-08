@@ -4,31 +4,21 @@ declare(strict_types=1);
 
 namespace OsfSeo\Ai\Contract;
 
-use OsfSeo\Ai\Context\TextSanitizer;
-
 /**
  * Walidacja odpowiedzi modelu po stronie PHP (kontrakt wersji 1): poprawny JSON, dokładny zestaw pól, typy, wyliczenia, limity długości
  * i liczby elementów, unikalne identyfikatory, odwołania wyłącznie do dowodów obecnych w kontekście tego uruchomienia, twierdzenie
  * „evidence” z co najmniej jednym odwołaniem, rekomendacje wskazujące istniejące ustalenia, bez prognoz liczbowych w ocenie wpływu
  * i bez obietnic („gwarantuje”). Odpowiedź z jakimkolwiek błędem jest odrzucana w całości (status `invalid`, wynik niezapisany).
  */
-final class OutputValidator
+final class OutputValidator extends JsonContractValidator
 {
 	public const MAX_BYTES = 200000;
-
-	private const ID = '/^[A-Za-z][A-Za-z0-9_\-]{0,15}$/';
 
 	/** Prognozy liczbowe w ocenie wpływu (procenty, mnożniki, „+N kliknięć”). */
 	private const FORECAST = '/(\d+(?:[.,]\d+)?\s*%|\d+(?:[.,]\d+)?\s*(?:x|×)(?![a-z])|\b\d+(?:[.,]\d+)?[\s-]*(?:razy|krotn)|\+\s*\d)/iu';
 
 	/** Obietnice wyniku (rekomendacje to hipotezy do sprawdzenia). */
 	private const PROMISE = '/(gwarant|guarantee)/iu';
-
-	/** @var list<array{path: string, code: string}> */
-	private array $errors = [];
-
-	/** @var array<string, true> */
-	private array $known = [];
 
 	/**
 	 * @param list<string> $knownRefs odwołania obecne w kontekście uruchomienia
@@ -38,18 +28,10 @@ final class OutputValidator
 		$this->errors = [];
 		$this->known = array_fill_keys($knownRefs, true);
 
-		if (strlen($text) > self::MAX_BYTES) {
-			return new ValidationResult(null, [['path' => '$', 'code' => 'too_large']]);
-		}
+		$data = $this->decode($text, self::MAX_BYTES);
 
-		$data = json_decode(trim($text), true, 32, JSON_BIGINT_AS_STRING);
-
-		if (json_last_error() !== JSON_ERROR_NONE) {
-			return new ValidationResult(null, [['path' => '$', 'code' => 'invalid_json']]);
-		}
-
-		if (! is_array($data) || ($data !== [] && array_is_list($data))) {
-			return new ValidationResult(null, [['path' => '$', 'code' => 'not_object']]);
+		if ($data === null) {
+			return new ValidationResult(null, $this->errors);
 		}
 
 		if (! $this->keys($data, ['contract_version', 'summary', 'findings', 'recommendations', 'missing_information', 'caveats', 'manual_checks'], '$')) {
@@ -187,166 +169,6 @@ final class OutputValidator
 	}
 
 	/**
-	 * @param array<string, mixed>|mixed $value
-	 * @param list<string> $expected
-	 */
-	private function keys(mixed $value, array $expected, string $path): bool
-	{
-		if (! is_array($value) || ($value !== [] && array_is_list($value))) {
-			$this->error($path, 'wrong_type');
-
-			return false;
-		}
-
-		$ok = true;
-
-		foreach ($expected as $key) {
-			if (! array_key_exists($key, $value)) {
-				$this->error($path . '.' . $key, 'missing_field');
-				$ok = false;
-			}
-		}
-
-		foreach (array_keys($value) as $key) {
-			if (! in_array($key, $expected, true)) {
-				$this->error($path . '.' . self::key((string) $key), 'unexpected_field');
-				$ok = false;
-			}
-		}
-
-		return $ok;
-	}
-
-	/**
-	 * @return array<int, mixed>
-	 */
-	private function items(mixed $value, string $path): array
-	{
-		if (! is_array($value) || ! array_is_list($value)) {
-			$this->error($path, 'wrong_type');
-
-			return [];
-		}
-
-		if (count($value) > AnalysisContract::MAX_ITEMS) {
-			$this->error($path, 'too_many_items');
-
-			return [];
-		}
-
-		return $value;
-	}
-
-	private function string(mixed $value, string $path, string $limit, bool $required): ?string
-	{
-		if (! is_string($value)) {
-			$this->error($path, 'wrong_type');
-
-			return null;
-		}
-
-		$max = AnalysisContract::LIMITS[$limit];
-		$clean = TextSanitizer::text($value, $max + 1);
-
-		if ($required && $clean === '') {
-			$this->error($path, 'empty');
-		} elseif (mb_strlen($clean, 'UTF-8') > $max) {
-			$this->error($path, 'too_long');
-		}
-
-		return $clean;
-	}
-
-	/**
-	 * @param list<string> $allowed
-	 */
-	private function enum(mixed $value, array $allowed, string $path): ?string
-	{
-		if (! is_string($value) || ! in_array($value, $allowed, true)) {
-			$this->error($path, 'invalid_enum');
-
-			return null;
-		}
-
-		return $value;
-	}
-
-	/**
-	 * @param array<string, true> $seen
-	 */
-	private function id(mixed $value, string $path, array &$seen): ?string
-	{
-		if (! is_string($value) || preg_match(self::ID, $value) !== 1) {
-			$this->error($path, 'invalid_id');
-
-			return null;
-		}
-
-		if (isset($seen[$value])) {
-			$this->error($path, 'duplicate_id');
-		}
-
-		$seen[$value] = true;
-
-		return $value;
-	}
-
-	/**
-	 * @return list<string>
-	 */
-	private function refs(mixed $value, string $path): array
-	{
-		if (! is_array($value) || ! array_is_list($value)) {
-			$this->error($path, 'wrong_type');
-
-			return [];
-		}
-
-		$refs = [];
-
-		foreach ($value as $index => $ref) {
-			if (! is_string($ref)) {
-				$this->error($path . '[' . $index . ']', 'wrong_type');
-			} elseif (! isset($this->known[$ref])) {
-				$this->error($path . '[' . $index . ']', 'unknown_ref');
-			} else {
-				$refs[$ref] = true;
-			}
-		}
-
-		if (count($refs) > AnalysisContract::MAX_REFS) {
-			$this->error($path, 'too_many_refs');
-		}
-
-		return array_keys($refs);
-	}
-
-	/**
-	 * @param array<string, true> $findings
-	 * @return list<string>
-	 */
-	private function findingIds(mixed $value, array $findings, string $path): array
-	{
-		if (! is_array($value) || ! array_is_list($value)) {
-			$this->error($path, 'wrong_type');
-
-			return [];
-		}
-
-		$ids = [];
-
-		foreach ($value as $index => $id) {
-			if (! is_string($id) || ! isset($findings[$id])) {
-				$this->error($path . '[' . $index . ']', 'unknown_finding');
-			} else {
-				$ids[$id] = true;
-			}
-		}
-
-		return array_keys($ids);
-	}
-
-	/**
 	 * @param list<string> $refs
 	 */
 	private function basis(?string $basis, array $refs, string $path): void
@@ -356,14 +178,18 @@ final class OutputValidator
 		}
 	}
 
-	private function error(string $path, string $code): void
+	protected function limit(string $kind): int
 	{
-		$this->errors[] = ['path' => $path, 'code' => $code];
+		return AnalysisContract::LIMITS[$kind];
 	}
 
-	/** Nazwa nieoczekiwanego pola w ścieżce błędu — bez dowolnej treści z odpowiedzi. */
-	private static function key(string $key): string
+	protected function maxItems(): int
 	{
-		return preg_match('/^[A-Za-z0-9_]{1,40}$/', $key) === 1 ? $key : '?';
+		return AnalysisContract::MAX_ITEMS;
+	}
+
+	protected function maxRefs(): int
+	{
+		return AnalysisContract::MAX_REFS;
 	}
 }

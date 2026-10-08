@@ -5,7 +5,9 @@ declare(strict_types=1);
 namespace OsfSeo\Ai\Provider;
 
 use Closure;
+use OsfSeo\Ai\Analysis\AnalysisType;
 use OsfSeo\Ai\Contract\AnalysisContract;
+use OsfSeo\Ai\Contract\RecommendationContract;
 
 /**
  * Dostawca testowy (zerowy koszt, bez sieci): deterministyczna odpowiedź zgodna z kontraktem, zbudowana wyłącznie ze znanych odwołań
@@ -58,7 +60,8 @@ final class FakeProvider implements AiProvider
 			return ($this->responder)($request);
 		}
 
-		$text = (string) json_encode(self::sample($request->hints), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+		$sample = in_array($request->hints['analysis_type'] ?? null, AnalysisType::RECOMMENDATIONS, true) ? self::recommendations($request->hints) : self::sample($request->hints);
+		$text = (string) json_encode($sample, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
 
 		return new AiResponse(
 			$text,
@@ -134,5 +137,136 @@ final class FakeProvider implements AiProvider
 				'evidence_refs' => $target,
 			]],
 		];
+	}
+
+	/**
+	 * Przykładowa odpowiedź analizy rekomendacji (kontrakt v2, faza C) — struktura typu analizy zbudowana wyłącznie ze znanych odwołań
+	 * i ograniczeń z `hints`; każdy tekst oznaczony `[TEST]` (to nie jest analiza SEO).
+	 *
+	 * @param array<string, mixed> $hints `analysis_type`, `refs`, `data_gaps`, `limitations`, `constraints`, `action`
+	 * @return array<string, mixed>
+	 */
+	public static function recommendations(array $hints): array
+	{
+		$type = (string) $hints['analysis_type'];
+		$refs = array_values(array_filter((array) ($hints['refs'] ?? []), 'is_string'));
+		$pick = static fn (string $prefix): array => array_values(array_filter($refs, static fn (string $ref): bool => $ref === $prefix || str_starts_with($ref, $prefix . ':')));
+		$page = array_slice($pick('page'), 0, 1);
+		$competitors = array_slice($pick('cpage'), 0, 3);
+		$keywords = array_slice($pick('kw'), 0, 2);
+		$decision = $pick('decision');
+		$target = $pick('target');
+		$site = array_slice($pick('site'), 0, 2);
+		$action = is_string($hints['action'] ?? null) ? $hints['action'] : 'investigate';
+		$constraints = array_values(array_filter((array) ($hints['constraints'] ?? []), 'is_string'));
+		$limits = array_values(array_unique(array_filter([...(array) ($hints['limitations'] ?? []), ...(array) ($hints['data_gaps'] ?? [])], 'is_string')));
+		$supporting = $page !== [] ? $page : ($keywords !== [] ? $keywords : $decision);
+		$basis = static fn (array $refs): string => $refs === [] ? 'hypothesis' : 'inference';
+		$recommendation = static fn (string $id, string $kind, string $title, array $refs, int $priority): array => [
+			'id' => $id,
+			'type' => $kind,
+			'title' => $title,
+			'description' => '[TEST] Opis rekomendacji dostawcy testowego — sprawdza strukturę, odwołania i walidację wyniku.',
+			'rationale' => '[TEST] Dostawca testowy nie analizuje danych; uzasadnienie wskazuje tylko dowody z kontekstu.',
+			'target' => '[TEST] Element wskazany w dowodach',
+			'finding_ids' => ['F1'],
+			'priority' => $priority,
+			'urgency' => 'next',
+			'expected_impact' => 'unknown',
+			'impact_rationale' => '[TEST] Bez oceny wpływu.',
+			'evidence_refs' => $refs,
+			'basis' => $refs === [] ? 'hypothesis' : 'inference',
+			'confidence' => 'low',
+			'requires_manual_check' => true,
+			'verification' => '[TEST] Zweryfikuj ręcznie w witrynie i w danych projektu.',
+		];
+		$findings = [[
+			'id' => 'F1',
+			'kind' => 'observation',
+			'title' => '[TEST] Działanie Strategii: ' . $action,
+			'explanation' => '[TEST] Odpowiedź dostawcy testowego — to nie jest analiza SEO. Decyzja Strategii pozostaje bez zmian.',
+			'evidence_refs' => $decision,
+			'basis' => $basis($decision),
+			'confidence' => 'low',
+		]];
+
+		if ($page !== []) {
+			$findings[] = [
+				'id' => 'F2',
+				'kind' => 'observation',
+				'title' => '[TEST] Zapisany snapshot strony projektu',
+				'explanation' => '[TEST] Snapshot pochodzi z HTML bez JavaScriptu — brak elementu w snapshocie nie dowodzi jego braku na stronie.',
+				'evidence_refs' => $page,
+				'basis' => 'fact',
+				'confidence' => 'low',
+			];
+		}
+
+		$result = [
+			'contract_version' => RecommendationContract::VERSION,
+			'analysis_type' => $type,
+			'summary' => '[TEST] Atrapa analizy „' . AnalysisType::label($type) . '” (dostawca testowy, koszt 0) — struktura zgodna z kontraktem, bez wniosków merytorycznych.',
+			'search_intent' => [
+				'primary' => 'unknown',
+				'explanation' => '[TEST] Intencja nieoceniana przez dostawcę testowego.',
+				'evidence_refs' => $keywords,
+				'basis' => $basis($keywords),
+				'confidence' => 'low',
+			],
+			'findings' => $findings,
+			'recommendations' => [],
+			'content_outline' => ['h1' => '', 'sections' => []],
+			'title_suggestions' => [],
+			'meta_description_suggestions' => [],
+			'internal_links' => [],
+			'content_topics' => [],
+			'user_questions' => [],
+			'cta_suggestions' => [],
+			'client_data_needed' => [],
+			'cannibalization_risks' => [],
+			'missing_information' => array_map(static fn (string $code): array => [
+				'item' => '[TEST] Ograniczenie danych: ' . $code,
+				'why_it_matters' => '[TEST] Ogranicza pewność wniosków.',
+			], array_slice($limits, 0, 4)),
+			'warnings' => ['[TEST] Odpowiedź dostawcy testowego — nie przedstawiaj jej jako analizy SEO.'],
+			'manual_checks' => [[
+				'check' => '[TEST] Zweryfikuj stronę docelową i dowody w witrynie.',
+				'reason' => '[TEST] Indeks stron projektu jest niepełny, a snapshoty nie renderują JavaScriptu.',
+				'evidence_refs' => $target,
+			]],
+		];
+
+		if ($type === AnalysisType::PAGE_OPTIMIZATION) {
+			$result['recommendations'][] = $recommendation('R1', 'expand_section', '[TEST] Sprawdź zakres sekcji strony wskazanej w dowodach', $supporting, 2);
+			$result['recommendations'][] = $recommendation('R2', 'internal_linking', '[TEST] Przejrzyj linkowanie wewnętrzne do strony', $site !== [] ? $site : $target, 3);
+		} elseif ($type === AnalysisType::NEW_PAGE_BRIEF) {
+			array_unshift($result['warnings'], '[TEST] Kandydat na nową stronę: brak znanej strony w dostępnych źródłach nie oznacza, że takiej strony nie ma w witrynie.');
+			$result['recommendations'][] = $recommendation('R1', 'page_role', '[TEST] Ustal rolę kandydata na nową stronę w serwisie', $keywords !== [] ? $keywords : $decision, 1);
+			$result['content_outline'] = [
+				'h1' => '[TEST] Nagłówek H1 kandydata na nową stronę',
+				'sections' => [
+					['level' => 2, 'heading' => '[TEST] Sekcja główna tematu', 'scope' => '[TEST] Zakres do ustalenia na podstawie fraz tematu.', 'evidence_refs' => $keywords, 'basis' => $basis($keywords)],
+					['level' => 2, 'heading' => '[TEST] Sekcja uzupełniająca', 'scope' => '[TEST] Zakres do potwierdzenia z klientem.', 'evidence_refs' => [], 'basis' => 'hypothesis'],
+				],
+			];
+			$result['title_suggestions'] = [['text' => '[TEST] Propozycja tytułu kandydata', 'rationale' => '[TEST] Atrapa propozycji.', 'evidence_refs' => $keywords, 'basis' => $basis($keywords)]];
+			$result['meta_description_suggestions'] = [['text' => '[TEST] Propozycja opisu meta dla kandydata na nową stronę — atrapa dostawcy testowego bez analizy.', 'rationale' => '[TEST] Atrapa propozycji.', 'evidence_refs' => $keywords, 'basis' => $basis($keywords)]];
+			$result['user_questions'] = ['[TEST] Pytanie użytkownika do potwierdzenia w danych?'];
+			$result['cta_suggestions'] = ['[TEST] Wezwanie do działania do ustalenia z klientem'];
+			$result['client_data_needed'] = ['[TEST] Szczegóły oferty i przykłady realizacji od klienta'];
+
+			if ($site !== []) {
+				$result['cannibalization_risks'] = [['description' => '[TEST] Sprawdź, czy inny temat projektu nie obejmuje tych samych fraz.', 'evidence_refs' => $site, 'basis' => 'hypothesis']];
+			}
+		} elseif ($type === AnalysisType::CONTENT_GAP) {
+			array_unshift($result['warnings'], '[TEST] Snapshoty konkurencji i pomiar SERP to różne chwile; obecność tematu u konkurenta nie wyjaśnia jego pozycji.');
+			$result['recommendations'][] = $recommendation('R1', 'expand_section', '[TEST] Rozważ rozbudowę sekcji po porównaniu z konkurencją', [...$page, ...$competitors], 2);
+			$result['content_topics'] = [
+				['label' => '[TEST] Temat obecny na stronie projektu', 'status' => 'present_on_project_page', 'evidence_refs' => $page, 'basis' => $page === [] ? 'hypothesis' : 'fact', 'confidence' => 'low', 'note' => '[TEST] Atrapa tematu.'],
+				['label' => '[TEST] Temat do sprawdzenia u konkurencji', 'status' => 'potentially_missing', 'evidence_refs' => $competitors, 'basis' => 'hypothesis', 'confidence' => 'low', 'note' => '[TEST] Brak w snapshocie projektu nie dowodzi braku na stronie.'],
+			];
+		}
+
+		return $result;
 	}
 }
