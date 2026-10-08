@@ -269,6 +269,19 @@ Motyw powstał z marketingowego motywu `h2otwock` i wciąż zawiera jego kod: bl
   z wyniku zwalidowanego (`AiReport`, etykiety dowodów `EvidenceLabels`, eksport `AiReportText` — bez kosztów, modelu, kodów i JSON-a). Klient
   (bez `osf_seo_manage_ai`): wyłącznie gotowe, nieodrzucone analizy tematów widocznych w Strategii, bez kosztów, dostawcy, modelu i błędów;
   strony bez kodów błędów i historii pobrań (egzekwowane w usłudze). Etykiety UI bez kodów technicznych (`ReportLabels`, `App\Panel\PageLabels`).
+- Jakość i gotowość produkcyjna AI (STEP 17 faza E, `src/Ai/Evaluation`, `docs/ARCHITECTURE.md` sekcja 26, `docs/AI-LIVE-TESTING.md`): adapter OpenAI
+  zgodny ze specyfikacją Responses API — `service_tier: default`, `reasoning.effort` tylko z `OSF_SEO_AI_REASONING_EFFORT`, tylko wiadomości
+  `final_answer`, `cache_write_tokens` w koszcie (nowe pola w odcisku planu tylko, gdy ustawione — nie zmieniaj odcisków istniejących planów
+  mimochodem). Tryb kontrolowanego testu `OSF_SEO_AI_ALLOWED_PROJECTS` / `OSF_SEO_AI_ALLOWED_TYPES` (blokady planu, sprawdzane też w kolejce).
+  **Jedno zatwierdzenie planu = jedno płatne wywołanie** (`plan_already_used`, ponowienie wyłącznie jawne `repeat`); `ai:run` pod blokadą zlecenia;
+  płatnej analizy z bieżącego miesiąca nie usuwamy (koszt w budżecie). Kolejki: błąd pozycji → `internal_error` bez wywołania (kolejne pozycje
+  dalej), projekt zarchiwizowany nic nie wykonuje, `page_jobs` pobiera wyłącznie zatwierdzony adres (`selection_changed`), wygasa po 24 h
+  i daje się anulować, `SyncScheduler` wykonuje kroki po kolejce także po błędzie importu i zapisuje `osf_seo_background_heartbeat`; zablokowana
+  kolejka zawsze widoczna (panel, `ai:queue`, `pages:jobs`). Ocena jakości (`ai_evaluations`, M0019) **wyłącznie przez człowieka** z
+  `osf_seo_manage_ai` — nigdy model, krok w tle ani automatyczna ocena; bez łącznego wyniku („SEO Score”); ocena nie zmienia wyniku, decyzji,
+  Strategii ani statusu pracy; zmiana kryteriów rubryki = nowa `QualityRubric::VERSION`. Raport zamienia kody i odwołania w tekście na etykiety
+  wyłącznie w prezentacji (`AiReport::humanize`) — nie zmieniaj zapisanych wyników dla wyglądu UI. Ekrany tematu i przygotowania czytają
+  jedno źródło danych tematu (`topicSectionFromView`, `planAnalysisFrom` — ten sam odcisk planu); nie dodawaj ponownych odczytów Strategii.
 - `$wpdb` traktuje tabelę z kolumnami ascii i utf8mb4 bez kolumny binarnej jako ASCII i odrzuca zapytania z polskimi znakami
   („contains invalid data”) — w nowych tabelach z tekstem użytkownika daj co najmniej jedną kolumnę `*_bin` / binarną albo zapisuj
   tekst przez `insert()`/`update()`. Frazy liczbowe („2024”) jako klucze tablic PHP stają się int — rzutuj na `(string)`.
@@ -469,13 +482,16 @@ wp osf-seo ai:plan --project=<id> --topic=… --type=… [--provider=…] [--exp
 wp osf-seo ai:generate --project=<id> --topic=… --type=… [--provider=fake] [--explicit] [--plan=<odcisk>] [--yes] [--repeat]   # domyślnie dostawca testowy; płatny — tylko na polecenie użytkownika, z zatwierdzonym planem
 wp osf-seo ai:budget [--project=<id>]                                  # budżet AI (oddzielny od DataForSEO)
 wp osf-seo ai:purge                                                    # porządki bez wywołań AI: porzucone uruchomienia, retencja historii
-wp osf-seo ai:queue [--run] [--time-limit=<s>] [--format=json]        # kolejka analiz zleconych w panelu (stan); --run = krok w tle raz (dostawca z zatwierdzonego planu)
+wp osf-seo ai:queue [--run] [--time-limit=<s>] [--format=json]        # kolejka analiz zleconych w panelu (stan, najstarsze zlecenie, ostatni krok w tle); --run = krok w tle raz
+wp osf-seo ai:eval-criteria|ai:eval-cases [--case=A] [--format=json]   # rubryka jakości (10 kryteriów, bez łącznego wyniku) i przypadki testowe A–L
+wp osf-seo ai:eval --user=<admin> --project=<id> --run=<id> --scores="specificity=4,…" --verdict=accepted|accepted_with_edits|rejected [--issues="kod@R2:notatka;…"] [--action=…] [--case=A] [--notes=…]   # ręczna ocena eksperta (bez API)
+wp osf-seo ai:eval-list --project=<id> [--run=<id>] | ai:eval-report [--project=<id>] [--type=…] [--include-test]   # oceny i porównanie wersji instrukcji
 wp osf-seo pages:status|list --project=<id> [--format=json]           # Page Intelligence: konfiguracja, transport, strony i stan pamięci (bez HTTP)
 wp osf-seo pages:plan --project=<id> (--page-url=… | --urls="a b" | --topic=… | --keyword=… --ranks=1,2) [--force]   # plan: zakres, pamięć, limity hosta — zero HTTP i DNS
 wp osf-seo pages:fetch --project=<id> (wybór jak wyżej) [--force] [--yes]   # JAWNE pobranie (zewnętrzne żądania HTTP) — tylko na polecenie użytkownika
 wp osf-seo pages:check-url --project=<id> --page-url=…                # diagnostyka SSRF: zakres, składnia, DNS i IP (bez HTTP); nie `--url` — globalny parametr WP-CLI
 wp osf-seo pages:show|snapshot|delete --project=<id> --page=…|--snapshot=…   # snapshot (JSON), usunięcie strony; pages:purge — retencja (bez HTTP)
-wp osf-seo pages:jobs [--run] [--time-limit=<s>] [--format=json]      # zlecenia pobrania z panelu (stan); --run = krok w tle raz (żądania HTTP tylko dla jawnie zleconych stron)
+wp osf-seo pages:jobs [--run] [--time-limit=<s>] [--format=json]      # zlecenia pobrania z panelu (stan, najstarsze zlecenie, ostatni krok w tle); --run = krok w tle raz (żądania HTTP tylko dla jawnie zleconych stron)
 composer test:performance:pages # benchmark ekstrakcji HTML (mały / średni / duży / JS / wiele linków) i kontekstu AI ze stronami (bez sieci i bazy)
 composer test:performance       # benchmark raportów + EXPLAIN na syntetycznych danych (OSOBNA baza testowa)
 composer test:performance:serp  # benchmark pozycji SERP (100 projektów × 500 fraz, TOP100, historia, 2500 fraz) + EXPLAIN (OSOBNA baza)

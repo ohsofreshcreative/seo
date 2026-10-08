@@ -39,7 +39,10 @@ dostawca danych rynkowych (wolumen, historia wolumenu, CPC, konkurencja Ads, tru
 > blokada równoległych zleceń, historia z wykrywaniem nieaktualnych wyników; CLI) i faza D — **panel AI i Page Intelligence** (sekcja „Analiza AI”
 > w szczegółach tematu z gotowością i typem zgodnym ze Strategią, przygotowanie analizy z planem i kosztem przed zleceniem, analizy i pobrania stron
 > w tle po jawnym potwierdzeniu, raport z rekomendacjami i dowodami, kopiowanie i druk, historia analiz, lista i szczegóły stron; klient widzi tylko
-> gotowe analizy bez kosztów). Plan i postęp: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
+> gotowe analizy bez kosztów) i faza E — **jakość i gotowość produkcyjna** (audyt i poprawki bezpieczeństwa, adapter OpenAI zgodny ze specyfikacją
+> Responses API, tryb kontrolowanego testu na jednym projekcie i typie, jedno zatwierdzenie = jedno płatne wywołanie, odporne kolejki z widoczną
+> blokadą, ocena jakości przez eksperta według rubryki z przypadkami A–L bez łącznego „wyniku SEO”, szybsze ekrany AI). Pierwsze płatne analizy:
+> [`docs/AI-LIVE-TESTING.md`](docs/AI-LIVE-TESTING.md) — wyłącznie po osobnej zgodzie. Plan i postęp: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 >
 > **Repozytorium jest publiczne.** Nie commituj żadnych sekretów (sekcja „Konfiguracja”).
 
@@ -231,7 +234,13 @@ wp osf-seo ai:readiness --project=<public_id> --topic="fraza" --type=page-optimi
 wp osf-seo ai:plan --project=<public_id> --topic="fraza" --type=content-gap   # gotowość, koszt maks., blokady, odcisk planu (zero żądań)
 wp osf-seo ai:generate --project=<public_id> --topic="fraza" --type=new-page-brief [--explicit]   # dostawca testowy (koszt 0); płatny: --provider=openai + zatwierdzony plan
 wp osf-seo ai:show --project=<public_id> --run=<id>              # wynik, walidacja, źródła i aktualność; ai:runs --check-stale — aktualność historii
-wp osf-seo ai:queue [--run]                                      # analizy zlecone w panelu (faza D): stan kolejki; --run = krok w tle raz
+wp osf-seo ai:queue [--run]                                      # analizy zlecone w panelu (faza D): stan kolejki, ostatni krok w tle; --run = krok w tle raz
+
+# Ocena jakości analiz AI (STEP 17, faza E — człowiek, bez API; docs/AI-LIVE-TESTING.md)
+wp osf-seo ai:eval-criteria                                      # rubryka: 10 kryteriów 1–5 albo n/a, kody błędów, werdykty
+wp osf-seo ai:eval-cases [--case=A]                              # przypadki testowe A–L
+wp osf-seo ai:eval --user=<admin> --project=<public_id> --run=<id> --scores="specificity=4,…" --verdict=accepted_with_edits [--issues="generic_advice@R3"]
+wp osf-seo ai:eval-report [--type=page_optimization]             # porównanie wersji instrukcji i modeli (bez łącznego wyniku)
 
 # Page Intelligence (STEP 17, faza B — pobieranie wyłącznie jawne; szczegóły: docs/ARCHITECTURE.md, sekcja 23)
 wp osf-seo pages:status --project=<public_id>                    # konfiguracja, transport, liczniki (bez HTTP)
@@ -295,6 +304,9 @@ define('OSF_SEO_DATAFORSEO_MONTHLY_COST_LIMIT', 10.00);
 - Analizy AI: po wdrożeniu nic nie generuje kosztów — rzeczywiste wywołania wyłączone (`OSF_SEO_AI_ENABLED`), bez domyślnego modelu i cen,
   limity budżetu AI 0 USD (oddzielne od DataForSEO). Włączenie OpenAI (klucz `OSF_SEO_OPENAI_API_KEY` wyłącznie w `wp-config.php`, model, ceny
   z cennika dostawcy, limity) — krok po kroku w [`docs/AI-SETUP.md`](docs/AI-SETUP.md). Uprawnienie `osf_seo_manage_ai` — tylko administratorzy.
+  Kontrolowany test (jeden projekt i typ: `OSF_SEO_AI_ALLOWED_PROJECTS`, `OSF_SEO_AI_ALLOWED_TYPES`; `OSF_SEO_AI_REASONING_EFFORT`, limit tokenów,
+  niskie limity, natychmiastowy wyłącznik) — [`docs/AI-LIVE-TESTING.md`](docs/AI-LIVE-TESTING.md). Analizy z panelu wykonuje cron — na Hostingerze
+  WP-CLI `sync:run` co minutę ([`docs/HOSTINGER-CRON.md`](docs/HOSTINGER-CRON.md)).
 
 - Page Intelligence: strony pobierane wyłącznie jawnie (`wp osf-seo pages:fetch` albo zlecenie w panelu „Strony” wykonywane w tle, uprawnienie `osf_seo_manage_page_intelligence` — tylko
   administratorzy) przez bezpieczny transport ext-curl (wymagany `CURLOPT_RESOLVE`; bez proxy). Opcjonalnie: `OSF_SEO_PAGES_TTL_HOURS` (24),

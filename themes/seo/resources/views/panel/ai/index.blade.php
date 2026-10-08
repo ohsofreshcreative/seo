@@ -106,7 +106,7 @@
                   @if ($row['topic'] !== null)
                     <a href="{{ StrategyTopicsController::topicUrl($projectId, $row['topic']['id']) }}" class="break-words text-slate-800 hover:underline">{{ $row['topic']['label'] ?? '—' }}</a>
                   @else
-                    <span class="text-slate-400">Temat usunięty</span>
+                    <span class="text-slate-500">Temat usunięty</span>
                   @endif
                 </td>
                 <td class="px-4 py-3 text-slate-700">{{ $row['type_label'] }}@if ($manage && $row['explicit'])<span class="block text-xs text-amber-800">świadomy wybór</span>@endif</td>
@@ -121,11 +121,11 @@
                   @elseif ($row['strategy_changed'] === false)
                     <span class="text-slate-600">Bez zmian</span>
                   @else
-                    <span class="text-slate-400">—</span>
+                    <span class="text-slate-500">—</span>
                   @endif
                 </td>
                 @if ($manage)
-                  <td class="px-4 py-3 text-xs text-slate-600">{{ $row['provider'] }}<span class="block text-slate-400">{{ $row['model'] }}</span></td>
+                  <td class="px-4 py-3 text-xs text-slate-600">{{ $row['provider'] }}<span class="block text-slate-500">{{ $row['model'] }}</span></td>
                   <td class="whitespace-nowrap px-4 py-3 text-right tabular-nums text-slate-700">{{ $row['paid'] ? Format::usd($row['cost'], 4) : '0 USD' }}</td>
                 @endif
                 <td class="px-4 py-3 text-right"><a href="{{ AiController::runUrl($projectId, $row['id']) }}" class="font-medium text-brand-600 hover:underline">{{ $row['ready'] ? 'Raport' : 'Szczegóły' }}</a></td>
