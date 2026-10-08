@@ -17,10 +17,11 @@ Działa jako osobna instalacja WordPress (staging: `https://seo.ohsofresh.top`) 
 - **motywu Sage 11 `seo`** (`themes/seo`) — wyłącznie UI panelu (routing Acorn, kontrolery,
   Blade, Tailwind, Alpine, Chart.js).
 
-Od STEP 15 w nowych tekstach UI i dokumentacji produkt nazywa się **Whack-a-mole** (istniejące teksty „Wibble” / „OSF SEO” zmieniamy
-tylko przy okazji pracy nad danym widokiem, bez osobnego rebrandu). Identyfikatory techniczne pozostają **celowo bez zmian**: plugin `osf-seo`,
-stałe `OSF_SEO_*`, tabele `osf_*`, namespace `OsfSeo\`, opcje/capabilities `osf_seo_*`, komendy `wp osf-seo …`.
-Nie zmieniaj ich mimochodem — techniczny rebrand będzie osobnym, zaplanowanym etapem.
+Od STEP 15 w nowych tekstach UI i dokumentacji produkt nazywa się **Whack-a-mole**; interfejs panelu (sidebar, tytuły kart, logowanie,
+komunikaty) używa już tej nazwy, a administrator może ustawić logo aplikacji (Ustawienia → „Wygląd aplikacji”, `OsfSeo\Branding\BrandingService`,
+D85 — tylko ID załącznika biblioteki mediów, PNG/JPG/WebP, bez SVG). Identyfikatory techniczne pozostają **celowo bez zmian**: plugin `osf-seo`
+(także `Plugin Name: OSF SEO`), stałe `OSF_SEO_*`, tabele `osf_*`, namespace `OsfSeo\`, opcje/capabilities `osf_seo_*`, role i ich etykiety,
+komendy `wp osf-seo …`, hooki WP-Cron, wyjście CLI i logi. Nie zmieniaj ich mimochodem — techniczny rebrand będzie osobnym, zaplanowanym etapem.
 
 Źródła danych:
 - **Google Search Console API** — źródło prawdy o skuteczności strony (kliknięcia, wyświetlenia, CTR,
@@ -299,7 +300,7 @@ Fundament panelu powstał w STEP 4 (`docs/ARCHITECTURE.md`, sekcje 4.1–4.4). O
 3. Powtarzalne elementy → komponenty Blade `resources/views/components/panel/*` (`<x-panel.* />`:
    `button`, `card`, `page-header`, `field`, `badge`, `flash`, `empty-state`, `nav-link`, `nonce`, `delta`, `stat`,
    `score`, `confidence`, `opportunity-status`, `visibility`, `candidate-status`, `serp-rank`, `rank-change`, `gap-type`, `content-gap`,
-   `project-visibility`, `strategy-action`, `topic-status`, `target-state`, `serp-freshness`, `strategy-confidence`),
+   `project-visibility`, `strategy-action`, `topic-status`, `target-state`, `serp-freshness`, `strategy-confidence`, `brand`),
    nie `@apply` ani własne klasy. Własny CSS tylko, gdy utilities nie wystarczają.
 4. Tokeny kolorów (`brand-*`) w bloku `@theme` w `resources/css/panel.css`; bez hexów w Blade;
    bez dark mode w MVP. `panel.css` skanuje tylko pliki panelu (`source(none)` + `@source`),
