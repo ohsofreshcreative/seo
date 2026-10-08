@@ -7,7 +7,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="robots" content="noindex, nofollow">
   <meta name="referrer" content="same-origin">
-  <title>@yield('title', 'Panel') · OSF SEO</title>
+  <title>@yield('title', 'Panel') · Whack-a-mole</title>
   @vite(['resources/css/panel.css', 'resources/js/panel.js'])
 </head>
 

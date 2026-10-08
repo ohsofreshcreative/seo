@@ -3,7 +3,7 @@
 /**
  * Plugin Name:       OSF SEO
  * Plugin URI:        https://github.com/ohsofreshcreative/seo
- * Description:       Logika aplikacji Wibble (techniczna nazwa: OSF SEO): projekty, Google Search Console, dane rynkowe, wyszukiwanie nowych fraz i pozycje SERP z konkurentami (DataForSEO), synchronizacja i analityka.
+ * Description:       Logika aplikacji Whack-a-mole (techniczna nazwa: OSF SEO): projekty, Google Search Console, dane rynkowe, wyszukiwanie nowych fraz i pozycje SERP z konkurentami (DataForSEO), synchronizacja i analityka.
  * Version:           0.16.0
  * Requires at least: 6.6
  * Requires PHP:      8.2
@@ -22,7 +22,7 @@ if (! defined('ABSPATH')) {
 
 if (version_compare(PHP_VERSION, '8.2', '<')) {
 	add_action('admin_notices', function () {
-		echo '<div class="notice notice-error"><p>OSF SEO wymaga PHP 8.2 lub nowszego. Plugin nie został uruchomiony.</p></div>';
+		echo '<div class="notice notice-error"><p>Whack-a-mole (plugin OSF SEO) wymaga PHP 8.2 lub nowszego. Plugin nie został uruchomiony.</p></div>';
 	});
 
 	return;

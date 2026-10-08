@@ -141,6 +141,7 @@ API wymaga osobnej decyzji architektonicznej; integracje dostawców wyłącznie 
 | D82 | Wykrywanie zmian i debounce: najwyżej co 60 s klucz danych aktywnych projektów (kilkanaście tanich zapytań, bez zapisu, gdy nic się nie zmieniło); nowy klucz → zlecenie dopiero, gdy jest stabilny przez 120 s i projekt nie ma oczekujących zadań importu GSC, najpóźniej po 60 min nieaktualności; po przeliczeniu ponowne sprawdzenie klucza — dane zapisane w trakcie → kolejne przeliczenie (raz); przeliczenie nie zmienia klucza (brak cyklu); kliknięcie w trakcie przeliczenia zleca jedno kolejne (`refresh_requested_at` > początek przeliczenia — `recordRefresh` nie kasuje nowszego zlecenia) | Jedno przeliczenie na import wielu źródeł zamiast lawiny; żadne zlecenie nie ginie. Sekcja 15.15 |
 | D83 | Statusy panelu z zapisanego stanu zadania: Aktualne dane, Oczekuje na przeliczenie (zmiana danych, zlecenie, ponowienie), Przeliczanie, Zakończono (15 min po zakończeniu), Błąd przeliczenia; endpoint `GET /strategy/status` (JSON, dostęp do projektu) odpytywany co 5 s tylko, gdy przeliczenie czeka albo trwa; klient bez kodu błędu, źródła zlecenia i stanu kroku w tle; administrator — diagnostyka w ustawieniach Strategii i `wp osf-seo strategy:queue`, ostrzeżenie, gdy krok w tle nie działał od 10 min | Przejrzystość bez nowego panelu administracyjnego i bez szczegółów technicznych dla klienta. Sekcja 15.15 |
 | D84 | Wydajność: zostaje pełne przeliczenie projektu (benchmark `test:performance:strategy`: 5 000 fraz ok. 3 s, 230 zapytań, ok. 60 MB; bez zmian danych — sam klucz, 0 zapisów; wymuszone bez zmian danych — 0 zapisów kandydatów, tematów i zdarzeń); przeliczenie przyrostowe per fraza niepotrzebne — do ponownej oceny przy > 20 000 fraz albo > 10 s na projekt | Najpierw pomiar; brak złożoności bez potrzeby, stabilne ID i workflow bez zmian. Sekcja 15.15 |
+| D85 | Nazwa aplikacji w UI: **Whack-a-mole** (sidebar, tytuły kart, logowanie, komunikaty dostępu i 503, opis pluginu w wp-admin); identyfikatory techniczne bez zmian (`Plugin Name: OSF SEO`, slug i text domain `osf-seo`, `OsfSeo\`, `osf_*`, `osf_seo_*`, role i ich etykiety, capabilities, WP-CLI, trasy, hooki WP-Cron, wyjście CLI i logi). Logo aplikacji: załącznik biblioteki mediów WordPressa, w opcji `osf_seo_branding_logo` tylko jego ID; upload i wybór w Ustawieniach panelu po stronie serwera (bez modalu `wp.media` — panel nie ładuje `wp_head`, jQuery ani Backbone); wyłącznie PNG, JPG, WebP (typ z zawartości, maks. 2 MB i 4000 px; SVG odrzucane — brak sanityzacji); zmiana tylko z `osf_seo_manage_settings` (trasa, kontroler, usługa); brak logo albo plik usunięty → napis „Whack-a-mole” | Spójna marka bez technicznego rebrandu i bez nowego modułu; bezpieczny upload. Sekcja 4.5 |
 
 ## 3. Repozytorium i środowiska
 
@@ -199,6 +200,7 @@ Zaimplementowane w STEP 4:
 GET  /login  POST /login                     (gość; nonce + Origin, limit prób LoginThrottle)
 POST /logout                                 GET  /                    (dashboard projektów)
 GET  /settings                               (osf_seo_manage_settings)
+POST /settings/logo | /settings/logo/select | /settings/logo/remove   (osf_seo_manage_settings; logo aplikacji — 4.5)
 GET  /projects[?status=archived]             GET  /projects/create     POST /projects
 GET  /projects/{project}                     (przegląd; pusty stan → Search Console)
 GET  /projects/{project}/edit                POST /projects/{project}  (osf_seo_manage_projects)
@@ -360,6 +362,21 @@ themes/seo/
 - `panel.css` i `app.css` mają rozdzielone źródła klas; `app.css`/`editor.css` po dodaniu panelu są
   bajtowo identyczne. `app.js` współdzieli z `panel.js` chunk Alpine (`module.esm-*.js`) — zmiana
   tylko w podziale plików, nie w działaniu.
+
+### 4.5 Nazwa i logo aplikacji (D85)
+
+- W interfejsie panelu aplikacja nazywa się **Whack-a-mole**: napis albo logo na górze sidebaru, tytuły kart przeglądarki
+  (`… · Whack-a-mole`), ekran logowania i strony błędów (układ gościa), komunikaty „brak dostępu” i 503. Podtytuł „Panel SEO OhSoFresh”
+  (nazwa agencji) i nazwy modułów (Strategia, Pozycje, Szanse SEO, Luki SEO…) bez zmian. Identyfikatory techniczne — bez zmian (D85).
+- **Logo**: Ustawienia (`/settings`, `osf_seo_manage_settings`) → karta „Wygląd aplikacji”: podgląd na tle sidebaru, przesłanie obrazu
+  (`POST /settings/logo`, multipart, nonce + Origin, `is_uploaded_file`), wybór z biblioteki mediów (`POST /settings/logo/select`,
+  ostatnie 24 obrazy PNG/JPG/WebP), usunięcie (`POST /settings/logo/remove` — obraz zostaje w bibliotece). Logika w pluginie
+  (`OsfSeo\Branding\BrandingService`): opcja `osf_seo_branding_logo` = ID załącznika; walidacja rozszerzenia i typu z zawartości
+  (`wp_check_filetype_and_ext` + `wp_getimagesize`), rozmiaru (2 MB) i wymiarów (4000 px); zapis przez `media_handle_sideload` przy
+  `upload_mimes` ograniczonym do PNG/JPG/WebP (także gdy inna wtyczka dopuszcza SVG); tytuł z nazwy pliku, domyślny tekst alternatywny
+  „Whack-a-mole”. Wyświetlanie: composer `App\View\Composers\Panel\Branding` (układy `app` i `guest`) → komponent `x-panel.brand`
+  (rozmiar `medium` + `srcset`, proporcje zachowane, w sidebarze maks. 40 × 176 px, na logowaniu maks. 64 × 240 px). Brak opcji,
+  usunięty załącznik albo brak pliku → napis „Whack-a-mole”. Klient widzi logo, nie widzi Ustawień (403 na stronie i akcjach).
 
 ## 5. Uprawnienia
 

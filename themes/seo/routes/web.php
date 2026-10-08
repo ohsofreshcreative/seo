@@ -41,6 +41,9 @@ Route::middleware([Authenticate::class, VerifyNonce::class])->group(function () 
 
 	Route::get('/', [DashboardController::class, 'index']);
 	Route::get('/settings', [SettingsController::class, 'index']);
+	Route::post('/settings/logo', [SettingsController::class, 'uploadLogo']);
+	Route::post('/settings/logo/select', [SettingsController::class, 'selectLogo']);
+	Route::post('/settings/logo/remove', [SettingsController::class, 'removeLogo']);
 
 	Route::get('/projects', [ProjectController::class, 'index']);
 	Route::get('/projects/create', [ProjectController::class, 'create']);

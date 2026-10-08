@@ -21,7 +21,7 @@ final class Authenticate
 		}
 
 		if (! current_user_can('osf_seo_access')) {
-			return PanelResponse::forbidden('To konto nie ma dostępu do OSF SEO.');
+			return PanelResponse::forbidden('To konto nie ma dostępu do Whack-a-mole.');
 		}
 
 		return $next($request);
