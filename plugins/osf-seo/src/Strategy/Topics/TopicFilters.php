@@ -28,8 +28,11 @@ final class TopicFilters
 
 	public const LEVELS = ['low', 'medium', 'high'];
 
-	/** Stan SERP tematu: pasmo Pozycji SERP świeżego pomiaru, `fresh` (dowolny świeży), `stale` (31–90 dni), `none` (brak pomiaru). */
-	public const SERP = ['fresh', 'top3', 'top10', 'top20', 'top50', 'top100', 'out', 'stale', 'none'];
+	/**
+	 * Stan SERP tematu: pasmo Pozycji SERP świeżego pomiaru, `fresh` (dowolny świeży), `stale` (31–90 dni), `none` (brak pomiaru),
+	 * `nofresh` (brak świeżego — nieaktualny albo brak; jak licznik przeglądu).
+	 */
+	public const SERP = ['fresh', 'top3', 'top10', 'top20', 'top50', 'top100', 'out', 'stale', 'none', 'nofresh'];
 
 	public const PER_PAGE = 50;
 

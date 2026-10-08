@@ -13,6 +13,7 @@ use OsfSeo\Strategy\StrategyRefresher;
 use OsfSeo\Strategy\Topics\TopicFilters;
 use OsfSeo\Strategy\Topics\TopicRow;
 use OsfSeo\Strategy\Topics\TopicStatus;
+use OsfSeo\Support\Ulid;
 use OsfSeo\Tests\Support\DataForSeoFakes;
 
 /**
@@ -145,6 +146,44 @@ final class StrategyPanelServiceTest extends StrategyTestCase
 		}
 
 		self::assertSame('Druga notatka', $this->strategy->topic($context, $main->publicId)['topic']->note);
+	}
+
+	public function test_module_links_use_strategy_evidence_and_hide_dismissed_topics_from_the_client(): void
+	{
+		$context = $this->scenario();
+		$opportunity = $this->opportunity($context, 'near_top', self::PAGE, null, self::PAGE . "\npozycjonowanie stron", 70);
+		$this->strategy->refresh($context);
+
+		// Szansa SEO → temat wyłącznie przez dowód Strategii (powiązanie bezpośrednie query × page); wspólna podstrona to tylko kontekst.
+		$links = $this->strategy->topicsForOpportunity($context, $opportunity, ['pozycjonowanie stron', 'pozycjonowanie stron www', 'audyt seo']);
+		self::assertSame(['pozycjonowanie stron'], array_keys($links));
+		self::assertSame([], $this->strategy->topicsForOpportunity($context, Ulid::generate(), ['pozycjonowanie stron']), 'Inna szansa — bez powiązania.');
+
+		// Filtr „bez świeżego pomiaru SERP” daje dokładnie listę z licznika przeglądu.
+		$overview = $this->strategy->overview($context);
+		self::assertSame($overview['counts']['no_fresh_serp'], $this->strategy->topics($context, TopicFilters::fromInput(['serp' => 'nofresh']))['total']);
+		$priorities = array_map(static fn (TopicRow $row): ?int => $row->priority, $overview['top']);
+		self::assertNotSame([], $priorities);
+		$sorted = $priorities;
+		rsort($sorted);
+		self::assertSame($sorted, $priorities, 'Najwyższy priorytet — malejąco.');
+
+		// Frazy rynkowe → temat; klient nie widzi odrzuconych tematów ani SERP Intelligence ich fraz.
+		$audit = $this->strategy->keyword($context, 'audyt seo');
+		$this->strategy->setStatus($context, 'audyt seo', TopicStatus::Dismissed);
+		self::assertSame('dismissed', $this->strategy->topicsForMarketKeywords($context, [$audit->marketKeywordId, 0])[$audit->marketKeywordId]['status'] ?? null);
+		self::assertNotContains('audyt seo', array_map(static fn (TopicRow $row): string => (string) $row->label, $this->strategy->overview($context)['top']));
+		$client = $this->createUser(Roles::CLIENT);
+		$this->service->assignUser($context, $client, ProjectRole::Viewer);
+		$clientContext = $this->guard->authorize($context->publicId(), $client);
+		self::assertSame([], $this->strategy->topicsForMarketKeywords($clientContext, [$audit->marketKeywordId]));
+		self::assertSame('audyt seo', $this->strategy->serpDetail($context, 'audyt seo')['candidate']->keyword);
+
+		try {
+			$this->strategy->serpDetail($clientContext, 'audyt seo');
+			self::fail('Fraza odrzuconego tematu niewidoczna dla klienta.');
+		} catch (StrategyNotFound) {
+		}
 	}
 
 	public function test_serp_intelligence_list_topic_view_and_dominant_domains_from_stored_measurements(): void

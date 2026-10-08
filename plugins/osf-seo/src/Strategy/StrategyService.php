@@ -498,10 +498,11 @@ final class StrategyService
 	}
 
 	/**
-	 * Przegląd Strategii (panel): stan, liczniki tematów (jedno zapytanie grupujące), tematy o wysokim priorytecie, tematy zmienione
-	 * po decyzji, najnowsze istotne zdarzenia i aktualność źródeł — bez agregacji danych GSC/SERP przy renderowaniu.
+	 * Przegląd Strategii (panel): stan, liczniki tematów (jedno zapytanie grupujące), tematy o najwyższym priorytecie (otwarte, bez
+	 * monitorowania), tematy zmienione po decyzji, najnowsze istotne zdarzenia i aktualność źródeł — bez agregacji danych GSC/SERP
+	 * przy renderowaniu.
 	 *
-	 * @return array{state: array<string, mixed>, counts: array<string, mixed>, high: list<TopicRow>, attention: list<TopicRow>, events: list<array<string, mixed>>, freshness: array<string, mixed>}
+	 * @return array{state: array<string, mixed>, counts: array<string, mixed>, top: list<TopicRow>, attention: list<TopicRow>, events: list<array<string, mixed>>, freshness: array<string, mixed>}
 	 */
 	public function overview(ProjectContext $context, int $limit = 5): array
 	{
@@ -511,7 +512,7 @@ final class StrategyService
 		return [
 			'state' => $this->panelState($context),
 			'counts' => $this->topics->overviewCounts($projectId, PriorityModel::HIGH_BAND, $restricted),
-			'high' => $this->topics->list($projectId, new TopicFilters(perPage: $limit, minPriority: PriorityModel::HIGH_BAND), $restricted)['rows'],
+			'top' => $this->topics->list($projectId, new TopicFilters(perPage: $limit), $restricted)['rows'],
 			'attention' => $this->topics->list($projectId, new TopicFilters(status: 'all', perPage: $limit, includeMonitor: true, changed: true), $restricted)['rows'],
 			'events' => $this->events->forProject($projectId, 10, $restricted),
 			'freshness' => $this->freshness->forProject($projectId),
@@ -520,10 +521,10 @@ final class StrategyService
 
 	/**
 	 * Szczegóły tematu dla panelu: temat, frazy (metryki rynkowe, źródła), dowody fraz, pakiet kontekstu (sekcje „Dlaczego ten temat
-	 * jest w Strategii?”), zdarzenia oraz SERP Intelligence frazy odniesienia z overlapem fraz tematu — bez żadnego żądania i bez zapisu
-	 * (profile pomiarów liczone w pamięci). Bez uprawnień zarządzania: bez notatki i identyfikatorów użytkowników (D62).
+	 * jest w Strategii?”), zdarzenia, SERP Intelligence frazy odniesienia z overlapem fraz tematu i aktualność źródeł — bez żadnego żądania
+	 * i bez zapisu (profile pomiarów liczone w pamięci). Bez uprawnień zarządzania: bez notatki i identyfikatorów użytkowników (D62).
 	 *
-	 * @return array{topic: TopicRow, members: list<array<string, mixed>>, evidence: array<string, array<string, mixed>>, context: array<string, mixed>, events: list<array<string, mixed>>, serp: array<string, mixed>}
+	 * @return array{topic: TopicRow, members: list<array<string, mixed>>, evidence: array<string, array<string, mixed>>, context: array<string, mixed>, events: list<array<string, mixed>>, serp: array<string, mixed>, freshness: array<string, mixed>}
 	 *
 	 * @throws StrategyNotFound
 	 */
@@ -548,6 +549,7 @@ final class StrategyService
 			'context' => (new TopicContextBuilder())->build($topic, $members, $evidence, $manage),
 			'events' => $this->topicEvents($context, $topic),
 			'serp' => $this->topicSerp($context, $topic, $members),
+			'freshness' => $this->freshness->forProject($context->projectId()),
 		];
 	}
 
@@ -727,6 +729,35 @@ final class StrategyService
 		}
 
 		return $result;
+	}
+
+	/**
+	 * Tematy fraz szansy SEO (odnośniki z Szans SEO): frazy z dowodów wykrycia → kandydat Strategii, a powiązanie potwierdza dowód
+	 * Strategii `opportunity.direct` (OpportunityKeywordIndex — dane query × page, D54), nigdy samo `opportunities.keyword`. Fraza, dla której
+	 * szansa jest tylko kontekstem (ta sama podstrona), nie jest zwracana. Bez zapisu.
+	 *
+	 * @param list<string> $texts
+	 * @return array<string, array<string, mixed>> tekst frazy → temat
+	 */
+	public function topicsForOpportunity(ProjectContext $context, string $opportunityId, array $texts): array
+	{
+		$topics = $this->topicsForTexts($context, $texts);
+
+		if ($topics === []) {
+			return [];
+		}
+
+		$evidence = $this->keywords->evidence($context->projectId(), array_values(array_unique(array_map(static fn (array $topic): string => (string) $topic['keyword'], $topics))));
+
+		return array_filter($topics, static function (array $topic) use ($evidence, $opportunityId): bool {
+			foreach ((array) ($evidence[$topic['keyword']]['opportunity']['direct'] ?? []) as $item) {
+				if (is_array($item) && ($item['id'] ?? null) === $opportunityId) {
+					return true;
+				}
+			}
+
+			return false;
+		});
 	}
 
 	/**

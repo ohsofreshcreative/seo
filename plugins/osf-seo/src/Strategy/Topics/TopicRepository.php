@@ -349,10 +349,11 @@ final class TopicRepository
 			$where[] = match ($filters->serp) {
 				'fresh' => "t.serp_band IN ('top3', 'top10', 'top20', 'top50', 'top100', 'out')",
 				'none' => 't.serp_band IS NULL',
+				'nofresh' => "(t.serp_band IS NULL OR t.serp_band = 'stale')",
 				default => 't.serp_band = %s',
 			};
 
-			if (! in_array($filters->serp, ['fresh', 'none'], true)) {
+			if (! in_array($filters->serp, ['fresh', 'none', 'nofresh'], true)) {
 				$params[] = $filters->serp;
 			}
 		}
