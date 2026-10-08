@@ -13,6 +13,7 @@ use OsfSeo\Gap\ContentGap;
 use OsfSeo\Gap\GapNotFound;
 use OsfSeo\Gap\GapService;
 use OsfSeo\Gap\GapStatus;
+use OsfSeo\Strategy\StrategyService;
 use Symfony\Component\HttpFoundation\Response;
 
 /**
@@ -134,6 +135,7 @@ final class GapContentController
 
 		return response()->view('panel.gaps.cluster', $data + [
 			'project' => $context->project(),
+			'strategyTopics' => osf_seo()->get(StrategyService::class)->topicsForMarketKeywords($context, array_map(static fn (array $row): int => (int) $row['market_keyword_id'], $data['keywords'])),
 			'canManage' => $context->can('osf_seo_manage_keyword_gap'),
 			'errors' => $errors,
 		], $status);

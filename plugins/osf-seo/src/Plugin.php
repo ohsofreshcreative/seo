@@ -24,6 +24,8 @@ use OsfSeo\Cli\MarketCommand;
 use OsfSeo\Cli\OpportunityCommand;
 use OsfSeo\Cli\ProjectCommand;
 use OsfSeo\Cli\StatusCommand;
+use OsfSeo\Cli\StrategyCommand;
+use OsfSeo\Cli\StrategyTopicCommand;
 use OsfSeo\Cli\SyncCommand;
 use OsfSeo\Database\Connection;
 use OsfSeo\Database\Migrator;
@@ -98,12 +100,43 @@ use OsfSeo\Market\MarketTaskRepository;
 use OsfSeo\Opportunities\OpportunityAnalyzer;
 use OsfSeo\Opportunities\OpportunityConfig;
 use OsfSeo\Opportunities\OpportunityDataSource;
+use OsfSeo\Opportunities\OpportunityKeywordIndex;
 use OsfSeo\Opportunities\OpportunityRepository;
 use OsfSeo\Opportunities\OpportunityScheduler;
 use OsfSeo\Opportunities\OpportunityService;
 use OsfSeo\Projects\ProjectRepository;
 use OsfSeo\Projects\ProjectService;
 use OsfSeo\Setup\Installer;
+use OsfSeo\Strategy\Decision\ActionClassifier;
+use OsfSeo\Strategy\Decision\ConfidenceModel;
+use OsfSeo\Strategy\Decision\PriorityModel;
+use OsfSeo\Strategy\Serp\SerpAnalysisService;
+use OsfSeo\Strategy\Serp\SerpIntelligence;
+use OsfSeo\Strategy\Serp\SerpProfileRepository;
+use OsfSeo\Strategy\Sources\ContentGapSource;
+use OsfSeo\Strategy\Sources\DiscoverySource;
+use OsfSeo\Strategy\Sources\GapSource;
+use OsfSeo\Strategy\Sources\GscSource;
+use OsfSeo\Strategy\Sources\ManualSource;
+use OsfSeo\Strategy\Sources\MarketKeywordLookup;
+use OsfSeo\Strategy\Sources\OpportunitySource;
+use OsfSeo\Strategy\Sources\SerpSource;
+use OsfSeo\Strategy\StrategyConfig;
+use OsfSeo\Strategy\StrategyFreshness;
+use OsfSeo\Strategy\StrategyKeywordRepository;
+use OsfSeo\Strategy\StrategyRefresher;
+use OsfSeo\Strategy\StrategyService;
+use OsfSeo\Strategy\StrategySettingsRepository;
+use OsfSeo\Strategy\Target\GscPageIndex;
+use OsfSeo\Strategy\Target\ProjectPageIndex;
+use OsfSeo\Strategy\Target\TargetPageResolver;
+use OsfSeo\Strategy\Topics\TopicClusterer;
+use OsfSeo\Strategy\Topics\TopicEventRepository;
+use OsfSeo\Strategy\Topics\TopicIdentity;
+use OsfSeo\Strategy\Topics\TopicInputLoader;
+use OsfSeo\Strategy\Topics\TopicRefresher;
+use OsfSeo\Strategy\Topics\TopicRepository;
+use OsfSeo\Strategy\Topics\UrlConflictDetector;
 use OsfSeo\Support\Clock;
 use OsfSeo\Sync\SyncConfig;
 use OsfSeo\Sync\SyncPlanner;
@@ -122,7 +155,7 @@ use OsfSeo\Support\SystemSleeper;
 final class Plugin
 {
 	/** Musi być zgodna z nagłówkiem `Version` w osf-seo.php (pilnuje tego test). */
-	public const VERSION = '0.15.0';
+	public const VERSION = '0.16.0';
 
 	public const MIN_PHP = '8.2';
 
@@ -473,6 +506,99 @@ final class Plugin
 			$c->get(Logger::class),
 		));
 
+		// Strategia (STEP 16): warstwa decyzyjna nad modułami — tylko odczyt ich danych i decyzji, bez żadnych żądań do API.
+		$container->singleton(StrategyConfig::class, static fn (Container $c): StrategyConfig => new StrategyConfig($c->get(Config::class)));
+		$container->singleton(StrategySettingsRepository::class, static fn (Container $c): StrategySettingsRepository => new StrategySettingsRepository($c->get(Connection::class), $c->get(Clock::class)));
+		$container->singleton(StrategyKeywordRepository::class, static fn (Container $c): StrategyKeywordRepository => new StrategyKeywordRepository($c->get(Connection::class)));
+		$container->singleton(MarketKeywordLookup::class, static fn (Container $c): MarketKeywordLookup => new MarketKeywordLookup($c->get(Connection::class)));
+		$container->singleton(GscSource::class, static fn (Container $c): GscSource => new GscSource(
+			$c->get(Connection::class),
+			$c->get(MarketKeywordLookup::class),
+			new SerpDictionary($c->get(Connection::class), $c->get(Clock::class)),
+		));
+		$container->singleton(SerpProfileRepository::class, static fn (Container $c): SerpProfileRepository => new SerpProfileRepository($c->get(Connection::class), $c->get(Clock::class)));
+		$container->singleton(SerpIntelligence::class, static fn (Container $c): SerpIntelligence => new SerpIntelligence(
+			$c->get(Connection::class),
+			$c->get(SerpProfileRepository::class),
+			$c->get(SerpSettingsRepository::class),
+			$c->get(CompetitorRepository::class),
+			$c->get(SerpReports::class),
+			$c->get(Clock::class),
+		));
+		$container->singleton(SerpAnalysisService::class, static fn (Container $c): SerpAnalysisService => new SerpAnalysisService(
+			$c->get(SerpIntelligence::class),
+			$c->get(SerpProvider::class),
+			$c->get(TrackedKeywordRepository::class),
+			$c->get(SerpSubmitter::class),
+			$c->get(SerpPlanner::class),
+			$c->get(SerpRunRepository::class),
+			$c->get(SerpSettingsRepository::class),
+			$c->get(StrategyKeywordRepository::class),
+			$c->get(MarketSyncService::class),
+			$c->get(StrategyConfig::class),
+			$c->get(Connection::class),
+			$c->get(Clock::class),
+			$c->get(Logger::class),
+		));
+		$container->singleton(TopicRepository::class, static fn (Container $c): TopicRepository => new TopicRepository($c->get(Connection::class)));
+		$container->singleton(TopicEventRepository::class, static fn (Container $c): TopicEventRepository => new TopicEventRepository($c->get(Connection::class)));
+		$container->singleton(ProjectPageIndex::class, static fn (Container $c): ProjectPageIndex => new GscPageIndex($c->get(Connection::class)));
+		$container->singleton(TopicRefresher::class, static fn (Container $c): TopicRefresher => new TopicRefresher(
+			new TopicInputLoader($c->get(Connection::class)),
+			$c->get(TopicRepository::class),
+			$c->get(TopicEventRepository::class),
+			new TargetPageResolver(),
+			new UrlConflictDetector(),
+			new TopicClusterer(),
+			new TopicIdentity(),
+			new ActionClassifier(),
+			new ConfidenceModel(),
+			new PriorityModel(),
+			$c->get(SerpIntelligence::class),
+			$c->get(ProjectPageIndex::class),
+			$c->get(Clock::class),
+		));
+		$container->singleton(StrategyRefresher::class, static fn (Container $c): StrategyRefresher => new StrategyRefresher(
+			$c->get(Connection::class),
+			[
+				new ManualSource($c->get(Connection::class)),
+				new SerpSource($c->get(Connection::class), $c->get(SerpIntelligence::class)),
+				new OpportunitySource($c->get(Connection::class), new OpportunityKeywordIndex($c->get(Connection::class)), $c->get(MarketKeywordLookup::class)),
+				new DiscoverySource($c->get(Connection::class)),
+				new GapSource($c->get(Connection::class)),
+				new ContentGapSource($c->get(Connection::class)),
+				$c->get(GscSource::class),
+			],
+			$c->get(GscSource::class),
+			$c->get(StrategyKeywordRepository::class),
+			$c->get(StrategySettingsRepository::class),
+			$c->get(KeywordMetricsProvider::class),
+			$c->get(MarketMetricsRepository::class),
+			$c->get(MarketKeywordLookup::class),
+			$c->get(MarketKeyBackfill::class),
+			$c->get(DiscoverySettingsRepository::class),
+			$c->get(GapSettingsRepository::class),
+			$c->get(CompetitorRepository::class),
+			$c->get(StrategyConfig::class),
+			$c->get(Clock::class),
+			$c->get(TopicRefresher::class),
+		));
+		$container->singleton(StrategyService::class, static fn (Container $c): StrategyService => new StrategyService(
+			$c->get(StrategyRefresher::class),
+			$c->get(StrategyKeywordRepository::class),
+			$c->get(StrategySettingsRepository::class),
+			$c->get(StrategyConfig::class),
+			$c->get(KeywordMetricsProvider::class),
+			$c->get(MarketMetricsRepository::class),
+			$c->get(SerpIntelligence::class),
+			$c->get(Clock::class),
+			$c->get(Logger::class),
+			$c->get(TopicRepository::class),
+			$c->get(TopicEventRepository::class),
+			new SerpDictionary($c->get(Connection::class), $c->get(Clock::class)),
+			new StrategyFreshness($c->get(Connection::class)),
+		));
+
 		$container->singleton(KeywordReport::class, static fn (Container $c): KeywordReport => new KeywordReport(
 			$c->get(Connection::class),
 			$c->get(Config::class),
@@ -607,6 +733,8 @@ final class Plugin
 			SerpCommand::register($this);
 			CompetitorCommand::register($this);
 			GapCommand::register($this);
+			StrategyCommand::register($this);
+			StrategyTopicCommand::register($this);
 			SyncCommand::register($this);
 		}
 	}

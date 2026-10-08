@@ -42,6 +42,9 @@ final class Capabilities
 	/** Luki SEO: płatny import fraz konkurencji (także wymuszony), koszty, ustawienia, warianty marki, status i notatki luk. */
 	public const MANAGE_KEYWORD_GAP = 'osf_seo_manage_keyword_gap';
 
+	/** Strategia (backlog SEO): przeliczenie, wpisy ręczne, praca nad tematami; płatna analiza SERP dodatkowo z MANAGE_SERP_TRACKING. */
+	public const MANAGE_STRATEGY = 'osf_seo_manage_strategy';
+
 	/**
 	 * @return list<string>
 	 */
@@ -59,6 +62,7 @@ final class Capabilities
 			self::MANAGE_KEYWORD_DISCOVERY,
 			self::MANAGE_SERP_TRACKING,
 			self::MANAGE_KEYWORD_GAP,
+			self::MANAGE_STRATEGY,
 		];
 	}
 }

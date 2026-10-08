@@ -87,7 +87,7 @@ Nowy katalog w roocie wymaga dopisania wyjątku `!/<ścieżka>` w `.gitignore`.
 Motyw powstał z marketingowego motywu `h2otwock` i wciąż zawiera jego kod: bloki ACF
 (`app/Blocks`, `resources/views/blocks`), WooCommerce, CPT `offer`, marketingowy design system
 (`resources/css/variables.scss`), GTM, Leaflet, GSAP, Swiper, jQuery, React.
-**To kod przeznaczony do usunięcia** etapami C1–C5 (`docs/ARCHITECTURE.md`, sekcja 19).
+**To kod przeznaczony do usunięcia** etapami C1–C5 (`docs/ARCHITECTURE.md`, sekcja 20).
 
 - Nie rozwijaj go i nie kopiuj z niego wzorców (anatomia bloków ACF, `x-button`, `c-main`,
   `-smt`, `section-*`, atrybuty GSAP).
@@ -163,6 +163,37 @@ Motyw powstał z marketingowego motywu `h2otwock` i wciąż zawiera jego kod: bl
   zapisuje „lost” i zostawia zbiorowi stan poprzedniego udanego importu. Historia zbiorów (new / lost / back / url / up / down) nie jest drugim rank
   trackerem — monitoring pozycji pozostaje w STEP 14. Pełne przeliczenie luk (`GapRefresher`) nigdy w żądaniu WWW ani przy renderowaniu
   (panel tylko unieważnia klucz danych). Globalnych limitów kosztów DataForSEO nie zmieniaj bez decyzji właściciela.
+- Strategia (STEP 16, `src/Strategy`, `docs/ARCHITECTURE.md` sekcja 15): **warstwa decyzyjna nad modułami — nie zastępuje Szans SEO, Nowych fraz,
+  Luk SEO ani Pozycji** i nie kopiuje ich danych (metryki rynkowe, historia GSC i SERP tylko odwoływane). Kandydat = fraza rynkowa projektu
+  (`market_keywords`, `UNIQUE (project_id, market_keyword_id)`); źródła wyłącznie przez adaptery `OsfSeo\Strategy\CandidateSource`, z respektowaniem
+  decyzji modułów (odrzucone nie wracają tym źródłem), filtrami marki i wykluczeń oraz limitem `OSF_SEO_STRATEGY_MAX_KEYWORDS` (nadmiar liczony,
+  bez cichego pomijania). Klucz danych przeliczenia musi obejmować także mutacje ręczne wszystkich modułów i `strategy_settings.revision` —
+  nie tylko czas importu. Przeliczenie wyłącznie w CLI albo w tle, nigdy przy renderowaniu. Powiązanie szansa SEO ↔ fraza tylko przez
+  `Opportunities\OpportunityKeywordIndex` (dane query × page) — nigdy przez samo `opportunities.keyword`; wspólna podstrona to kontekst, nie dowód
+  (osobno od powiązań bezpośrednich), a przycięta lista fraz grupy jest jawnie oznaczona (`members_complete`). Płatna analiza SERP (faza B, `src/Strategy/Serp`,
+  sekcja 15.12) wyłącznie przez `SerpSubmitter` STEP 14 (`SerpAnalysisService`), po podglądzie i potwierdzeniu, we wspólnych limitach i ze wspólnym
+  odstępem pomiaru ręcznego; świeży (≤ 30 dni) zgodny pomiar jest używany ponownie bez kosztu; najwyżej `OSF_SEO_STRATEGY_SERP_MAX_PER_RUN` nowych
+  pomiarów bez cichego obcinania; nieudana rezerwacja wycofuje przygotowane frazy. Fraza `analysis` jest poza listą i licznikami Pozycji, harmonogramem
+  i miękkim limitem (zapytania modułu Pozycji filtrują `status = 'active'` — nie zmieniaj tego mimochodem), ale jest dowodem widoczności dla Luk SEO;
+  dodanie do monitorowania zmienia ją na `active` bez utraty historii. Bez drugiego magazynu SERP (profile `serp_snapshot_profiles` to pochodna
+  wersjonowanych reguł); Pozycja SERP projektu tylko ze świeżego pomiaru (31–90 dni — niższa pewność, > 90 — bez interpretacji); silny overlap tylko
+  wg D64. Bez automatycznego harmonogramu, PAA/related searches, nowych płatnych endpointów, crawlera i AI w STEP 16 bez nowej decyzji.
+  Rdzeń (faza C, `src/Strategy/Target`, `Topics`, `Decision`, sekcja 15.13): strona docelowa tylko przez `TargetPageResolver` — rodzina dowodów liczy
+  się raz (szansa SEO, Nowe frazy i luka ze źródłem SERP/GSC to dowody pochodne GSC/SERP), SERP według pozycji (TOP20 silnie, 21–50 średnio, > 50 słabo),
+  Labs najwyżej średnio, dopasowanie adresu zawsze słabo; „brak znanej strony” wymaga dodatkowego dowodu braku widoczności (nigdy sam brak GSC).
+  Tematy: porównanie tylko z liderem, scalenie automatyczne wyłącznie przy tej samej znanej stronie (nie strona główna) albo silnym overlapie bez
+  konfliktu stron; frazy przypięte poza grupowaniem automatycznym; stabilne ID (`TopicIdentity`, ≥ 50%). Działania w kolejności consolidate → recover →
+  optimize → create → monitor → investigate; „create” to wyłącznie „Kandydat na nową stronę” z twardymi bramkami i pewnością najwyżej średnią bez
+  pełnego `ProjectPageIndex` albo ręcznego potwierdzenia; konsolidacja tylko przy silnym sygnale konfliktu URL (pojedyncza zmiana adresu → investigate).
+  Priorytet Strategii (`PriorityModel`) to ograniczone składniki × mnożnik pewności — monotoniczny, bez kopiowania wyników modułów; brak KD ≠ KD 0.
+  **Przeliczenie nigdy nie zmienia statusu pracy tematu** (tylko flaga `decision_changed`); zdarzenia wyłącznie istotnych zmian; pakiet kontekstu
+  (`TopicContextBuilder`) deterministyczny, dane zewnętrzne oznaczone jako niezaufane. Nie zmieniaj progów overlapu ani heurystyk kształtu z fazy B
+  bez kalibracji na prawdziwych danych.
+  Panel (faza D, `themes/seo` — kontrolery `Strategy*Controller`, widoki `panel/strategy`, sekcja 15.14): czyta wyłącznie zapisany stan (kolumny tematu
+  z M0013, filtry i stronicowanie w SQL, bez zapisu profili SERP); „Przelicz” tylko zleca przeliczenie (`requestRefresh`) — pełne przeliczenie nigdy
+  w żądaniu WWW (wykonuje CLI, od fazy E krok w tle); płatna analiza SERP wyłącznie podgląd → potwierdzenie → `SerpAnalysisService::start`
+  (obie capabilities sprawdzane w trasie, kontrolerze i usłudze); odnośniki z modułów: szansa SEO → temat tylko przez dowód `opportunity.direct`;
+  klient bez odrzuconych tematów, notatek, identyfikatorów użytkowników, ustawień, kosztów i analizy SERP (egzekwowane w usłudze).
 - `$wpdb` traktuje tabelę z kolumnami ascii i utf8mb4 bez kolumny binarnej jako ASCII i odrzuca zapytania z polskimi znakami
   („contains invalid data”) — w nowych tabelach z tekstem użytkownika daj co najmniej jedną kolumnę `*_bin` / binarną albo zapisuj
   tekst przez `insert()`/`update()`. Frazy liczbowe („2024”) jako klucze tablic PHP stają się int — rzutuj na `(string)`.
@@ -199,6 +230,11 @@ Motyw powstał z marketingowego motywu `h2otwock` i wciąż zawiera jego kod: bl
   progi tylko w `DiscoveryConfig`. Wynik 0–100 to „Priorytet” (priorytet odkrycia — sygnał do sprawdzenia), nigdy „wartość biznesowa”
   ani prognoza ruchu; formuła w `DiscoveryScorer` (sekcja 12.7), CPC z małą wagą. Intencja tylko z odpowiedzi dostawcy, bez lokalnej
   heurystyki; strona docelowa tylko z GSC, inaczej „Brak przypisanej strony”. Bez AI i bez wbudowanych seedów czy wykluczeń.
+- Strategia: **brak widoczności (GSC, Labs, SERP) nigdy nie dowodzi braku strony w witrynie**. Działanie „create” to wyłącznie
+  „Kandydat na nową stronę” — wysoka pewność luki strukturalnej tylko z indeksem stron projektu (`ProjectPageIndex`) albo ręcznym potwierdzeniem;
+  dane niejednoznaczne → „investigate”. Fakty GSC kandydata: NULL = brak danych GSC projektu, 0 = dane są, fraza bez wyświetleń (to nie dowód braku
+  widoczności). „Widoczność GSC” z Nowych fraz (D35) nie jest dowodem nieobecności. Tematy scalamy automatycznie tylko przy zgodnej stronie docelowej,
+  silnym overlapie SERP albo decyzji ręcznej — `tokenKey` i `core_key` to sygnały pomocnicze.
 - Luki SEO: **Keyword Gap** (luki fraz) i **Content Gap** (luki treści) to osobne pojęcia. Pozycja konkurenta pochodzi z bazy DataForSEO Labs
   (migawka z datą) — w UI zawsze „(Labs)”, nigdy jako nasza Pozycja SERP. Widoczność projektu: świeży pomiar SERP → GSC → punkt odniesienia Labs;
   **sam brak frazy w GSC nigdy nie oznacza braku widoczności** (wtedy „Nieznana”); brak frazy w punkcie odniesienia oznacza „Brak widoczności”
@@ -253,7 +289,7 @@ Fundament panelu powstał w STEP 4 (`docs/ARCHITECTURE.md`, sekcje 4.1–4.4). O
 3. Powtarzalne elementy → komponenty Blade `resources/views/components/panel/*` (`<x-panel.* />`:
    `button`, `card`, `page-header`, `field`, `badge`, `flash`, `empty-state`, `nav-link`, `nonce`, `delta`, `stat`,
    `score`, `confidence`, `opportunity-status`, `visibility`, `candidate-status`, `serp-rank`, `rank-change`, `gap-type`, `content-gap`,
-   `project-visibility`),
+   `project-visibility`, `strategy-action`, `topic-status`, `target-state`, `serp-freshness`, `strategy-confidence`),
    nie `@apply` ani własne klasy. Własny CSS tylko, gdy utilities nie wystarczają.
 4. Tokeny kolorów (`brand-*`) w bloku `@theme` w `resources/css/panel.css`; bez hexów w Blade;
    bez dark mode w MVP. `panel.css` skanuje tylko pliki panelu (`source(none)` + `@source`),
@@ -334,6 +370,17 @@ wp osf-seo competitors:list|add|update|organic --project=<id> …   # konkurenci
 wp osf-seo gap:plan --project=<id> [--preset=quick|standard|full] [--max-rank=…] [--min-volume=…] [--max-rows=…] [--competitors=…] [--no-baseline] [--force]   # plan luk: zero żądań
 wp osf-seo gap:run --project=<id> [opcje planu] [--yes] [--queue-only]   # PŁATNE (Labs Ranked Keywords) — tylko na polecenie użytkownika
 wp osf-seo gap:status|cancel|recalculate|list|keyword|content|pages|set-status|settings|brand --project=<id> …   # luki SEO (bez API)
+wp osf-seo strategy:status|preview --project=<id> [--format=json]      # Strategia: stan, aktualność klucza danych, podgląd kandydatów (bez zapisu i bez API)
+wp osf-seo strategy:refresh --project=<id> [--force]                   # materializacja kandydatów, faktów i dowodów (bez API)
+wp osf-seo strategy:candidates|keyword --project=<id> …                # lista kandydatów, fakty i dowody frazy (bez API)
+wp osf-seo strategy:add|remove --project=<id> --keywords="a, b"        # wpisy ręczne Strategii (osf_seo_manage_strategy)
+wp osf-seo strategy:serp-plan --project=<id> [--keywords=…] [--format=json]   # podgląd analizy SERP: zero żądań, ponowne użycie pomiarów, maks. koszt
+wp osf-seo strategy:serp-run --project=<id> [--keywords=…] [--yes] [--queue-only] [--wait=<s>]   # PŁATNE (przez SerpSubmitter) — tylko na polecenie użytkownika
+wp osf-seo strategy:serp-status|serp|serp-overlap --project=<id> …     # stan analiz, SERP Intelligence kandydata, overlap dwóch kandydatów (bez API)
+wp osf-seo strategy:list|topic|context --project=<id> [--topic=…] [--format=json]   # tematy (backlog), szczegóły tematu, pakiet kontekstu (bez API)
+wp osf-seo strategy:set-status --project=<id> --topic=… --status=… [--note=…]           # status pracy (przeliczenie go nie zmienia)
+wp osf-seo strategy:set-target --project=<id> --topic=… (--target-url=… | --confirm-missing | --clear)   # ręczna strona docelowa (nie `--url` — globalny parametr WP-CLI)
+wp osf-seo strategy:pin|unpin --project=<id> --keywords="a, b" [--topic=… | --new]   # przypięcia fraz do tematów (osf_seo_manage_strategy)
 composer test:performance       # benchmark raportów + EXPLAIN na syntetycznych danych (OSOBNA baza testowa)
 composer test:performance:serp  # benchmark pozycji SERP (100 projektów × 500 fraz, TOP100, historia, 2500 fraz) + EXPLAIN (OSOBNA baza)
 composer test:performance:gap   # benchmark Luk SEO (40 zbiorów × 10 000 fraz, 20 projektów, import 10 000 fraz atrapą HTTP) + EXPLAIN (OSOBNA baza)
@@ -389,7 +436,7 @@ php -d "mysqli.default_socket=$HOME/Library/Application Support/Local/run/<LOCAL
 ## 13. Deployment
 
 Staging: `https://seo.ohsofresh.top` (Hostinger). Deployment nowej struktury repo jest
-**jeszcze nieustalony** (`docs/ARCHITECTURE.md`, sekcja 17). Nie zmieniaj jego konfiguracji,
+**jeszcze nieustalony** (`docs/ARCHITECTURE.md`, sekcja 18). Nie zmieniaj jego konfiguracji,
 nie łącz się z serwerem i nie używaj żadnych credentials znalezionych w repo.
 Nigdy nie wdrażaj całego repozytorium do `wp-content` (wcześniejszy incydent nadpisał pliki WordPressa) — wdrożenie
 wyłącznie zawężone: `plugins/osf-seo/` → `wp-content/plugins/osf-seo/`, `themes/seo/` → `wp-content/themes/seo/`.

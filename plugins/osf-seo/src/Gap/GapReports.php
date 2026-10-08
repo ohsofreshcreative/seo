@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace OsfSeo\Gap;
 
 use OsfSeo\Database\Connection;
+use OsfSeo\Opportunities\OpportunityKeywordIndex;
 use OsfSeo\Support\Clock;
 
 /**
@@ -185,10 +186,12 @@ final class GapReports
 	}
 
 	/**
-	 * Dowody z projektu: warianty frazy w GSC (okno), strony GSC, pomiar SERP (STEP 14), kandydat Nowych fraz, szanse SEO.
+	 * Dowody z projektu: warianty frazy w GSC (okno), strony GSC, pomiar SERP (STEP 14), kandydat Nowych fraz, szanse SEO
+	 * powiązane danymi query × page (`OpportunityKeywordIndex`): bezpośrednio (ta sama fraza, fraza w grupie szansy) i osobno —
+	 * kontekstowo (ta sama podstrona; to nie dowód, że szansa dotyczy tej frazy).
 	 *
 	 * @param array{0: string, 1: string}|null $window
-	 * @return array{variants: list<array<string, string|null>>, pages: list<array<string, string|null>>, serp: ?array<string, string|null>, candidate: ?array<string, string|null>, opportunities: list<array<string, string|null>>}
+	 * @return array{variants: list<array<string, string|null>>, pages: list<array<string, string|null>>, serp: ?array<string, string|null>, candidate: ?array<string, string|null>, opportunities: list<array<string, mixed>>, opportunities_context: list<array<string, mixed>>}
 	 */
 	public function projectEvidence(int $projectId, int $marketKeywordId, string $keywordHex, ?array $window): array
 	{
@@ -218,13 +221,20 @@ final class GapReports
 			[$projectId, $marketKeywordId],
 		);
 		$texts = array_values(array_unique(array_map(static fn (array $row): string => (string) $row['keyword'], $variants)));
-		$opportunities = $texts === [] ? [] : $this->db->fetchAll(
-			"SELECT public_id, type, status, last_priority, page_url FROM `{$this->db->table('opportunities')}`
-			WHERE project_id = %d AND state = 'active' AND keyword IN (" . Connection::placeholders($texts) . ') ORDER BY last_priority DESC LIMIT 10',
-			[$projectId, ...$texts],
+		$opportunities = (new OpportunityKeywordIndex($this->db))->forKeyword(
+			$projectId,
+			$texts,
+			array_map(static fn (array $row): string => (string) $row['url'], $pages),
 		);
 
-		return ['variants' => $variants, 'pages' => $pages, 'serp' => $serp, 'candidate' => $candidate, 'opportunities' => $opportunities];
+		return [
+			'variants' => $variants,
+			'pages' => $pages,
+			'serp' => $serp,
+			'candidate' => $candidate,
+			'opportunities' => array_values(array_filter($opportunities, static fn (array $item): bool => $item['direct'])),
+			'opportunities_context' => array_values(array_filter($opportunities, static fn (array $item): bool => ! $item['direct'])),
+		];
 	}
 
 	/**

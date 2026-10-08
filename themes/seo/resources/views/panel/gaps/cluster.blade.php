@@ -31,6 +31,18 @@
     </div>
   </div>
 
+  @php($clusterTopics = collect($strategyTopics)->unique('topic')->values())
+  @if ($clusterTopics->isNotEmpty())
+    <div class="-mt-4 mb-6">
+      <p class="text-xs font-medium text-slate-600">Frazy tej grupy w Strategii ({{ $clusterTopics->count() }} {{ \OsfSeo\Opportunities\Text::plural($clusterTopics->count(), 'temat', 'tematy', 'tematów') }}):</p>
+      <div class="mt-1 flex flex-wrap gap-2">
+        @foreach ($clusterTopics->take(10) as $clusterTopic)
+          @include('panel.strategy.partials.topic-link', ['topic' => $clusterTopic, 'projectId' => $project->publicId])
+        @endforeach
+      </div>
+    </div>
+  @endif
+
   <div class="grid gap-6 lg:grid-cols-3">
     <x-panel.card class="lg:col-span-2">
       <h2 class="text-base font-semibold text-slate-900">Luka treści (heurystyka)</h2>

@@ -20,6 +20,7 @@ use OsfSeo\Market\CostBudget;
 use OsfSeo\Opportunities\Text;
 use OsfSeo\Serp\SerpTrackingService;
 use OsfSeo\Support\ValidationException;
+use OsfSeo\Strategy\StrategyService;
 use Symfony\Component\HttpFoundation\Response;
 
 /**
@@ -278,6 +279,7 @@ final class DiscoveryController
 			// Pozycja SERP, gdy fraza jest monitorowana (odczyt — bez żadnego żądania do API).
 			'serp' => osf_seo()->get(SerpTrackingService::class)->ranksForKeywords($context, [$candidate->keyword])[$candidate->keyword] ?? null,
 			'canTrack' => $context->can('osf_seo_manage_serp_tracking'),
+			'strategyTopic' => osf_seo()->get(StrategyService::class)->topicsForTexts($context, [$candidate->keyword])[$candidate->keyword] ?? null,
 			'market' => $this->service()->market($context),
 			'settings' => $this->service()->config()->effective(),
 			'canManage' => $context->can('osf_seo_manage_keyword_discovery'),

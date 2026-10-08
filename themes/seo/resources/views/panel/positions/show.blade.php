@@ -42,6 +42,10 @@
     @endif
   </x-panel.page-header>
 
+  @if ($strategyTopic !== null)
+    <div class="-mt-4 mb-6">@include('panel.strategy.partials.topic-link', ['topic' => $strategyTopic, 'projectId' => $project->publicId])</div>
+  @endif
+
   <div class="grid grid-cols-2 gap-3 md:grid-cols-5">
     <x-panel.stat label="Pozycja SERP" :value="$row->rankLabel()" hint="ostatni pomiar, wynik organiczny">
       @if ($row->rankAbsolute !== null && $row->rankAbsolute !== $row->rank)

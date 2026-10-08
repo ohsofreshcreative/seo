@@ -235,7 +235,7 @@
           @foreach ($recent as $run)
             <li class="flex items-center justify-between gap-3 py-2">
               <a href="{{ PositionsController::runUrl($project->publicId, $run->publicId) }}" class="text-brand-600 hover:underline">
-                {{ Format::datetime($run->createdAt) }} · {{ $run->trigger === 'schedule' ? 'harmonogram' : 'ręcznie' }} · {{ Format::number($run->keywordsPlanned) }} {{ Text::plural($run->keywordsPlanned, 'fraza', 'frazy', 'fraz') }}
+                {{ Format::datetime($run->createdAt) }} · {{ match ($run->trigger) { 'schedule' => 'harmonogram', 'analysis' => 'analiza Strategii', default => 'ręcznie' } }} · {{ Format::number($run->keywordsPlanned) }} {{ Text::plural($run->keywordsPlanned, 'fraza', 'frazy', 'fraz') }}
               </a>
               <span @class(['text-xs', 'text-amber-700' => in_array($run->status, [SerpRun::FAILED, SerpRun::PARTIAL, SerpRun::SKIPPED], true), 'text-slate-500' => ! in_array($run->status, [SerpRun::FAILED, SerpRun::PARTIAL, SerpRun::SKIPPED], true)])>
                 {{ $run->statusLabel() }}@if ($run->status === SerpRun::SKIPPED) — {{ SerpRun::skipLabel($run->skipReason) }}@endif

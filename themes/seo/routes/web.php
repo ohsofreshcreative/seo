@@ -24,6 +24,9 @@ use App\Http\Controllers\Panel\ProjectController;
 use App\Http\Controllers\Panel\ProjectSectionController;
 use App\Http\Controllers\Panel\SearchConsoleController;
 use App\Http\Controllers\Panel\SettingsController;
+use App\Http\Controllers\Panel\StrategyController;
+use App\Http\Controllers\Panel\StrategySerpController;
+use App\Http\Controllers\Panel\StrategyTopicsController;
 use App\Http\Middleware\Panel\Authenticate;
 use App\Http\Middleware\Panel\ResolveProject;
 use App\Http\Middleware\Panel\VerifyNonce;
@@ -122,6 +125,26 @@ Route::middleware([Authenticate::class, VerifyNonce::class])->group(function () 
 			->where('cluster', '[0-9A-Za-z]{26}');
 	});
 
+	// Strategia (backlog SEO): zlecenie przeliczenia, wpisy ręczne, praca nad tematami i przypięcia tylko z uprawnieniem, nonce i Origin;
+	// identyfikatory = public_id (ULID). Płatna analiza SERP dodatkowo wymaga osf_seo_manage_serp_tracking (kontroler i usługa) i idzie
+	// wyłącznie przez SerpSubmitter (STEP 14). Kontroler nigdy nie wywołuje API ani nie przelicza Strategii.
+	Route::middleware(ResolveProject::class . ':osf_seo_manage_strategy')->group(function () {
+		Route::get('/projects/{project}/strategy/settings', [StrategyController::class, 'settings']);
+		Route::post('/projects/{project}/strategy/refresh', [StrategyController::class, 'refresh']);
+		Route::post('/projects/{project}/strategy/keywords', [StrategyController::class, 'addKeywords']);
+		Route::post('/projects/{project}/strategy/keywords/remove', [StrategyController::class, 'removeKeywords']);
+		Route::post('/projects/{project}/strategy/topics/{topic}/status', [StrategyTopicsController::class, 'status'])
+			->where('topic', '[0-9A-Za-z]{26}');
+		Route::post('/projects/{project}/strategy/topics/{topic}/note', [StrategyTopicsController::class, 'note'])
+			->where('topic', '[0-9A-Za-z]{26}');
+		Route::post('/projects/{project}/strategy/topics/{topic}/target', [StrategyTopicsController::class, 'target'])
+			->where('topic', '[0-9A-Za-z]{26}');
+		Route::post('/projects/{project}/strategy/pin', [StrategyTopicsController::class, 'pin']);
+		Route::post('/projects/{project}/strategy/unpin', [StrategyTopicsController::class, 'unpin']);
+		Route::get('/projects/{project}/strategy/analysis', [StrategySerpController::class, 'analysis']);
+		Route::post('/projects/{project}/strategy/analysis', [StrategySerpController::class, 'start']);
+	});
+
 	Route::middleware(ResolveProject::class)->group(function () {
 		Route::get('/projects/{project}', [ProjectController::class, 'show']);
 		Route::get('/projects/{project}/gaps', [GapsController::class, 'index']);
@@ -160,6 +183,13 @@ Route::middleware([Authenticate::class, VerifyNonce::class])->group(function () 
 		Route::get('/projects/{project}/opportunities', [OpportunitiesController::class, 'index']);
 		Route::get('/projects/{project}/opportunities/{opportunity}', [OpportunitiesController::class, 'show'])
 			->where('opportunity', '[0-9A-Za-z]{26}');
+		Route::get('/projects/{project}/strategy', [StrategyController::class, 'index']);
+		Route::get('/projects/{project}/strategy/topics', [StrategyTopicsController::class, 'index']);
+		Route::get('/projects/{project}/strategy/topics/{topic}', [StrategyTopicsController::class, 'show'])
+			->where('topic', '[0-9A-Za-z]{26}');
+		Route::get('/projects/{project}/strategy/serp', [StrategySerpController::class, 'index']);
+		Route::get('/projects/{project}/strategy/serp/{candidate}', [StrategySerpController::class, 'show'])
+			->where('candidate', '[0-9A-Za-z]{26}');
 		Route::get('/projects/{project}/search-console', [SearchConsoleController::class, 'show']);
 		Route::get('/projects/{project}/search-console/status', [SearchConsoleController::class, 'status']);
 		Route::get('/projects/{project}/keywords', [KeywordsController::class, 'index']);

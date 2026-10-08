@@ -23,7 +23,7 @@
     'google_organic_serp' => 'Pozycje SERP (Google Organic, Standard)',
     'labs_ranked_keywords' => 'Luki SEO: frazy domeny (Labs Ranked Keywords, Live)',
   ];
-  $triggerLabels = ['auto' => 'automatycznie', 'discovery' => 'wyszukiwanie fraz', 'serp_manual' => 'pomiar ręczny', 'serp_schedule' => 'harmonogram pozycji', 'gap' => 'luki SEO'];
+  $triggerLabels = ['auto' => 'automatycznie', 'discovery' => 'wyszukiwanie fraz', 'serp_manual' => 'pomiar ręczny', 'serp_schedule' => 'harmonogram pozycji', 'serp_analysis' => 'analiza SERP (Strategia)', 'gap' => 'luki SEO'];
   $purposes = ['enrichment' => 'Dane rynkowe (wzbogacanie fraz)', 'discovery' => 'Nowe frazy', 'serp' => 'Pozycje SERP', 'gap' => 'Luki SEO'];
   $breakdown = $status['usage_breakdown'] ?? null;
   $taskStatuses = ['pending' => 'czeka na wynik', 'completed' => 'zakończone', 'failed' => 'błąd', 'expired' => 'przeterminowane'];

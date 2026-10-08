@@ -22,7 +22,11 @@ dostawca danych rynkowych (wolumen, historia wolumenu, CPC, konkurencja Ads, tru
 > (STEP 14: monitorowane frazy, pomiary Google TOP100 w kolejce Standard z podglądem kosztu i harmonogramem — domyślnie
 > wyłączonym, pełne wyniki w historii, Pozycja SERP osobno od średniej pozycji GSC, konkurenci monitorowani i organiczni) oraz moduł
 > „Luki SEO” (STEP 15, Whack-a-mole: frazy domen konkurentów z DataForSEO Labs we wspólnych zbiorach, import w tle z planem i kosztem przed
-> uruchomieniem, widoczność projektu SERP → GSC → punkt odniesienia, priorytet luki, grupy fraz, luka treści jako heurystyka, strony konkurencji). Plan i postęp:
+> uruchomieniem, widoczność projektu SERP → GSC → punkt odniesienia, priorytet luki, grupy fraz, luka treści jako heurystyka, strony konkurencji). W toku:
+> STEP 16 — **Strategia** (backlog SEO łączący sygnały modułów z dowodami; zrobione fazy A — kandydaci, fakty i dowody per fraza — B — SERP
+> Intelligence na zapisanych pomiarach oraz jednorazowa analiza SERP przez moduł Pozycji — i C — tematy ze stabilnymi ID, strona docelowa,
+> konflikty URL, działanie z powodem, pewność, Priorytet Strategii, status pracy i pakiet kontekstu, z CLI — i D — panel „Strategia”: przegląd,
+> backlog, szczegóły tematu, SERP Intelligence, analiza SERP z podglądem kosztu, ustawienia i odnośniki z modułów). Plan i postęp:
 > [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 >
 > **Repozytorium jest publiczne.** Nie commituj żadnych sekretów (sekcja „Konfiguracja”).
@@ -181,6 +185,23 @@ wp osf-seo gap:status --project=<public_id>                       # zbiory domen
 wp osf-seo gap:list --project=<public_id> [--type=missing] [--format=json]   # luki fraz z priorytetem i widocznością projektu
 wp osf-seo gap:content --project=<public_id>                      # luki treści (grupy fraz, heurystyka)
 wp osf-seo gap:recalculate --project=<public_id>                  # przeliczenie z zapisanych danych (bez API)
+
+# Strategia (STEP 16 — bez żądań do API poza jawnie potwierdzoną analizą SERP; szczegóły: docs/ARCHITECTURE.md, sekcja 15)
+wp osf-seo strategy:status --project=<public_id>                 # limity, ostatnie przeliczenie, aktualność klucza danych, okno GSC
+wp osf-seo strategy:preview --project=<public_id>                # podgląd kandydatów ze wszystkich źródeł (bez zapisu)
+wp osf-seo strategy:refresh --project=<public_id> [--force]      # zapis kandydatów, faktów i dowodów per fraza
+wp osf-seo strategy:candidates --project=<public_id> [--source=gap] [--format=json]
+wp osf-seo strategy:keyword --project=<public_id> --keyword="fraza"
+wp osf-seo strategy:serp --project=<public_id> --keyword="fraza"            # SERP Intelligence: świeżość, kształt, kompozycja, TOP20 (bez API)
+wp osf-seo strategy:serp-overlap --project=<public_id> --keywords="a, b"    # overlap SERP dwóch kandydatów (bez API)
+wp osf-seo strategy:serp-plan --project=<public_id> [--keywords="a, b"]     # podgląd analizy SERP: ponowne użycie, nowe zadania, maks. koszt (bez API)
+wp osf-seo strategy:serp-run --project=<public_id> [--keywords="a, b"]      # PŁATNE — jednorazowa analiza przez moduł Pozycji (wspólne limity)
+wp osf-seo strategy:list --project=<public_id> [--action=optimize]        # tematy: działanie z powodem, pewność, Priorytet Strategii (bez API)
+wp osf-seo strategy:topic --project=<public_id> --topic="fraza"           # strona docelowa, działanie, pewność i priorytet z rozbiciem, konflikty URL
+wp osf-seo strategy:context --project=<public_id> --topic="fraza"         # deterministyczny pakiet kontekstu tematu (JSON, evidence_hash)
+wp osf-seo strategy:set-status --project=<public_id> --topic="fraza" --status=planned [--note="…"]
+wp osf-seo strategy:set-target --project=<public_id> --topic="fraza" --target-url=https://example.pl/strona/   # albo --confirm-missing / --clear
+wp osf-seo strategy:pin --project=<public_id> --keywords="a, b" --new      # przypięcie fraz do nowego tematu (albo --topic=…); strategy:unpin
 ```
 
 Synchronizacja działa w tle przez WP-Cron (lokalnie wystarczy ruch na stronie); na serwerze zalecany cron
@@ -230,7 +251,7 @@ define('OSF_SEO_DATAFORSEO_MONTHLY_COST_LIMIT', 10.00);
   bez ponownej opłaty). Harmonogram odświeżania domyślnie wyłączony. Opcjonalnie: `OSF_SEO_GAP_TTL_DAYS` (30), `OSF_SEO_GAP_MAX_REQUESTS_PER_TICK`
   (10), `OSF_SEO_DATAFORSEO_PRICE_GAP_REQUEST` / `…_GAP_ITEM` (cennik do szacunku).
 
-Pełna lista stałych: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md), sekcja 16.
+Pełna lista stałych: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md), sekcja 17.
 
 ## Bezpieczeństwo
 

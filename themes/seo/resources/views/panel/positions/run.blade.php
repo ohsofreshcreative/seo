@@ -8,12 +8,17 @@
   use OsfSeo\Serp\SerpRun;
 
   $base = PanelUrl::project($project->publicId, 'positions');
+  $triggerLabel = match ($run->trigger) {
+    'schedule' => 'harmonogram',
+    'analysis' => 'analiza SERP Strategii',
+    default => 'uruchomiony ręcznie',
+  };
 @endphp
 
 @section('content')
   <p class="mb-2 text-sm"><a href="{{ $base }}" class="text-brand-600 hover:underline">← Pozycje</a></p>
   <x-panel.page-header title="Pomiar pozycji"
-    :description="Format::datetime($run->createdAt) . ' · ' . ($run->trigger === 'schedule' ? 'harmonogram' : 'uruchomiony ręcznie')" />
+    :description="Format::datetime($run->createdAt) . ' · ' . $triggerLabel" />
 
   @include('panel.positions.partials.progress', ['progress' => $progress])
 

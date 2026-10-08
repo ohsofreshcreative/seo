@@ -14,6 +14,7 @@
   use OsfSeo\Gap\ContentGap;
   use OsfSeo\Gap\GapScorer;
   use OsfSeo\Gap\GapStatus;
+  use OsfSeo\Opportunities\OpportunityKeywordIndex;
   use OsfSeo\Opportunities\OpportunityType;
 
   $base = PanelUrl::project($project->publicId, 'gaps');
@@ -73,6 +74,10 @@
       <div class="text-xs text-slate-500">Priorytet luki<br>(sygnał do sprawdzenia)</div>
     </div>
   </div>
+
+  @if ($strategyTopic !== null)
+    <div class="-mt-4 mb-6">@include('panel.strategy.partials.topic-link', ['topic' => $strategyTopic, 'projectId' => $project->publicId])</div>
+  @endif
 
   <div class="grid gap-6 lg:grid-cols-3">
     <x-panel.card>
@@ -269,12 +274,26 @@
           <li><a href="{{ DiscoveryController::candidateUrl($project->publicId, $evidence['candidate']['public_id']) }}" class="text-brand-600 hover:underline">Nowe frazy — kandydat</a> <span class="text-xs text-slate-500">(priorytet odkrycia {{ $evidence['candidate']['priority'] ?? '—' }})</span></li>
         @endif
         @foreach ($evidence['opportunities'] as $opportunity)
-          <li><a href="{{ OpportunitiesController::detailUrl($project->publicId, $opportunity['public_id']) }}" class="text-brand-600 hover:underline">Szansa SEO: {{ OpportunityType::tryFrom((string) $opportunity['type'])?->label() ?? $opportunity['type'] }}</a></li>
+          <li><a href="{{ OpportunitiesController::detailUrl($project->publicId, $opportunity['public_id']) }}" class="text-brand-600 hover:underline">Szansa SEO: {{ OpportunityType::tryFrom((string) $opportunity['type'])?->label() ?? $opportunity['type'] }}</a> <span class="text-xs text-slate-500">({{ OpportunityKeywordIndex::linkLabel((string) ($opportunity['link'] ?? '')) }})</span></li>
         @endforeach
         @if ($evidence['candidate'] === null && $evidence['opportunities'] === [])
-          <li class="text-slate-500">Brak powiązanych kandydatów Nowych fraz i Szans SEO.</li>
+          <li class="text-slate-500">Brak powiązanych kandydatów Nowych fraz i Szans SEO tej frazy.</li>
         @endif
       </ul>
+      @if ($evidence['opportunities_context'] !== [])
+        <h3 class="mt-4 text-sm font-medium text-slate-900">Szanse SEO tej samej podstrony (kontekst)</h3>
+        <p class="mt-1 text-xs text-slate-500">Fraza ma wyświetlenia na podstronie szansy. To kontekst, nie dowód, że szansa dotyczy tej frazy.</p>
+        <ul class="mt-2 space-y-1 text-sm">
+          @foreach ($evidence['opportunities_context'] as $opportunity)
+            <li>
+              <a href="{{ OpportunitiesController::detailUrl($project->publicId, $opportunity['public_id']) }}" class="text-brand-600 hover:underline">Szansa SEO: {{ OpportunityType::tryFrom((string) $opportunity['type'])?->label() ?? $opportunity['type'] }}</a>
+              @if (! $opportunity['members_complete'])
+                <span class="text-xs text-slate-500">(lista fraz tej szansy jest przycięta — fraza może należeć do jej grupy)</span>
+              @endif
+            </li>
+          @endforeach
+        </ul>
+      @endif
     </x-panel.card>
   </div>
 

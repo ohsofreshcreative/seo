@@ -15,6 +15,7 @@ use OsfSeo\Gap\GapNotFound;
 use OsfSeo\Gap\GapService;
 use OsfSeo\Gap\GapStatus;
 use OsfSeo\Opportunities\Text;
+use OsfSeo\Strategy\StrategyService;
 use Symfony\Component\HttpFoundation\Response;
 
 /**
@@ -121,8 +122,11 @@ final class GapKeywordsController
 			return PanelResponse::notFound();
 		}
 
+		$marketKeywordId = (int) ($data['row']['market_keyword_id'] ?? 0);
+
 		return response()->view('panel.gaps.keyword', $data + [
 			'project' => $context->project(),
+			'strategyTopic' => osf_seo()->get(StrategyService::class)->topicsForMarketKeywords($context, [$marketKeywordId])[$marketKeywordId] ?? null,
 			'canManage' => $context->can('osf_seo_manage_keyword_gap'),
 			'canTrack' => $context->can('osf_seo_manage_serp_tracking'),
 			'errors' => $errors,

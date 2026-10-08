@@ -34,7 +34,8 @@ final class SerpTrackingService
 	/** Pomiar z CLI — jak ręczny, ale bez odstępu między uruchomieniami (operator konsoli). */
 	public const TRIGGER_CLI = 'cli';
 
-	private const COOLDOWN_TRANSIENT = 'osf_seo_serp_manual_';
+	/** Odstęp pomiaru ręcznego projektu — wspólny dla „Sprawdź pozycje teraz” i analizy SERP Strategii (STEP 16). */
+	public const COOLDOWN_TRANSIENT = 'osf_seo_serp_manual_';
 
 	private const SCHEDULE_PROJECTS_PER_RUN = 25;
 

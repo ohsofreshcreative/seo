@@ -105,7 +105,11 @@ final class SerpSubmitter
 					$taskId = $this->tasks->create(
 						$this->provider->name(),
 						$this->provider->endpoint(),
-						$trigger === 'manual' ? 'serp_manual' : 'serp_schedule',
+						match ($trigger) {
+							'manual' => 'serp_manual',
+							'analysis' => 'serp_analysis',
+							default => 'serp_schedule',
+						},
 						$projectId,
 						$market,
 						array_map(static fn (array $keyword): string => $keyword['keyword'], $chunk),
