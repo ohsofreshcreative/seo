@@ -119,6 +119,30 @@ final class PageRealTransportTest extends PageTestCase
 		self::assertSame('ip_loopback', $this->fetchOne($context, $this->url('internal', '/identity'))['error'] ?? null);
 	}
 
+	public function test_18_panel_job_uses_the_same_safe_transport_and_refuses_internal_addresses(): void
+	{
+		$context = $this->fixtureProject();
+		$internal = $this->url('internal', '/identity');
+		$job = $this->pageJobs->queue($context, PageSelection::urls([$this->url('www', '/content'), $internal]))['job'];
+		self::assertSame(2, $job->itemsTotal, 'Plan bez DNS: adres w domenie projektu przechodzi do kroku w tle.');
+
+		add_filter('wp_doing_cron', '__return_true');
+
+		try {
+			$this->pageJobs->runBackground(30.0);
+			$this->afterHostInterval();
+			$this->pageJobs->runBackground(30.0);
+		} finally {
+			remove_filter('wp_doing_cron', '__return_true');
+		}
+
+		$done = $this->pageJobs->job($context, $job->publicId);
+		self::assertSame('completed', $done->status);
+		self::assertSame(['created', null], [$done->items[0]['outcome'], $done->items[0]['error']]);
+		self::assertSame(['refused', 'ip_loopback'], [$done->items[1]['outcome'], $done->items[1]['error']], 'Kontrola każdego IP przed połączeniem także dla zleceń z panelu.');
+		self::assertNull($this->pageRepository->targetByUrl($context->projectId(), $internal)?->lastSnapshotId);
+	}
+
 	private function fixtureProject(): ProjectContext
 	{
 		return $this->gapProject([], 'fixture.example');

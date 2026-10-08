@@ -17,6 +17,7 @@ use OsfSeo\Ai\Provider\AiResponse;
 use OsfSeo\Ai\Provider\FakeProvider;
 use OsfSeo\Ai\Provider\OpenAiProvider;
 use OsfSeo\Ai\Run\AiRunRepository;
+use OsfSeo\Ai\Workspace\AiWorkspaceService;
 use OsfSeo\Auth\ProjectContext;
 use OsfSeo\Http\WpHttpTransport;
 use OsfSeo\PageIntelligence\Extract\HtmlExtractor;
@@ -24,6 +25,8 @@ use OsfSeo\PageIntelligence\Fetch\UrlSafetyPolicy;
 use OsfSeo\PageIntelligence\PageIntelligenceConfig;
 use OsfSeo\PageIntelligence\PageIntelligenceRepository;
 use OsfSeo\PageIntelligence\PageIntelligenceService;
+use OsfSeo\PageIntelligence\PageJobRepository;
+use OsfSeo\PageIntelligence\PageJobService;
 use OsfSeo\PageIntelligence\Robots\RobotsPolicy;
 use OsfSeo\Strategy\Target\GscPageIndex;
 use OsfSeo\Tests\Integration\Strategy\StrategyTestCase;
@@ -40,7 +43,7 @@ abstract class AiTestCase extends StrategyTestCase
 {
 	protected const AI_TABLES = ['ai_runs', 'ai_run_payloads'];
 
-	protected const PAGE_TABLES = ['page_targets', 'page_snapshots', 'page_fetches', 'page_serp_links'];
+	protected const PAGE_TABLES = ['page_targets', 'page_snapshots', 'page_fetches', 'page_serp_links', 'page_jobs'];
 
 	protected const PAGE_ENV = [
 		PageIntelligenceConfig::PROJECT_ENABLED, PageIntelligenceConfig::COMPETITORS_ENABLED, PageIntelligenceConfig::TTL_HOURS, PageIntelligenceConfig::MAX_BYTES,
@@ -74,6 +77,14 @@ abstract class AiTestCase extends StrategyTestCase
 
 	/** Odpowiedź dostawcy testowego (null = przykładowa odpowiedź zgodna z kontraktem). */
 	protected ?Closure $fakeResponder = null;
+
+	protected AiTopicContextBuilder $contextBuilder;
+
+	/** Zlecenia pobrania stron z panelu (faza D) — na tej samej usłudze Page Intelligence co testy. */
+	protected PageJobService $pageJobs;
+
+	/** Przestrzeń robocza AI panelu (faza D). */
+	protected AiWorkspaceService $workspace;
 
 	protected function setUp(): void
 	{
@@ -110,8 +121,9 @@ abstract class AiTestCase extends StrategyTestCase
 			: ($this->fakeResponder)($request));
 		$this->aiRuns = new AiRunRepository($db, $this->clock);
 		$this->buildPages();
+		$this->contextBuilder = new AiTopicContextBuilder($this->strategy, $db, new GscPageIndex($db), $this->pageService, $this->clock);
 		$this->ai = new AiAnalysisService(
-			new AiTopicContextBuilder($this->strategy, $db, new GscPageIndex($db), $this->pageService, $this->clock),
+			$this->contextBuilder,
 			new AiProviderRegistry([$this->fake, new OpenAiProvider($config, new WpHttpTransport(10))]),
 			$config,
 			new AiPricing($config),
@@ -120,7 +132,9 @@ abstract class AiTestCase extends StrategyTestCase
 			new OutputValidator(),
 			$this->clock,
 			$this->captureLogger(),
+			guard: $this->guard,
 		);
+		$this->workspace = new AiWorkspaceService($this->contextBuilder, $this->aiRuns, $this->ai, $this->strategy, $this->pageJobs);
 	}
 
 	/** Usługa Page Intelligence na atrapie transportu (domyślnie) albo na podanym transporcie. */
@@ -144,6 +158,7 @@ abstract class AiTestCase extends StrategyTestCase
 			$transport,
 			fn (int $seconds) => $this->clock->advance($seconds),
 		);
+		$this->pageJobs = new PageJobService($this->pageService, new PageJobRepository($db, $this->clock), new PageIntelligenceConfig(), $this->strategy, $this->guard, $db, $this->captureLogger());
 	}
 
 	/** Projekt example.pl z tematem „pozycjonowanie stron” (dwie frazy GSC z tą samą stroną) i tematem „audyt seo”. */
