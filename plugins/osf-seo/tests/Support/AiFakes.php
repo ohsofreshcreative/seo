@@ -6,6 +6,9 @@ namespace OsfSeo\Tests\Support;
 
 use DateTimeImmutable;
 use DateTimeZone;
+use OsfSeo\Ai\Analysis\ReadinessEvaluator;
+use OsfSeo\Ai\Context\AiContext;
+use OsfSeo\Ai\Context\TopicContextAssembler;
 use OsfSeo\Ai\Provider\FakeProvider;
 use OsfSeo\PageIntelligence\Extract\HtmlExtractor;
 
@@ -133,6 +136,78 @@ final class AiFakes
 			'now' => new DateTimeImmutable('2026-01-15 12:00:00', new DateTimeZone('UTC')),
 			'topic_id' => 7,
 		], $source);
+	}
+
+	/** Inne tematy projektu (sekcja `site` analiz rekomendacji). */
+	public const SITE_TOPICS = [
+		['label' => 'audyt seo', 'action' => 'optimize', 'target_url' => 'https://example.pl/audyt-seo/'],
+		['label' => 'strony internetowe', 'action' => 'optimize', 'target_url' => 'https://example.pl/strony-internetowe/'],
+		['label' => 'pozycjonowanie lokalne', 'action' => 'create', 'target_url' => null],
+	];
+
+	/**
+	 * Źródło analizy rekomendacji (faza C) jak w `AiTopicContextBuilder::analysis`: gotowość z czystej funkcji źródła, język, inne tematy.
+	 *
+	 * @param array<string, mixed> $context nadpisania pakietu STEP 16
+	 * @param array<string, mixed> $source nadpisania źródła (domyślnie strony projektu i dwóch konkurentów)
+	 * @param list<array<string, mixed>>|null $site
+	 * @return array<string, mixed>
+	 */
+	public static function analysisSource(string $type, array $context = [], array $source = [], bool $explicit = false, ?array $site = null): array
+	{
+		$src = self::source($context, $source + ['pages' => self::pages()]);
+		$src['analysis'] = ['type' => $type, 'language' => 'pl', 'readiness' => (new ReadinessEvaluator())->evaluate($src, $type, $explicit)->toArray()];
+		$src['site'] = ['topics' => $site ?? self::SITE_TOPICS];
+
+		return $src;
+	}
+
+	/**
+	 * @param array<string, mixed> $context
+	 * @param array<string, mixed> $source
+	 */
+	public static function analysisContext(string $type, array $context = [], array $source = [], bool $explicit = false, ?array $site = null): AiContext
+	{
+		return (new TopicContextAssembler())->assemble(self::analysisSource($type, $context, $source, $explicit, $site));
+	}
+
+	/**
+	 * Poprawna odpowiedź analizy rekomendacji dostawcy testowego dla kontekstu (do modyfikacji w testach walidatora).
+	 *
+	 * @return array<string, mixed>
+	 */
+	public static function recommendation(AiContext $context): array
+	{
+		return FakeProvider::recommendations([
+			'analysis_type' => $context->analysisType(),
+			'refs' => $context->refs(),
+			'data_gaps' => $context->dataGaps(),
+			'action' => $context->action(),
+			'constraints' => $context->constraints(),
+			'limitations' => array_column((array) ($context->body['analysis']['limitations'] ?? []), 'code'),
+		]);
+	}
+
+	/**
+	 * Syntetyczna strona w stylu realnego testu OhSoFresh (bez pobierania prawdziwej strony): brak meta description, ok. 180 błędów
+	 * parsowania HTML, przeskoczone poziomy nagłówków (H1 → H3 → H5), etykiety interfejsu (CTA, kategoria wersalikami), karty realizacji
+	 * z nazwami projektów i niski stosunek tekstu do HTML (ikony SVG, atrybuty animacji).
+	 */
+	public static function ohSoFreshHtml(): string
+	{
+		$svg = '<svg viewBox="0 0 24 24" aria-hidden="true">' . str_repeat('<path d="M12 2l3 7h7l-5.5 4 2 7-6.5-4.5L5.5 20l2-7L2 9h7z" fill="currentColor"></path>', 6) . '</svg>';
+		$p = static fn (string $text, int $times): string => '<p>' . str_repeat($text . ' ', $times) . '</p>';
+		$card = static fn (string $name, string $category): string => '<div class="card" data-anim="fade" data-delay="200"><a href="/realizacje/' . strtolower(str_replace(' ', '-', $name)) . '/">' . $svg . '<h3>' . $name . '</h3><span class=tag>' . $category . '</span></a></div>';
+
+		return '<!doctype html><html lang="pl"><head><meta charset="utf-8"><title>OhSoFresh — agencja kreatywna i strony internetowe</title></head><body>'
+			. '<nav><a href="/">Start</a><a href="/oferta/">Oferta</a><a href="/kontakt/">Kontakt</a></nav><main>'
+			. '<h1>Agencja kreatywna OhSoFresh</h1>' . $p('Projektujemy strony internetowe, identyfikacje wizualne i kampanie dla marek, które chcą wyróżnić się jakością.', 4)
+			. '<h3>Projektowanie stron internetowych</h3>' . $p('Tworzymy serwisy od makiety po wdrożenie, z naciskiem na czytelność, szybkość i wygodę edycji treści.', 4)
+			. '<h5>Proces projektowy krok po kroku</h5>' . $p('Warsztaty, architektura informacji, makiety, projekt graficzny, wdrożenie i testy przed publikacją.', 3)
+			. '<h2>STRONY WWW</h2>' . $card('Hotel Alpejski', 'Branding') . $card('Kawiarnia Ziarno', 'Strona www') . $card('Studio Forma', 'Kampania')
+			. '<h2>Zobacz więcej</h2>' . str_repeat('<div class="row"><span class="x"><b>Ikona</span></b></div></div>', 51)
+			. '<h2>Sprawdź ofertę</h2><p><a href="https://example.pl/oferta/strony-internetowe/">Strony internetowe</a> <a href="https://example.pl/kontakt/">Kontakt</a></p>'
+			. '</main><footer>Stopka © OhSoFresh</footer></body></html>';
 	}
 
 	/** Syntetyczny HTML strony usługi (treść w `<main>`, nawigacja i stopka do odrzucenia). */
