@@ -134,6 +134,13 @@ API wymaga osobnej decyzji architektonicznej; integracje dostawców wyłącznie 
 | D75 | Odnośniki z modułów do Strategii: fraza → temat po frazie rynkowej (Nowe frazy, Luki fraz i treści, Pozycje); szansa SEO → temat tylko, gdy dowód Strategii `opportunity.direct` (OpportunityKeywordIndex, query × page) zawiera tę szansę — nigdy przez samo `opportunities.keyword` ani wspólną podstronę | Spójność z D54; link nie obiecuje powiązania, którego nie ma w dowodach. Sekcja 15.14 |
 | D76 | Płatna analiza SERP z panelu: wybór fraz → bezpłatny podgląd (`SerpAnalysisService::plan` — ponowne użycie, pomiar w toku, nowe pomiary, odrzucone, maks. koszt, budżet, blokady) → jawne potwierdzenie (liczba zadań i koszt z podglądu; większy albo droższy plan odrzucony) → kolejka (`SerpSubmitter` STEP 14) → status (strona przebiegu Pozycji); wymaga `osf_seo_manage_strategy` i `osf_seo_manage_serp_tracking` (trasa, kontroler i usługa) | Jeden mechanizm płatnych pomiarów; żadnego żądania przy renderowaniu ani przy wejściu w temat. Sekcja 15.14 |
 | D77 | Klient w panelu Strategii: aktywny backlog tylko do odczytu — bez odrzuconych tematów (lista, liczniki, zdarzenia, odnośniki z modułów, SERP Intelligence fraz odrzuconego tematu → 404), notatek, identyfikatorów użytkowników (status, zdarzenia, wpisy ręczne, zlecenie przeliczenia), ustawień, kosztów i analizy SERP; egzekwowane w usłudze, nie tylko w widoku | Least privilege niezależnie od ukrycia przycisków. Sekcja 15.14 |
+| D78 | Faza E automatyzuje **wyłącznie lokalne przeliczenie Strategii na zapisanych danych**: krok w tle nie zleca pomiarów SERP, importów Labs, wyszukiwania fraz ani metryk (wolumen, KD), nie rozszerza monitorowanych fraz i nie uruchamia płatnych analiz; globalne limity kosztów (1 USD dziennie, 10 USD miesięcznie) bez zmian | Automatyzacja bez kosztów i bez obchodzenia limitów modułów. Sekcja 15.15 |
+| D79 | Kolejka przeliczeń Strategii = stan zadania w wierszu `strategy_settings` (M0014: status, źródło, termin, start, dzierżawa, próby, kod błędu, klucz wyczerpanych prób, stan wykrywania zmian) — najwyżej jedno zadanie na projekt; bez nowej tabeli kolejki i bez Action Scheduler (D19); wykonawca = ostatni krok `SyncScheduler::onAfterRun` (WP-Cron `osf_seo_sync_tick` albo `wp osf-seo sync:run`) w czasie pozostałym ze wspólnego limitu ticka (D63), co najmniej jedno zadanie na tick, najpierw zlecenia ręczne, najwyżej 10 zadań | Jeden mechanizm tła; zlecenie z panelu nie czeka na koniec długiego importu; tick nie rośnie ponad jeden limit poza jednym zadaniem. Sekcja 15.15 |
+| D80 | Wzajemne wykluczanie: istniejąca blokada `GET_LOCK strategy_refresh_<projekt>` trzymana przez cały cykl zadania (przejęcie → `StrategyRefresher::refreshLocked` → zakończenie), także dla `strategy:refresh` w CLI; przejęcie = warunkowy UPDATE (`queued` i termin minął → `running`, dokładnie jeden wiersz); `running` bez trzymanej blokady = przerwany proces (odzyskanie po przejęciu blokady, bez okresu karencji); dzierżawa 15 min wyłącznie diagnostyczna — żywego procesu nigdy nie przejmujemy | Jeden mechanizm blokad zwalnianych przez serwer bazy po śmierci procesu PHP; brak dwóch równoległych przeliczeń projektu. Sekcja 15.15 |
+| D81 | Ponowienia: najwyżej 3 próby na zlecenie (przerwany proces też jest próbą), odstęp 1 min → 5 min, potem `failed` z kluczem danych, na którym próby się wyczerpały — automatycznie dopiero po zmianie danych (bez policzalnego klucza — najwcześniej po 6 h), ręcznie zawsze; projekt przeliczany przez inny proces → zadanie przesunięte o 60 s bez liczenia próby; w stanie zadania tylko kod błędu (`interrupted`, `error:<klasa>`), treść wyjątku wyłącznie w logu pluginu | Brak nieskończonych pętli i brak wycieku szczegółów technicznych do panelu. Sekcja 15.15 |
+| D82 | Wykrywanie zmian i debounce: najwyżej co 60 s klucz danych aktywnych projektów (kilkanaście tanich zapytań, bez zapisu, gdy nic się nie zmieniło); nowy klucz → zlecenie dopiero, gdy jest stabilny przez 120 s i projekt nie ma oczekujących zadań importu GSC, najpóźniej po 60 min nieaktualności; po przeliczeniu ponowne sprawdzenie klucza — dane zapisane w trakcie → kolejne przeliczenie (raz); przeliczenie nie zmienia klucza (brak cyklu); kliknięcie w trakcie przeliczenia zleca jedno kolejne (`refresh_requested_at` > początek przeliczenia — `recordRefresh` nie kasuje nowszego zlecenia) | Jedno przeliczenie na import wielu źródeł zamiast lawiny; żadne zlecenie nie ginie. Sekcja 15.15 |
+| D83 | Statusy panelu z zapisanego stanu zadania: Aktualne dane, Oczekuje na przeliczenie (zmiana danych, zlecenie, ponowienie), Przeliczanie, Zakończono (15 min po zakończeniu), Błąd przeliczenia; endpoint `GET /strategy/status` (JSON, dostęp do projektu) odpytywany co 5 s tylko, gdy przeliczenie czeka albo trwa; klient bez kodu błędu, źródła zlecenia i stanu kroku w tle; administrator — diagnostyka w ustawieniach Strategii i `wp osf-seo strategy:queue`, ostrzeżenie, gdy krok w tle nie działał od 10 min | Przejrzystość bez nowego panelu administracyjnego i bez szczegółów technicznych dla klienta. Sekcja 15.15 |
+| D84 | Wydajność: zostaje pełne przeliczenie projektu (benchmark `test:performance:strategy`: 5 000 fraz ok. 3 s, 230 zapytań, ok. 60 MB; bez zmian danych — sam klucz, 0 zapisów; wymuszone bez zmian danych — 0 zapisów kandydatów, tematów i zdarzeń); przeliczenie przyrostowe per fraza niepotrzebne — do ponownej oceny przy > 20 000 fraz albo > 10 s na projekt | Najpierw pomiar; brak złożoności bez potrzeby, stabilne ID i workflow bez zmian. Sekcja 15.15 |
 
 ## 3. Repozytorium i środowiska
 
@@ -896,7 +903,8 @@ ProjectGuard::authorizeSystem (tylko WP-CLI i WP-Cron) → GscImporter (sekcja 8
   na produkcji: `define('DISABLE_WP_CRON', true);` i cron systemowy co minutę:
   `wp --path=<ścieżka> osf-seo sync:run` (zalecane; planowanie + kolejka) albo `wp cron event run --due-now`,
   a bez WP-CLI: `wget -q -O - https://seo.ohsofresh.top/wp-cron.php?doing_wp_cron >/dev/null 2>&1`.
-  Hostinger: hPanel → Zaawansowane → Cron Jobs (minimalny interwał zależny od planu; co 1–5 min wystarcza).
+  Hostinger: hPanel → Zaawansowane → Cron Jobs (minimalny interwał zależny od planu; co 1–5 min wystarcza) — krok po kroku
+  w `docs/HOSTINGER-CRON.md`. Ten sam cron wykonuje kroki po kolejce, w tym przeliczenie Strategii (15.15).
 - Heartbeat: opcja `osf_seo_sync_heartbeat` (ostatnie uruchomienie runnera) — `wp osf-seo status` (`sync_queue`)
   i `wp osf-seo gsc:status` pokazują, czy kolejka żyje.
 - Utrzymanie (raz na dobę, w runnerze): usunięcie zakończonych zadań starszych niż 90 dni i osieroconego stagingu.
@@ -2329,7 +2337,7 @@ Zapis jest przyrostowy: wiersz zmienia się tylko, gdy zmienił się odcisk fakt
 i poziomu — identyfikator i wpis ręczny zostają, a fakty i dowody to stan z ostatniego przeliczenia, w którym fraza była kandydatem.
 Frazy GSC i członkowie szans SEO bez wiersza rynkowego dostają go przy zapisie (bez danych i bez wzbogacania — jak dodanie do monitorowania).
 
-### 15.4 Model danych (schemat 10, M0010; schemat 11, M0011; schemat 12, M0012; schemat 13, M0013)
+### 15.4 Model danych (schemat 10, M0010; schemat 11, M0011; schemat 12, M0012; schemat 13, M0013; schemat 14, M0014)
 
 - **`osf_strategy_settings`** — PK `project_id`: `revision` (licznik mutacji ręcznych Strategii), `data_key` (BINARY), `refreshed_at`,
   `refresh_ms`, `stats` (JSON: liczby źródeł, odfiltrowane, nadmiar, okno GSC), rynek ostatniego przeliczenia, `updated_by`, `updated_at`.
@@ -2354,6 +2362,12 @@ Frazy GSC i członkowie szans SEO bez wiersza rynkowego dostają go przy zapisie
   (fakty GSC tematu); `osf_strategy_settings` `refresh_requested_at`, `refresh_requested_by` (zlecenie przeliczenia z panelu, D74);
   `osf_strategy_keywords` `serp_intel_at` (chwila najnowszego zgodnego pomiaru frazy — filtr świeżości SERP Intelligence w SQL). Wartości
   uzupełnia najbliższe przeliczenie (`StrategyRefresher::VERSION` 5, `TopicRefresher::VERSION` 2, `EvidenceBuilder::VERSION` 5).
+- **M0014 (schemat 14, faza E)** — wyłącznie addytywnie, stan zadania przeliczenia w tle w `osf_strategy_settings` (D79): `refresh_status`
+  (`idle` / `queued` / `running` / `failed`, domyślnie `idle`), `refresh_source` (`manual` / `auto` / `cli`), `refresh_due_at`, `refresh_started_at`
+  (znacznik przejęcia), `refresh_lease_until` (diagnostyka), `refresh_finished_at`, `refresh_attempts`, `refresh_error` i `refresh_error_at` (kod
+  ostatniego błędu — zostaje do diagnostyki), `refresh_failed_key` (klucz danych wyczerpanych prób), `refresh_seen_key`, `refresh_seen_at`,
+  `refresh_dirty_since` (wykrywanie zmian i debounce) oraz indeks `refresh_queue` (`refresh_status`, `refresh_due_at`). Migracja niczego nie
+  przelicza; istniejące zlecenie z panelu (M0013) zostaje i wykona je CLI albo kolejne zlecenie.
 
 ### 15.5 Powiązanie szans SEO z frazami (D54)
 
@@ -2425,7 +2439,13 @@ wp osf-seo strategy:set-status --project=<id> --topic=… --status=new|review|pl
 wp osf-seo strategy:set-target --project=<id> --topic=… (--target-url=<url> | --confirm-missing | --clear)   # nie `--url` (globalny parametr WP-CLI)
 wp osf-seo strategy:pin --project=<id> --keywords="a, b" (--topic=… | --new)   # przypięcie fraz (pierwszeństwo przed grupowaniem)
 wp osf-seo strategy:unpin --project=<id> --keywords="a, b"
+# Faza E (15.15)
+wp osf-seo strategy:queue [--format=json]                       # kolejka przeliczeń: liczniki, oczekujące i trwające zadania, błędy (kody), dzierżawy, ostatni krok w tle
+wp osf-seo strategy:queue --run [--time-limit=20]               # krok w tle raz teraz (odzyskanie, wykrywanie zmian, zadania) — tylko lokalne przeliczenie
 ```
+
+`strategy:refresh` od fazy E przechodzi przez tę samą blokadę i zapis stanu zadania (źródło `cli`, 15.15); `strategy:status` pokazuje także
+stan zadania w tle.
 
 ### 15.9 Uprawnienia (D62)
 
@@ -2459,8 +2479,9 @@ wp osf-seo strategy:unpin --project=<id> --keywords="a, b"
   zdarzenia tylko istotnych zmian.
 - **D — Panel** (D73–D77; **zaimplementowana — szczegóły w 15.14**): moduł „Strategia” (przegląd, backlog, temat z sekcją „Dlaczego ten temat
   jest w Strategii?”, SERP Intelligence, analiza SERP z podglądem kosztu, ustawienia) i odnośniki z modułów.
-- **E — Tło i wydajność**: krok po kolejce GSC (po kroku SERP) z **wspólnym limitem czasu ticka** dla wszystkich kroków (bez nowego budżetu
-  czasu), przeliczenie przyrostowe w razie potrzeby, benchmark `test:performance:strategy`.
+- **E — Tło i wydajność** (D78–D84; **zaimplementowana — szczegóły w 15.15**): krok po kolejce GSC (po kroku SERP) w czasie pozostałym ze
+  **wspólnego limitu ticka** (bez nowego budżetu czasu), zlecenie z panelu jako zadanie w kolejce, wykrywanie zmian danych modułów z debounce,
+  blokada, ponowienia i odzyskanie, statusy w panelu, benchmark `test:performance:strategy` (przeliczenie przyrostowe okazało się niepotrzebne).
 - **F — Review, regresja, dokumentacja, PR.**
 - **STEP 17 (AI)** dostanie deterministyczny pakiet kontekstu tematu (wersjonowany JSON, `evidence_hash`, odwołania do konkretnych pomiarów,
   treści zewnętrzne oznaczone jako niezaufane) — w STEP 16 bez wywołań LLM.
@@ -2661,7 +2682,7 @@ w tle i benchmarku (faza E); historia Labs (lost/down) nie wchodzi do decyzji.
 
 | Metoda i ścieżka (względem `/projects/{project}/strategy`) | Kontroler | Dostęp |
 |---|---|---|
-| GET `/strategy` (przegląd), `/topics` (backlog), `/topics/{topic}`, `/serp`, `/serp/{candidate}` | `StrategyController`, `StrategyTopicsController`, `StrategySerpController` | dostęp do projektu (klient — tylko odczyt, D77) |
+| GET `/strategy` (przegląd), `/status` (stan przeliczenia — JSON, faza E), `/topics` (backlog), `/topics/{topic}`, `/serp`, `/serp/{candidate}` | `StrategyController`, `StrategyTopicsController`, `StrategySerpController` | dostęp do projektu (klient — tylko odczyt, D77) |
 | GET `/settings`; POST `/refresh`, `/keywords`, `/keywords/remove`, `/topics/{topic}/status`, `/topics/{topic}/note`, `/topics/{topic}/target`, `/pin`, `/unpin` | jw. | `osf_seo_manage_strategy` (middleware i usługa) |
 | GET `/analysis` (wybór i podgląd), POST `/analysis` (potwierdzenie → kolejka) | `StrategySerpController` | `osf_seo_manage_strategy` + `osf_seo_manage_serp_tracking` (middleware, kontroler i usługa) |
 
@@ -2688,8 +2709,8 @@ w tle i benchmarku (faza E); historia Labs (lost/down) nie wchodzi do decyzji.
   organiczne (tytuł, domena, adres — escapowane, linki tylko http(s) z `noopener noreferrer`), projekt i skonfigurowani konkurenci oznaczeni,
   pozostałe domeny widoczne; kształt „Dedykowana podstrona” zawsze jako heurystyka.
 - **Analiza SERP** — przepływ D76 z pięcioma krokami; status: frazy analizy i ostatnie przebiegi (postęp na stronie przebiegu Pozycji).
-- **Ustawienia** — stan przeliczenia (rynek, okno GSC, ostatnie przeliczenie, aktualność, zlecenie), zlecenie przeliczenia, limity (tylko odczyt —
-  stałe), wpisy ręczne (dodanie, zdjęcie).
+- **Ustawienia** — stan przeliczenia (rynek, okno GSC, ostatnie przeliczenie, aktualność, zlecenie; od fazy E także diagnostyka zadania w tle —
+  15.15), limity (tylko odczyt — stałe), wpisy ręczne (dodanie, zdjęcie).
 
 **Stany UI**: rynek nieobsługiwany, brak tematów / kandydatów, Strategia jeszcze nie przeliczona, przeliczenie trwa, zlecone, dane modułów zmieniły
 się, limit fraz (nadmiar), brak pomiaru SERP / pomiar nieaktualny / wygasły, pomiar w toku, limit kosztów, wstrzymanie DataForSEO, odstęp pomiaru
@@ -2701,10 +2722,109 @@ ręcznego, niepełne dane GSC; brak danych zawsze „—” (nigdy 0).
 **Odnośniki z modułów** (D75, partial `strategy.partials.topic-link`): Szanse SEO (frazy szansy z dowodem `opportunity.direct`), Nowe frazy, Luki fraz,
 Luki treści (tematy fraz grupy), Pozycje — nazwa tematu, działanie i status pracy; bez duplikowania workflow modułów.
 
-**Ograniczenia fazy D (jawne)**: przeliczenie z panelu tylko zlecane (wykonanie: CLI do czasu kroku w tle w fazie E); wyniki analizy SERP widoczne
-w Strategii po przeliczeniu; `ProjectPageIndex` nadal niepełny (strony z GSC); progi overlapu i heurystyki kształtu bez kalibracji; trasy panelu
+**Ograniczenia fazy D (jawne)**: przeliczenie z panelu tylko zlecane (od fazy E wykonuje je krok w tle — 15.15); wyniki analizy SERP widoczne
+w Strategii po przeliczeniu (od fazy E automatycznie — nowy pomiar zmienia klucz danych); `ProjectPageIndex` nadal niepełny (strony z GSC); progi overlapu i heurystyki kształtu bez kalibracji; trasy panelu
 sprawdzane rzeczywistymi żądaniami HTTP w środowisku deweloperskim — testy CI obejmują warstwę usług (autoryzacja, IDOR, widok klienta), bez
 harnessu jądra HTTP Acorn w testach pluginu.
+
+### 15.15 Przeliczenie Strategii w tle (faza E, D78–D84)
+
+**Zasada (D78)**: automatyzujemy wyłącznie **lokalne przeliczenie zapisanych danych** (`StrategyRefresher` — kandydaci, fakty, dowody, tematy).
+Krok w tle nigdy nie zleca pomiarów SERP, importów Labs, wyszukiwania fraz ani metryk, nie rozszerza monitorowanych fraz i nie uruchamia płatnych
+analiz; limity kosztów DataForSEO bez zmian. Projekt rozwiązywany z identyfikatora publicznego zapisanego w bazie przez
+`ProjectGuard::authorizeSystem` (tylko WP-CLI / WP-Cron) — nigdy z wejścia HTTP.
+
+```
+Panel „Zleć przeliczenie” (POST, osf_seo_manage_strategy, nonce + Origin)
+   │  StrategyService::requestRefresh → StrategyRefreshQueue::request: wiersz strategy_settings → queued (źródło manual, termin teraz,
+   │  nowy limit prób, klucz danych NULL); w trakcie przeliczenia status bez zmian — zlecenie po starcie = jedno kolejne przeliczenie
+   ▼
+WP-Cron „osf_seo_sync_tick” / cron systemowy „wp osf-seo sync:run” → SyncRunner (kolejka GSC) → kroki po kolejce (szanse, rynek, Nowe frazy,
+Luki SEO, Pozycje) → StrategyScheduler::runBackground(czas pozostały ze wspólnego limitu ticka, D63)
+   │  1. odzyskanie: status running bez trzymanej blokady projektu → próba nieudana „interrupted” (ponowienie wg limitu)
+   │  2. wykrywanie zmian (co 60 s): klucz danych aktywnego projektu ≠ klucz ostatniego przeliczenia → debounce → queued (źródło auto)
+   │  3. zadania gotowe (najpierw ręczne, maks. 10, co najmniej 1 na tick, kolejne w pozostałym czasie):
+   ▼
+StrategyRefreshRunner::runQueued — GET_LOCK strategy_refresh_<id> (zajęta → termin +60 s, bez liczenia próby)
+   → claim (UPDATE … WHERE status = queued AND termin minął; dokładnie 1 wiersz; próba +1)
+   → StrategyRefresher::refreshLocked (ręczne — wymuszone; automatyczne — tylko po zmianie klucza)
+   → complete (idle albo queued, gdy w trakcie przyszło nowsze zlecenie) | fail (ponowienie 1 min → 5 min → failed) | abandon (rynek / projekt)
+   → ponowne sprawdzenie klucza: dane zapisane w trakcie → zmiana zauważona (debounce zleci kolejne przeliczenie raz)
+   → RELEASE_LOCK
+```
+
+**Stany zadania** (`refresh_status`): `idle` → `queued` (zlecenie ręczne, wykryta zmiana, ponowienie) → `running` → `idle` | `queued` | `failed`.
+Jedno zadanie na projekt (wiersz `strategy_settings`, D79): ponowne kliknięcie nie tworzy drugiego zadania; `strategy:refresh` (CLI) zapisuje ten sam
+stan (źródło `cli`) pod tą samą blokadą i wykonuje oczekujące zlecenie sprzed startu.
+
+**Blokada i odzyskanie (D80)**: blokada `strategy_refresh_<projekt>` (GET_LOCK, zwalniana przez serwer bazy po śmierci procesu PHP) obejmuje
+przejęcie, przeliczenie i zakończenie, więc `running` bez blokady zawsze oznacza przerwany proces — odzyskanie przejmuje blokadę, sprawdza status
+i zapisuje nieudaną próbę. Dzierżawa (`refresh_lease_until`, 15 min) jest tylko diagnostyczna („trwa dłużej niż oczekiwano”) — żywego procesu
+nie przejmujemy. Wszystkie zmiany stanu to pojedyncze zapytania warunkowe (kolejność przypisań w `SET` bez znaczenia, także przy
+`SIMULTANEOUS_ASSIGNMENT` w MariaDB); zakończenie i błąd sprawdzają znacznik przejęcia (`refresh_started_at`).
+
+**Ponowienia (D81)**: maks. 3 próby (przerwanie też jest próbą), odstęp 60 s → 300 s, potem `failed` z `refresh_failed_key`; automatycznie
+ponownie dopiero po zmianie danych (bez klucza — po 6 h), ręcznie zawsze (nowy limit prób). W stanie tylko kod (`interrupted`, `error:<klasa>`,
+`unsupported_market`, `no_project`); treść wyjątku, plik i linia — wyłącznie w logu pluginu (redakcja sekretów), bez stack trace.
+
+**Wykrywanie zmian i debounce (D82)**: klucz danych (15.6) obejmuje GSC, Szanse SEO, Nowe frazy, Luki fraz i treści, pomiary SERP (Pozycje
+i SERP Intelligence) oraz mutacje ręczne wszystkich modułów i Strategii — krok w tle liczy go najwyżej co `StrategyScheduler::CHECK_INTERVAL`
+(60 s) dla aktywnych projektów (projekty wstrzymane i zarchiwizowane — tylko zlecenia ręczne / pomijane). Nowy klucz → `refresh_seen_key`,
+`refresh_seen_at`, `refresh_dirty_since`; zlecenie, gdy klucz jest stabilny przez `QUIET` (120 s) **i** projekt nie ma oczekujących zadań importu
+GSC — najpóźniej po `MAX_DEFER` (60 min) nieaktualności. Import wielu źródeł w kolejnych minutach = jedno przeliczenie po ustabilizowaniu danych
+(test O); długi import = najwyżej jedno przeliczenie na godzinę. Przeliczenie nie zmienia klucza, więc nie ma cyklu przeliczenie → unieważnienie
+→ przeliczenie. Klucz zawiera datę — raz na dobę projekty przeliczają się ponownie (bez zapisów, gdy dane się nie zmieniły).
+
+**Statusy w panelu (D83)** — pasek stanu na wszystkich ekranach Strategii (`partials/state`, `App\Panel\StrategyRefreshView`):
+
+| Faza (`panelState()['job']['phase']`) | Etykieta | Kiedy |
+|---|---|---|
+| `current` | Aktualne dane | klucz zgodny, bez zadania |
+| `pending` | Oczekuje na przeliczenie | dane modułów zmieniły się, krok w tle zleci przeliczenie (debounce) albo Strategia nie była przeliczona |
+| `queued`, `retrying` | Oczekuje na przeliczenie | zlecone (ręcznie albo automatycznie); ponowienie po błędzie z terminem i numerem próby |
+| `running` | Przeliczanie | zadanie trwa albo blokadę trzyma inny proces (CLI) |
+| `done` | Zakończono | do 15 min po zakończeniu zadania |
+| `failed` | Błąd przeliczenia | wyczerpane próby; widok pokazuje ostatnie udane przeliczenie |
+
+Pasek pokazuje wynik ostatniego przeliczenia (data, czas, frazy, tematy: nowe i zmienione), przycisk ponownego zlecenia (zarządzający, gdy nic
+nie czeka ani nie trwa) i — tylko administratorowi — przyczynę błędu (opis kodu) oraz ostrzeżenie, gdy krok w tle nie działał od 10 min (brak crona).
+Gdy przeliczenie czeka albo trwa, komponent Alpine `runProgress` odpytuje `GET /strategy/status` co 5 s i przeładowuje stronę po zakończeniu.
+Diagnostyka administratora (bez nowego panelu): **Ustawienia Strategii** (stan, zadanie w tle, źródło, próby, termin, ostatni błąd z datą i kodem,
+blokada, ostatni krok w tle, czasy faz ostatniego przeliczenia) oraz `wp osf-seo strategy:queue` (wszystkie projekty: liczniki, najstarsze
+oczekujące zadanie, przekroczone dzierżawy, heartbeat kroku Strategii i kolejki GSC, projekty z zadaniem, błędem albo zmianą danych).
+
+**Wymagania serwera**: cron systemowy co minutę (`wp osf-seo sync:run --time-limit=50`) albo WP-Cron wywoływany z zewnątrz; instrukcja dla
+Hostingera — `docs/HOSTINGER-CRON.md`. Bez crona zlecenie czeka („Oczekuje na przeliczenie” + ostrzeżenie dla administratora), a ręczne
+przeliczenie zawsze daje `wp osf-seo strategy:refresh --project=<id>`.
+
+**Wydajność (D84)** — `composer test:performance:strategy` (MariaDB 10.11, PHP 8.3, dane syntetyczne: GSC 90 dni, frazy × podstrony, Nowe
+frazy i Luki SEO po 10%, szanse 5%, 5 wpisów ręcznych, do 100 fraz SERP × 4 pomiary × TOP20; 3 projekty + 10 projektów po 300 fraz):
+
+| Fraz GSC | Kandydaci (ponad limit) | Tematy | Klucz | Zbieranie | Fakty i dowody | Zapis | Tematy | Razem | Zapytania SQL | Zapisy SQL | Pamięć |
+|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| 100 | 110 (0) | 24 | 10 ms | 17 ms | 40 ms | 27 ms | 41 ms | 137 ms | 105 | 7 | 2,7 MB |
+| 1 000 | 1 055 (0) | 229 | 8 ms | 132 ms | 292 ms | 128 ms | 282 ms | 846 ms | 127 | 17 | 16,6 MB |
+| 5 000 | 5 000 (255) | 929 | 11 ms | 542 ms | 1 007 ms | 535 ms | 1 203 ms | 3 311 ms | 230 | 58 | 59,7 MB |
+
+- Bez zmian danych: sam klucz (22 zapytania, 3–6 ms), **0 zapisów**. Wymuszone przeliczenie bez zmian danych (zlecenie ręczne): 0 zapisanych
+  kandydatów, tematów i zdarzeń (tylko wiersz stanu) — 5 000 fraz ok. 2 s. Po imporcie jednego dnia (przesunięcie okna 90 dni): 5 000 fraz —
+  1 607 kandydatów i 620 tematów zmienionych, 5 zdarzeń, 2,2 s.
+- Wykrywanie zmian: 19 zapytań i ok. 4 ms na projekt; tick bez zmian dla 13 projektów — ok. 50 ms, bez zapisów danych Strategii.
+- Liczba zapytań rośnie z liczbą paczek (500 fraz), nie z liczbą fraz — bez N+1; SERP-y tylko najnowsze zgodne pomiary (bez pełnej historii).
+- Zlecenia ręczne 13 projektów: pierwszy tick 10 zadań (4,4 s), kolejny — pozostałe 3.
+- Decyzja: pełne przeliczenie projektu zostaje (przeliczenie przyrostowe per fraza nie jest potrzebne — zapis i tak pomija niezmienione wiersze
+  po `facts_hash` i porównaniu tematów, a stabilne ID i workflow zostają bez zmian); ponowna ocena przy > 20 000 fraz albo > 10 s na projekt.
+  Krok w tle podnosi limit pamięci jak kolejka GSC (`wp_raise_memory_limit`).
+
+**Testy**: `StrategyBackgroundTest` (MariaDB) — A zlecenie z panelu tworzy zadanie bez przeliczenia, B krok w tle przelicza, C bez duplikatów,
+D bez równoległego wykonania (druga blokada, CLI, atomowe przejęcie), E nowe dane w trakcie → jedno kolejne przeliczenie, F bez zmian → bez zapisów
+i zdarzeń, G ponowienia z odstępem i stop do zmiany danych, H odzyskanie przerwanego zadania (żywy proces nietknięty), I bez capability, J klient,
+K IDOR i projekt z bazy, L zero żądań HTTP i płatnych zadań, M CLI, N statusy panelu, O import wielu źródeł → jedno przeliczenie (i limit 60 min),
+oraz rejestracja kroku w kontenerze; `MigratorTest` — aktualizacja ze schematu 13.
+
+**Ograniczenia fazy E**: wykonanie zależy od crona (bez niego — tylko CLI); co najmniej jedno zadanie na tick może wydłużyć tick o czas
+przeliczenia jednego projektu (~3 s dla 5 000 fraz); debounce rozpoznaje trwający import tylko dla GSC (pozostałe moduły — okno ciszy 120 s);
+odpytywanie statusu co 5 s działa tylko przy otwartej stronie; zadania nie mają historii przebiegów (tylko stan bieżący, ostatni błąd i log pluginu).
 
 ## 16. Bezpieczeństwo
 
@@ -2868,7 +2988,7 @@ Warianty docelowe:
 | 18 | Nowe frazy: seedy (ręczne, GSC, szanse), wyszukiwanie DataForSEO Labs w tle z planem i limitami kosztów, deduplikacja, widoczność GSC, priorytet odkrycia, praca nad frazą, wykluczenia | ✅ STEP 13 (sekcja 12) |
 | 19 | Pozycje SERP i konkurenci: monitorowane frazy, pomiary Google Organic (Standard, TOP100) z planem, rezerwacją kosztu i harmonogramem, pełne TOP N w historii, zmiany, konkurenci monitorowani i organiczni | ✅ STEP 14 (sekcja 13) |
 | 20 | Luki SEO: wspólne zbiory fraz domen konkurentów (Labs Ranked Keywords) z planem, limitami i importem w tle, punkt odniesienia projektu, widoczność SERP → GSC → Labs, typ i priorytet luki, filtry marki, grupy fraz, luka treści (heurystyka), strony konkurencji, historia zbiorów | ✅ STEP 15 (sekcja 14) |
-| 21 | Strategia i SERP Intelligence: kandydaci z modułów z dowodami, analiza zapisanych SERP-ów, strona docelowa, działania, priorytet i pewność, tematy, backlog z workflow | ⏳ STEP 16 (sekcja 15): fazy A (fundament), B (SERP Intelligence), C (rdzeń) i D (panel) zrobione; fazy E–F według planu |
+| 21 | Strategia i SERP Intelligence: kandydaci z modułów z dowodami, analiza zapisanych SERP-ów, strona docelowa, działania, priorytet i pewność, tematy, backlog z workflow | ⏳ STEP 16 (sekcja 15): fazy A (fundament), B (SERP Intelligence), C (rdzeń), D (panel) i E (tło i wydajność) zrobione; faza F według planu |
 
 **MVP 2**: ~~Opportunity Score~~ (STEP 11), Pages/landing pages, zaawansowane filtry, automatyczna synchronizacja, raporty.
 **MVP 3**: własny crawler, audyt techniczny, połączenie crawler + GSC.
@@ -2904,7 +3024,7 @@ Każdy etap to osobny commit z testem (build, `php -l`, smoke test WordPress). K
   szybkim i porównanie kosztu (14.20). Maks. 10 000 fraz na domenę (14.21). Pełne przeliczenie dużego projektu ~12 s w tle (14.19) —
   przy setkach projektów potrzebne przeliczenie przyrostowe. Heurystyki (widoczność sporadyczna, luka treści, priorytet) do kalibracji.
 - **Strategia (STEP 16)**: progi źródeł i limit kandydatów (5000) do kalibracji na prawdziwych projektach (`OSF_SEO_STRATEGY_*`); przeliczenie
-  dużego projektu agreguje GSC z 90 dni (w tle od fazy E — do tego czasu `wp osf-seo strategy:refresh`); lista członków szansy z tekstu
+  dużego projektu agreguje GSC z 90 dni (w tle od fazy E: 5 000 fraz ok. 3 s i ok. 60 MB — 15.15); lista członków szansy z tekstu
   wyszukiwania może być ucięta przy bardzo dużych grupach (jawne `members_complete = false`; powiązanie przez podstronę to tylko kontekst).
   Faza B: reguły kształtu wyniku i sygnału intencji z SERP oraz progi overlapu i domen wszechobecnych do kalibracji na prawdziwych SERP-ach
   (wersja reguł profilu); koszt analizy = koszt pomiaru STEP 14 we wspólnych limitach (bez automatycznego harmonogramu).

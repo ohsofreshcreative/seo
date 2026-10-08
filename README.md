@@ -25,8 +25,10 @@ dostawca danych rynkowych (wolumen, historia wolumenu, CPC, konkurencja Ads, tru
 > uruchomieniem, widoczność projektu SERP → GSC → punkt odniesienia, priorytet luki, grupy fraz, luka treści jako heurystyka, strony konkurencji). W toku:
 > STEP 16 — **Strategia** (backlog SEO łączący sygnały modułów z dowodami; zrobione fazy A — kandydaci, fakty i dowody per fraza — B — SERP
 > Intelligence na zapisanych pomiarach oraz jednorazowa analiza SERP przez moduł Pozycji — i C — tematy ze stabilnymi ID, strona docelowa,
-> konflikty URL, działanie z powodem, pewność, Priorytet Strategii, status pracy i pakiet kontekstu, z CLI — i D — panel „Strategia”: przegląd,
-> backlog, szczegóły tematu, SERP Intelligence, analiza SERP z podglądem kosztu, ustawienia i odnośniki z modułów). Plan i postęp:
+> konflikty URL, działanie z powodem, pewność, Priorytet Strategii, status pracy i pakiet kontekstu, z CLI — D — panel „Strategia”: przegląd,
+> backlog, szczegóły tematu, SERP Intelligence, analiza SERP z podglądem kosztu, ustawienia i odnośniki z modułów — i E — przeliczenie w tle:
+> zlecenie z panelu jako zadanie w kolejce, automatyczne przeliczenie po zmianie danych modułów z debounce importów, blokada, ponowienia,
+> odzyskanie przerwanego zadania, statusy w panelu i benchmark; wyłącznie lokalne przeliczenie, bez kosztów). Plan i postęp:
 > [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 >
 > **Repozytorium jest publiczne.** Nie commituj żadnych sekretów (sekcja „Konfiguracja”).
@@ -145,7 +147,7 @@ wp osf-seo gsc:probe --project=<public_id> [--dimensions=query] [--limit=10]
 wp osf-seo gsc:sync --project=<public_id> [--run] [--force]
 wp osf-seo gsc:backfill --project=<public_id> [--run]
 wp osf-seo gsc:status --project=<public_id> [--format=json]
-wp osf-seo sync:run          # kolejka synchronizacji — dla crona systemowego (co minutę); potem szanse SEO, dane rynkowe i nowe frazy w tle
+wp osf-seo sync:run          # kolejka synchronizacji — dla crona systemowego (co minutę); potem szanse SEO, dane rynkowe, nowe frazy, luki, pozycje i Strategia w tle
 
 # Szanse SEO (analiza zapisanych danych GSC, bez wywołań Google)
 wp osf-seo opportunities:analyze --project=<public_id> [--days=7|28|90] [--force]
@@ -202,10 +204,13 @@ wp osf-seo strategy:context --project=<public_id> --topic="fraza"         # dete
 wp osf-seo strategy:set-status --project=<public_id> --topic="fraza" --status=planned [--note="…"]
 wp osf-seo strategy:set-target --project=<public_id> --topic="fraza" --target-url=https://example.pl/strona/   # albo --confirm-missing / --clear
 wp osf-seo strategy:pin --project=<public_id> --keywords="a, b" --new      # przypięcie fraz do nowego tematu (albo --topic=…); strategy:unpin
+wp osf-seo strategy:queue [--run]                                # kolejka przeliczeń w tle: zadania, błędy (kody), ostatni krok; --run = krok w tle raz
 ```
 
-Synchronizacja działa w tle przez WP-Cron (lokalnie wystarczy ruch na stronie); na serwerze zalecany cron
-systemowy z `wp osf-seo sync:run` — szczegóły w `docs/ARCHITECTURE.md`, sekcja 9.
+Synchronizacja i kroki po niej (szanse SEO, dane rynkowe, Nowe frazy, Luki SEO, Pozycje i przeliczenie Strategii) działają w tle przez
+WP-Cron (lokalnie wystarczy ruch na stronie); na serwerze zalecany cron systemowy co minutę z `wp osf-seo sync:run` — szczegóły
+w `docs/ARCHITECTURE.md` (sekcje 9 i 15.15), instrukcja dla Hostingera: [`docs/HOSTINGER-CRON.md`](docs/HOSTINGER-CRON.md).
+„Zleć przeliczenie” w panelu Strategii tylko zapisuje zadanie — bez crona czeka ono na wykonanie (panel pokazuje ostrzeżenie administratorowi).
 
 WP-CLI w Local wymaga socketu MySQL strony — gotowy szablon komendy jest w `AGENTS.md`.
 
