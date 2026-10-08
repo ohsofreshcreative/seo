@@ -8,6 +8,7 @@ use OsfSeo\Ai\AiAnalysisService;
 use OsfSeo\Ai\AiPlan;
 use OsfSeo\Ai\AiRefused;
 use OsfSeo\Ai\AiRunNotFound;
+use OsfSeo\Ai\Analysis\Readiness;
 use OsfSeo\Ai\Context\AiContext;
 use OsfSeo\Ai\Context\TopicContextAssembler;
 use OsfSeo\Ai\Provider\FakeProvider;
@@ -24,6 +25,9 @@ use WP_CLI\Utils;
  * `wp osf-seo ai:*` — analizy AI tematów Strategii (STEP 17, faza A): diagnostyka konfiguracji (bez sekretów), podgląd i walidacja
  * kontekstu, plan (zero żądań), uruchomienie (domyślnie dostawca testowy `fake` — koszt 0; płatny dostawca tylko po świadomej konfiguracji,
  * bez powodów blokady i z potwierdzeniem kosztu), historia, decyzje, budżet AI i porządki. Wyjście po angielsku; `--format=json` — tylko JSON.
+ *
+ * Faza C (analizy rekomendacji): `ai:analysis-types`, `ai:readiness`, `ai:plan --type`, `ai:generate`, aktualność wyników w `ai:show`
+ * i `ai:runs --check-stale`. Płatne generowanie: potwierdzenie dokładnie tego planu (interaktywnie albo `--yes --plan=<odcisk>` z `ai:plan`).
  */
 final class AiCommand
 {
@@ -40,22 +44,47 @@ final class AiCommand
 		$focus = ['type' => 'assoc', 'name' => 'focus', 'description' => 'Optional analysis focus (short text, max 300 characters; treated as untrusted).', 'optional' => true];
 		$run = ['type' => 'assoc', 'name' => 'run', 'description' => 'AI run ID (ULID).', 'optional' => false];
 		$format = ['type' => 'assoc', 'name' => 'format', 'description' => 'Output format.', 'optional' => true, 'default' => 'table', 'options' => ['table', 'json']];
+		$typeOption = static fn (bool $optional): array => ['type' => 'assoc', 'name' => 'type', 'description' => 'Recommendation analysis type: page-optimization, new-page-brief or content-gap' . ($optional ? ' (omit for the topic analysis of phase A).' : '.'), 'optional' => $optional];
+		$explicit = ['type' => 'flag', 'name' => 'explicit', 'description' => 'Explicitly choose an analysis type that the Strategy action allows only on request (e.g. investigate). Never changes the Strategy decision.', 'optional' => true];
 
 		WP_CLI::add_command('osf-seo ai:status', [$command, 'status'], [
 			'shortdesc' => 'AI configuration check without secrets: kill switch, provider, model, key presence, prices, limits, versions, run counts.',
 			'synopsis' => [$format],
 		]);
 		WP_CLI::add_command('osf-seo ai:context', [$command, 'context'], [
-			'shortdesc' => 'Preview the deterministic AI context of a Strategy topic (JSON; no AI and no API call).',
-			'synopsis' => [$project, $topic],
+			'shortdesc' => 'Preview the deterministic AI context of a Strategy topic (JSON; no AI and no API call). With --type: context of a recommendation analysis (version 3).',
+			'synopsis' => [$project, $topic, $typeOption(true), $explicit],
+		]);
+		WP_CLI::add_command('osf-seo ai:analysis-types', [$command, 'analysisTypes'], [
+			'shortdesc' => 'Recommendation analysis types with prompt versions and compatibility with Strategy actions (allowed / explicit / blocked).',
+			'synopsis' => [$format],
+		]);
+		WP_CLI::add_command('osf-seo ai:readiness', [$command, 'readiness'], [
+			'shortdesc' => 'Readiness of a recommendation analysis from stored data (READY / PARTIAL / INSUFFICIENT / BLOCKED). No request: missing pages, SERP or market data are never fetched.',
+			'synopsis' => [$project, $topic, $typeOption(false), $explicit, $format],
 		]);
 		WP_CLI::add_command('osf-seo ai:validate-context', [$command, 'validateContext'], [
 			'shortdesc' => 'Validate the AI context of a topic: determinism (fingerprint), size budget, refs, data gaps (exit code 1 on problems).',
 			'synopsis' => [$project, $topic, $format],
 		]);
 		WP_CLI::add_command('osf-seo ai:plan', [$command, 'plan'], [
-			'shortdesc' => 'Plan an AI analysis of a topic: provider, model, token estimate, maximum cost, budget and blockers (no request).',
-			'synopsis' => [$project, $topic, $provider, $focus, $format],
+			'shortdesc' => 'Plan an AI analysis of a topic: provider, model, token estimate, maximum cost, budget, blockers and plan fingerprint (no request).',
+			'synopsis' => [$project, $topic, $typeOption(true), $provider, $focus, $explicit, $format],
+		]);
+		WP_CLI::add_command('osf-seo ai:generate', [$command, 'generate'], [
+			'shortdesc' => 'Generate a recommendation analysis (page optimization, new page brief, content gap). Default provider "fake" (zero cost, no network). A paid provider requires the exact approved plan: interactive confirmation or --yes with --plan.',
+			'synopsis' => [
+				$project,
+				$topic,
+				$typeOption(false),
+				$provider,
+				$focus,
+				$explicit,
+				['type' => 'assoc', 'name' => 'plan', 'description' => 'Approved plan fingerprint from ai:plan (refused when the plan changed: context, model, prices or cost).', 'optional' => true],
+				['type' => 'flag', 'name' => 'yes', 'description' => 'Confirm without asking (a paid provider additionally requires --plan).', 'optional' => true],
+				['type' => 'flag', 'name' => 'repeat', 'description' => 'Generate again although an identical plan already succeeded.', 'optional' => true],
+				$format,
+			],
 		]);
 		WP_CLI::add_command('osf-seo ai:run', [$command, 'run'], [
 			'shortdesc' => 'Run an AI analysis of a topic. Default provider "fake" (zero cost, no network). A paid provider runs only when enabled, configured, priced, within limits and confirmed.',
@@ -74,6 +103,7 @@ final class AiCommand
 				$project,
 				['type' => 'assoc', 'name' => 'topic', 'description' => 'Only runs of this topic.', 'optional' => true],
 				['type' => 'assoc', 'name' => 'limit', 'description' => 'Rows (default 20, max 200).', 'optional' => true, 'default' => '20'],
+				['type' => 'flag', 'name' => 'check-stale', 'description' => 'Compare each result with the current evidence (rebuilds contexts; no request).', 'optional' => true],
 				$format,
 			],
 		]);
@@ -135,7 +165,84 @@ final class AiCommand
 	 */
 	public function context(array $args, array $assocArgs): void
 	{
-		WP_CLI::line($this->buildContext($assocArgs)->json());
+		if (! isset($assocArgs['type'])) {
+			WP_CLI::line($this->buildContext($assocArgs)->json());
+
+			return;
+		}
+
+		$context = CliProject::resolve($this->plugin, $assocArgs, Capabilities::MANAGE_AI);
+
+		try {
+			WP_CLI::line($this->service()->analysisContext($context, (string) $assocArgs['topic'], (string) $assocArgs['type'], isset($assocArgs['explicit']))->json());
+		} catch (StrategyNotFound) {
+			WP_CLI::error('Strategy topic not found.');
+		} catch (AccessDenied) {
+			WP_CLI::error('Access denied.');
+		} catch (AiRefused $refused) {
+			WP_CLI::error(self::refusal($refused));
+		}
+	}
+
+	/**
+	 * @param list<string> $args
+	 * @param array<string, string> $assocArgs
+	 */
+	public function analysisTypes(array $args, array $assocArgs): void
+	{
+		$this->requireOperator();
+		$types = $this->service()->analysisTypes();
+
+		if (($assocArgs['format'] ?? 'table') === 'json') {
+			self::json($types);
+
+			return;
+		}
+
+		$rows = [];
+
+		foreach ($types as $type) {
+			foreach ($type['actions'] as $action => $rule) {
+				$rows[] = [
+					'type' => $type['type'],
+					'prompt' => $type['prompt_version'],
+					'action' => $action,
+					'mode' => $rule['mode'],
+					'constraints' => $rule['constraints'] === [] ? '—' : implode(', ', $rule['constraints']),
+					'requires' => $rule['requires'] === [] ? '—' : implode(', ', $rule['requires']),
+				];
+			}
+		}
+
+		Utils\format_items('table', $rows, ['type', 'prompt', 'action', 'mode', 'constraints', 'requires']);
+		WP_CLI::log('Mode "explicit" requires --explicit; "blocked" is never run. The analysis never changes the Strategy decision.');
+	}
+
+	/**
+	 * @param list<string> $args
+	 * @param array<string, string> $assocArgs
+	 */
+	public function readiness(array $args, array $assocArgs): void
+	{
+		$context = CliProject::resolve($this->plugin, $assocArgs, Capabilities::MANAGE_AI);
+
+		try {
+			$readiness = $this->service()->readiness($context, (string) $assocArgs['topic'], (string) $assocArgs['type'], isset($assocArgs['explicit']));
+		} catch (StrategyNotFound) {
+			WP_CLI::error('Strategy topic not found.');
+		} catch (AccessDenied) {
+			WP_CLI::error('Access denied.');
+		} catch (AiRefused $refused) {
+			WP_CLI::error(self::refusal($refused));
+		}
+
+		if (($assocArgs['format'] ?? 'table') === 'json') {
+			self::json($readiness->toArray());
+
+			return;
+		}
+
+		$this->printReadiness($readiness);
 	}
 
 	/**
@@ -210,11 +317,15 @@ final class AiCommand
 		$context = CliProject::resolve($this->plugin, $assocArgs, Capabilities::MANAGE_AI);
 
 		try {
-			$plan = $this->service()->plan($context, (string) $assocArgs['topic'], (string) ($assocArgs['provider'] ?? FakeProvider::ID), $assocArgs['focus'] ?? null);
+			$plan = isset($assocArgs['type'])
+				? $this->service()->planAnalysis($context, (string) $assocArgs['topic'], (string) $assocArgs['type'], (string) ($assocArgs['provider'] ?? FakeProvider::ID), $assocArgs['focus'] ?? null, isset($assocArgs['explicit']))
+				: $this->service()->plan($context, (string) $assocArgs['topic'], (string) ($assocArgs['provider'] ?? FakeProvider::ID), $assocArgs['focus'] ?? null);
 		} catch (StrategyNotFound) {
 			WP_CLI::error('Strategy topic not found.');
 		} catch (AccessDenied) {
 			WP_CLI::error('Access denied.');
+		} catch (AiRefused $refused) {
+			WP_CLI::error(self::refusal($refused));
 		}
 
 		if (($assocArgs['format'] ?? 'table') === 'json') {
@@ -223,7 +334,79 @@ final class AiCommand
 			return;
 		}
 
+		if ($plan->readiness !== null) {
+			$this->printReadiness($plan->readiness);
+		}
+
 		$this->printPlan($plan);
+	}
+
+	/**
+	 * @param list<string> $args
+	 * @param array<string, string> $assocArgs
+	 */
+	public function generate(array $args, array $assocArgs): void
+	{
+		$context = CliProject::resolve($this->plugin, $assocArgs, Capabilities::MANAGE_AI);
+		$provider = (string) ($assocArgs['provider'] ?? FakeProvider::ID);
+		$topic = (string) $assocArgs['topic'];
+		$type = (string) $assocArgs['type'];
+		$explicit = isset($assocArgs['explicit']);
+		$json = ($assocArgs['format'] ?? 'table') === 'json';
+		$approved = isset($assocArgs['plan']) ? strtolower(trim((string) $assocArgs['plan'])) : null;
+
+		try {
+			$plan = $this->service()->planAnalysis($context, $topic, $type, $provider, $assocArgs['focus'] ?? null, $explicit);
+
+			if (! $plan->runnable()) {
+				if (! $json) {
+					if ($plan->readiness !== null) {
+						$this->printReadiness($plan->readiness);
+					}
+
+					$this->printPlan($plan);
+				}
+
+				WP_CLI::error('AI analysis refused: ' . implode(', ', $plan->blockers) . '.');
+			}
+
+			if ($plan->paid) {
+				if ($approved === null && isset($assocArgs['yes'])) {
+					WP_CLI::error('A paid analysis with --yes requires --plan=<plan_fingerprint> from: wp osf-seo ai:plan --type=' . $plan->task . ' (approval of the exact plan).');
+				}
+
+				if (! isset($assocArgs['yes'])) {
+					if (! $json) {
+						$this->printPlan($plan);
+					}
+
+					WP_CLI::confirm(sprintf('Generate a PAID AI analysis (%s) with %s / %s, maximum cost %.6f USD (AI budget, separate from DataForSEO)?', $plan->task, $plan->provider, (string) $plan->model, (float) $plan->maxCost));
+					$approved ??= $plan->fingerprint();
+				}
+			}
+
+			$run = $this->service()->generate($context, $topic, $type, $provider, $assocArgs['focus'] ?? null, $explicit, $approved, true, isset($assocArgs['repeat']));
+		} catch (StrategyNotFound) {
+			WP_CLI::error('Strategy topic not found.');
+		} catch (AccessDenied) {
+			WP_CLI::error('Access denied.');
+		} catch (AiRefused $refused) {
+			WP_CLI::error(self::refusal($refused));
+		}
+
+		if ($json) {
+			self::json($run->toArray());
+
+			return;
+		}
+
+		WP_CLI::log(sprintf('Run %s (%s): %s (provider %s, model %s, readiness %s), tokens %s/%s, charged %.6f USD (%s).', $run->publicId, $run->task, $run->status, $run->provider, $run->model, $run->readiness ?? '—', $run->inputTokens ?? '—', $run->outputTokens ?? '—', $run->chargedCost(), $run->costBasis ?? '—'));
+
+		if ($run->status === AiRun::STATUS_SUCCEEDED) {
+			WP_CLI::success('Analysis stored (AI suggestion — the Strategy and the topic work status are unchanged). Show it with: wp osf-seo ai:show --project=' . $context->publicId() . ' --run=' . $run->publicId);
+		} else {
+			WP_CLI::warning('Analysis not usable: ' . ($run->errorCode ?? $run->status) . ($run->validationErrors > 0 ? ' (' . $run->validationErrors . ' validation errors)' : '') . '. No automatic retry.');
+		}
 	}
 
 	/**
@@ -257,7 +440,7 @@ final class AiCommand
 		} catch (AccessDenied) {
 			WP_CLI::error('Access denied.');
 		} catch (AiRefused $refused) {
-			WP_CLI::error('AI analysis refused: ' . implode(', ', $refused->blockers()) . '.');
+			WP_CLI::error(self::refusal($refused));
 		}
 
 		if ($json) {
@@ -291,8 +474,10 @@ final class AiCommand
 			WP_CLI::error('Access denied.');
 		}
 
+		$freshness = isset($assocArgs['check-stale']) ? $this->service()->freshness($context, $runs) : null;
+
 		if (($assocArgs['format'] ?? 'table') === 'json') {
-			self::json(array_map(static fn (AiRun $run): array => $run->toArray(), $runs));
+			self::json(array_map(static fn (AiRun $run): array => $run->toArray() + ($freshness === null ? [] : ['freshness' => $freshness[$run->publicId] ?? null]), $runs));
 
 			return;
 		}
@@ -303,17 +488,25 @@ final class AiCommand
 			return;
 		}
 
+		$stale = static fn (?array $item): string => match ($item['stale'] ?? null) {
+			true => 'yes (' . $item['reason'] . ')',
+			false => 'no',
+			default => '—',
+		};
 		Utils\format_items('table', array_map(static fn (AiRun $run): array => [
 			'id' => $run->publicId,
 			'created' => $run->createdAt,
 			'topic' => $run->topicPublicId ?? '—',
+			'task' => $run->task,
 			'provider' => $run->provider . ' / ' . $run->model,
 			'status' => $run->status,
+			'readiness' => $run->readiness ?? '—',
 			'tokens' => ($run->inputTokens ?? '—') . '/' . ($run->outputTokens ?? '—'),
 			'charged_usd' => sprintf('%.6f', $run->chargedCost()),
 			'error' => $run->errorCode ?? '—',
 			'decision' => $run->decision ?? '—',
-		], $runs), ['id', 'created', 'topic', 'provider', 'status', 'tokens', 'charged_usd', 'error', 'decision']);
+			'stale' => $stale($freshness[$run->publicId] ?? null),
+		], $runs), ['id', 'created', 'topic', 'task', 'provider', 'status', 'readiness', 'tokens', 'charged_usd', 'error', 'decision', ...($freshness === null ? [] : ['stale'])]);
 	}
 
 	/**
@@ -335,6 +528,7 @@ final class AiCommand
 		$payload = $detail['payload'] ?? [];
 		$data = [
 			'run' => $detail['run']->toArray(),
+			'freshness' => $detail['freshness'],
 			'result' => $payload['result'] ?? null,
 			'validation' => $payload['validation'] ?? [],
 		];
@@ -478,7 +672,39 @@ final class AiCommand
 			WP_CLI::log(sprintf('AI budget: today %.6f / %.6f USD, month %.6f / %.6f USD, project month %.6f / %.6f USD, max per analysis %.6f USD.', $plan->budget['spent']['today'], $plan->budget['limits']['daily'], $plan->budget['spent']['month'], $plan->budget['limits']['monthly'], (float) $plan->budget['spent']['project_month'], $plan->budget['limits']['project_monthly'], $plan->budget['limits']['max_run_cost']));
 		}
 
-		WP_CLI::log($plan->runnable() ? 'Runnable' . ($plan->paid ? ' (requires confirmation).' : '.') : 'Blocked: ' . implode(', ', $plan->blockers) . '.');
+		WP_CLI::log('Plan fingerprint: ' . $plan->fingerprint() . ($plan->language !== null ? ' (response language ' . $plan->language . ')' : '') . '.');
+		WP_CLI::log($plan->runnable() ? 'Runnable' . ($plan->paid ? ' (requires confirmation of this exact plan).' : '.') : 'Blocked: ' . implode(', ', $plan->blockers) . '.');
+	}
+
+	private function printReadiness(Readiness $readiness): void
+	{
+		$data = $readiness->toArray();
+		$codes = static fn (array $items): string => $items === [] ? 'none' : implode(', ', array_column($items, 'code'));
+		WP_CLI::log(sprintf('Analysis %s (%s): readiness %s. Strategy action: %s (%s%s).', $data['type'], $data['type_label'], strtoupper($data['state']), $data['strategy_action'] ?? '—', $data['compatibility'], $data['constraints'] === [] ? '' : '; ' . implode(', ', $data['constraints'])));
+		WP_CLI::log('Reasons: ' . $codes($data['reasons']) . '. Limitations: ' . $codes($data['limitations']) . '. Notes: ' . $codes($data['notes']) . '.');
+
+		foreach (array_merge($data['reasons'], $data['limitations']) as $item) {
+			WP_CLI::log('  - ' . $item['code'] . ': ' . $item['meaning']);
+		}
+
+		foreach ($data['hints'] as $hint) {
+			WP_CLI::log('Consider (explicit, not run automatically): ' . $hint);
+		}
+	}
+
+	private static function refusal(AiRefused $refused): string
+	{
+		$message = match ($refused->code()) {
+			'analysis_type_unknown' => 'Unknown analysis type (use page-optimization, new-page-brief or content-gap).',
+			'plan_changed' => 'The plan changed since it was approved (context, model, prices, token limit or cost). Review the new plan with ai:plan.',
+			'plan_approval_required' => 'A paid analysis requires the approved plan fingerprint (--plan).',
+			'run_in_progress' => 'The same analysis of this topic is already in progress.',
+			'already_generated' => 'An identical plan has already been generated (see ai:runs; use --repeat to generate again).',
+			default => null,
+		};
+		$blockers = $refused->blockers();
+
+		return 'AI analysis refused: ' . $refused->code() . ($blockers !== [$refused->code()] ? ' (' . implode(', ', $blockers) . ')' : '') . '.' . ($message === null ? '' : ' ' . $message);
 	}
 
 	/** Diagnostyka globalna: operator systemu (bez `--user`) albo użytkownik z `osf_seo_manage_ai`. */
