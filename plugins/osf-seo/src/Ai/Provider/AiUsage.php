@@ -5,8 +5,8 @@ declare(strict_types=1);
 namespace OsfSeo\Ai\Provider;
 
 /**
- * Zużycie tokenów zgłoszone przez dostawcę. `cachedTokens` są częścią `inputTokens` (tańsze wejście z cache), tokeny rozumowania —
- * częścią `outputTokens` (rozliczane jak wyjście).
+ * Zużycie tokenów zgłoszone przez dostawcę. `cachedTokens` (odczyt z cache) i `cacheWriteTokens` (zapis do cache) są częścią
+ * `inputTokens`, tokeny rozumowania — częścią `outputTokens` (rozliczane jak wyjście).
  */
 final class AiUsage
 {
@@ -15,6 +15,7 @@ final class AiUsage
 		public readonly int $outputTokens,
 		public readonly int $cachedTokens = 0,
 		public readonly int $reasoningTokens = 0,
+		public readonly int $cacheWriteTokens = 0,
 	) {
 	}
 
@@ -29,21 +30,24 @@ final class AiUsage
 		}
 
 		$cached = $usage['input_tokens_details']['cached_tokens'] ?? 0;
+		$written = $usage['input_tokens_details']['cache_write_tokens'] ?? 0;
 		$reasoning = $usage['output_tokens_details']['reasoning_tokens'] ?? 0;
+		$cached = is_int($cached) ? max(0, min($cached, $usage['input_tokens'])) : 0;
 
 		return new self(
 			$usage['input_tokens'],
 			$usage['output_tokens'],
-			is_int($cached) ? max(0, min($cached, $usage['input_tokens'])) : 0,
+			$cached,
 			is_int($reasoning) ? max(0, $reasoning) : 0,
+			is_int($written) ? max(0, min($written, $usage['input_tokens'] - $cached)) : 0,
 		);
 	}
 
 	/**
-	 * @return array{input: int, cached: int, output: int, reasoning: int}
+	 * @return array{input: int, cached: int, cache_write: int, output: int, reasoning: int}
 	 */
 	public function toArray(): array
 	{
-		return ['input' => $this->inputTokens, 'cached' => $this->cachedTokens, 'output' => $this->outputTokens, 'reasoning' => $this->reasoningTokens];
+		return ['input' => $this->inputTokens, 'cached' => $this->cachedTokens, 'cache_write' => $this->cacheWriteTokens, 'output' => $this->outputTokens, 'reasoning' => $this->reasoningTokens];
 	}
 }

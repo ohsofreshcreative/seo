@@ -22,6 +22,7 @@ final class AiPlan
 	 * @param list<string> $blockers
 	 * @param array<string, mixed>|null $budget
 	 * @param array<string, ?float> $prices ceny z konfiguracji (USD za 1 mln tokenów) — część odcisku planu
+	 * @param array<string, string> $options opcje żądania zmieniające koszt albo treść (np. `reasoning_effort`) — w odcisku tylko, gdy ustawione
 	 */
 	public function __construct(
 		public readonly string $provider,
@@ -40,6 +41,7 @@ final class AiPlan
 		public readonly ?string $language = null,
 		public readonly ?Readiness $readiness = null,
 		public readonly array $prices = [],
+		public readonly array $options = [],
 	) {
 	}
 
@@ -53,7 +55,7 @@ final class AiPlan
 	 */
 	public function fingerprint(): string
 	{
-		return hash('sha256', (string) json_encode([
+		$data = [
 			'task' => $this->task,
 			'provider' => $this->provider,
 			'model' => $this->model,
@@ -67,7 +69,14 @@ final class AiPlan
 			'max_output_tokens' => $this->maxOutputTokens,
 			'max_cost' => $this->maxCost === null ? null : round($this->maxCost, 6),
 			'prices' => $this->prices,
-		], AiContext::JSON_FLAGS));
+		];
+
+		// Opcje tylko, gdy ustawione — odcisk planów bez nich pozostaje taki jak przed fazą E.
+		if ($this->options !== []) {
+			$data['options'] = $this->options;
+		}
+
+		return hash('sha256', (string) json_encode($data, AiContext::JSON_FLAGS));
 	}
 
 	/**
@@ -101,6 +110,7 @@ final class AiPlan
 				'within_budget' => $this->context->withinBudget(),
 			],
 			'focus' => $this->focus,
+			'options' => $this->options,
 			'tokens' => ['input_estimate' => $this->inputTokensEstimate, 'max_output' => $this->maxOutputTokens],
 			'max_cost' => $this->maxCost,
 			'budget' => $this->budget,

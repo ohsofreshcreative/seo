@@ -47,6 +47,20 @@ final class AiConfig
 
 	public const RETENTION_DAYS = 'OSF_SEO_AI_RETENTION_DAYS';
 
+	/** Cena tokenów wejścia zapisanych do cache dostawcy (USD / 1 mln) — opcjonalna; brak → cena zwykłego wejścia. */
+	public const PRICE_CACHE_WRITE = 'OSF_SEO_AI_PRICE_CACHE_WRITE_PER_MTOK';
+
+	/** Wysiłek rozumowania (Responses API `reasoning.effort`) — wysyłany tylko, gdy ustawiony; część odcisku planu. */
+	public const REASONING_EFFORT = 'OSF_SEO_AI_REASONING_EFFORT';
+
+	/** Tryb kontrolowanego testu (faza E): płatne analizy tylko dla wskazanych projektów (identyfikatory publiczne) i typów. */
+	public const ALLOWED_PROJECTS = 'OSF_SEO_AI_ALLOWED_PROJECTS';
+
+	public const ALLOWED_TYPES = 'OSF_SEO_AI_ALLOWED_TYPES';
+
+	/** Wartości `reasoning.effort` ze specyfikacji Responses API (nie każdy model obsługuje każdą — odmowa dostawcy = bez kosztu). */
+	public const REASONING_EFFORTS = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'];
+
 	public const DEFAULT_MAX_OUTPUT_TOKENS = 3000;
 
 	public const DEFAULT_TIMEOUT = 90;
@@ -119,6 +133,58 @@ final class AiConfig
 		return $this->price(self::PRICE_OUTPUT);
 	}
 
+	/** Jawnie ustawiona cena zapisu do cache (null — liczona jak zwykłe wejście). */
+	public function priceCacheWrite(): ?float
+	{
+		return $this->price(self::PRICE_CACHE_WRITE);
+	}
+
+	/** Ustawiony wysiłek rozumowania albo null (nieustawiony — parametr nie jest wysyłany). */
+	public function reasoningEffort(): ?string
+	{
+		$value = strtolower(trim((string) $this->config->get(self::REASONING_EFFORT, '')));
+
+		return in_array($value, self::REASONING_EFFORTS, true) ? $value : null;
+	}
+
+	/** Ustawiono wartość spoza listy — płatne wywołanie zablokowane (bez zgadywania). */
+	public function invalidReasoningEffort(): bool
+	{
+		return trim((string) $this->config->get(self::REASONING_EFFORT, '')) !== '' && $this->reasoningEffort() === null;
+	}
+
+	/**
+	 * Projekty dozwolone dla płatnych analiz (identyfikatory publiczne, wielkie litery); pusta lista — bez ograniczenia.
+	 *
+	 * @return list<string>
+	 */
+	public function allowedProjects(): array
+	{
+		return self::listOf((string) $this->config->get(self::ALLOWED_PROJECTS, ''), static fn (string $value): string => strtoupper($value));
+	}
+
+	/**
+	 * Typy dozwolone dla płatnych analiz (`page_optimization`, `new_page_brief`, `content_gap`, `topic_analysis`; dopuszczalne myślniki);
+	 * pusta lista — bez ograniczenia.
+	 *
+	 * @return list<string>
+	 */
+	public function allowedTypes(): array
+	{
+		return self::listOf((string) $this->config->get(self::ALLOWED_TYPES, ''), static fn (string $value): string => str_replace('-', '_', strtolower($value)));
+	}
+
+	/**
+	 * @param \Closure(string): string $normalize
+	 * @return list<string>
+	 */
+	private static function listOf(string $value, \Closure $normalize): array
+	{
+		$items = preg_split('/[\s,;]+/', trim($value)) ?: [];
+
+		return array_values(array_unique(array_map($normalize, array_filter($items, static fn (string $item): bool => $item !== ''))));
+	}
+
 	public function dailyLimit(): float
 	{
 		return $this->money(self::DAILY_LIMIT);
@@ -173,7 +239,7 @@ final class AiConfig
 			'enabled' => $this->enabled(),
 			'provider' => $this->provider(),
 			'model' => $this->model(),
-			'prices_per_mtok' => ['input' => $this->priceInput(), 'cached_input' => $this->priceCachedInput(), 'output' => $this->priceOutput()],
+			'prices_per_mtok' => ['input' => $this->priceInput(), 'cached_input' => $this->priceCachedInput(), 'cache_write' => $this->priceCacheWrite(), 'output' => $this->priceOutput()],
 			'limits' => [
 				'daily' => $this->dailyLimit(),
 				'monthly' => $this->monthlyLimit(),
@@ -183,6 +249,8 @@ final class AiConfig
 			'max_output_tokens' => $this->maxOutputTokens(),
 			'timeout' => $this->timeout(),
 			'temperature' => $this->temperature(),
+			'reasoning_effort' => $this->reasoningEffort(),
+			'live_test' => ['projects' => $this->allowedProjects(), 'types' => $this->allowedTypes()],
 			'retention_days' => $this->retentionDays(),
 		];
 	}
