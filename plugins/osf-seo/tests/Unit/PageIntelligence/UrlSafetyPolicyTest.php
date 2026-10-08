@@ -71,7 +71,8 @@ final class UrlSafetyPolicyTest extends TestCase
 	public function test_url_policy(string $url, ?string $reason, array $ips): void
 	{
 		$host = (string) parse_url($url, PHP_URL_HOST);
-		$ascii = (string) idn_to_ascii($host, IDNA_DEFAULT, INTL_IDNA_VARIANT_UTS46);
+		// PHP 8.4: idn_to_ascii('') rzuca ValueError (adresy bez hosta: file:, javascript:).
+		$ascii = $host === '' ? '' : (string) idn_to_ascii($host, IDNA_DEFAULT, INTL_IDNA_VARIANT_UTS46);
 		$resolver = new FixtureNetwork([$host => $ips, $ascii => $ips], []);
 		$result = (new UrlSafetyPolicy(new PublicNetworkPolicy(), $resolver))->check($url, ['example.pl']);
 
