@@ -9,7 +9,7 @@
 
     <aside :class="sidebarOpen ? 'translate-x-0' : '-translate-x-full'"
       class="fixed inset-y-0 left-0 z-40 flex w-64 -translate-x-full flex-col bg-brand-900 text-slate-200 transition-transform lg:translate-x-0">
-      <div class="flex h-16 shrink-0 items-center overflow-hidden px-6">
+      <div class="flex h-20 shrink-0 items-center overflow-hidden px-6">
         <a href="{{ \App\Panel\PanelUrl::to() }}" class="flex min-w-0 items-center">
           <x-panel.brand :logo="$brandLogo" />
         </a>

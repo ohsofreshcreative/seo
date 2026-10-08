@@ -28,8 +28,12 @@ dostawca danych rynkowych (wolumen, historia wolumenu, CPC, konkurencja Ads, tru
 > konflikty URL, działanie z powodem, pewność, Priorytet Strategii, status pracy i pakiet kontekstu, z CLI — D — panel „Strategia”: przegląd,
 > backlog, szczegóły tematu, SERP Intelligence, analiza SERP z podglądem kosztu, ustawienia i odnośniki z modułów — i E — przeliczenie w tle:
 > zlecenie z panelu jako zadanie w kolejce, automatyczne przeliczenie po zmianie danych modułów z debounce importów, blokada, ponowienia,
-> odzyskanie przerwanego zadania, statusy w panelu i benchmark; wyłącznie lokalne przeliczenie, bez kosztów). Plan i postęp:
-> [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
+> odzyskanie przerwanego zadania, statusy w panelu i benchmark; wyłącznie lokalne przeliczenie, bez kosztów) oraz STEP 17 — **Analizy AI**,
+> faza A (fundament bez UI: dostawcy za interfejsem — testowy i OpenAI — deterministyczny kontekst tematu Strategii z proweniencją i brakami
+> danych, wersjonowane instrukcje, kontrakt odpowiedzi z walidacją w PHP, oddzielny budżet AI z rezerwacją, historia uruchomień i CLI; płatne
+> wywołania domyślnie wyłączone) i faza B — **Page Intelligence** (jawne, bezpieczne pobieranie stron projektu i wybranych wyników SERP:
+> transport z przypięciem zweryfikowanego IP, robots.txt i limity hosta, ekstrakcja HTML bez JavaScriptu, snapshoty w obrębie projektu z cache
+> i retencją, treść stron w kontekście AI jako dane niezaufane; bez crawlera i bez UI). Plan i postęp: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 >
 > **Repozytorium jest publiczne.** Nie commituj żadnych sekretów (sekcja „Konfiguracja”).
 
@@ -205,6 +209,22 @@ wp osf-seo strategy:set-status --project=<public_id> --topic="fraza" --status=pl
 wp osf-seo strategy:set-target --project=<public_id> --topic="fraza" --target-url=https://example.pl/strona/   # albo --confirm-missing / --clear
 wp osf-seo strategy:pin --project=<public_id> --keywords="a, b" --new      # przypięcie fraz do nowego tematu (albo --topic=…); strategy:unpin
 wp osf-seo strategy:queue [--run]                                # kolejka przeliczeń w tle: zadania, błędy (kody), ostatni krok; --run = krok w tle raz
+
+# Analizy AI (STEP 17, faza A — domyślnie tylko dostawca testowy, koszt 0; szczegóły: docs/ARCHITECTURE.md, sekcja 22; konfiguracja: docs/AI-SETUP.md)
+wp osf-seo ai:status                                             # konfiguracja bez sekretów (wyłącznik, dostawca, model, obecność klucza, ceny, limity)
+wp osf-seo ai:context --project=<public_id> --topic="fraza"      # kontekst AI tematu (JSON); ai:validate-context — determinizm, rozmiar, braki danych
+wp osf-seo ai:plan --project=<public_id> --topic="fraza" [--provider=openai]   # plan: tokeny, koszt maks., budżet, powody blokady (zero żądań)
+wp osf-seo ai:run --project=<public_id> --topic="fraza"          # dostawca testowy; --provider=openai — PŁATNE, tylko po konfiguracji i z potwierdzeniem
+wp osf-seo ai:runs|show|decide|delete --project=<public_id> …    # historia, wynik z walidacją, decyzja użytkownika, usunięcie
+wp osf-seo ai:budget [--project=<public_id>]                     # budżet AI (oddzielny od DataForSEO); ai:purge — porządki bez wywołań AI
+
+# Page Intelligence (STEP 17, faza B — pobieranie wyłącznie jawne; szczegóły: docs/ARCHITECTURE.md, sekcja 23)
+wp osf-seo pages:status --project=<public_id>                    # konfiguracja, transport, liczniki (bez HTTP)
+wp osf-seo pages:plan --project=<public_id> --topic="fraza"      # zakres, stan pamięci, limity hosta (bez HTTP i DNS); także --page-url / --urls / --keyword + --ranks
+wp osf-seo pages:fetch --project=<public_id> --topic="fraza"     # pobranie strony docelowej tematu (potwierdzenie z listą hostów; --force pomija pamięć)
+wp osf-seo pages:fetch --project=<public_id> --keyword="fraza" --ranks=1,2,3   # wybrane wyniki organiczne zapisanego pomiaru SERP (nigdy cały SERP)
+wp osf-seo pages:check-url --project=<public_id> --page-url=https://example.pl/strona/   # diagnostyka: zakres, DNS, adresy IP (bez HTTP)
+wp osf-seo pages:list|show|snapshot|delete|purge …               # strony, snapshot (JSON), usunięcie, retencja (bez HTTP)
 ```
 
 Synchronizacja i kroki po niej (szanse SEO, dane rynkowe, Nowe frazy, Luki SEO, Pozycje i przeliczenie Strategii) działają w tle przez
@@ -256,12 +276,21 @@ define('OSF_SEO_DATAFORSEO_MONTHLY_COST_LIMIT', 10.00);
   bez ponownej opłaty). Harmonogram odświeżania domyślnie wyłączony. Opcjonalnie: `OSF_SEO_GAP_TTL_DAYS` (30), `OSF_SEO_GAP_MAX_REQUESTS_PER_TICK`
   (10), `OSF_SEO_DATAFORSEO_PRICE_GAP_REQUEST` / `…_GAP_ITEM` (cennik do szacunku).
 
+- Analizy AI: po wdrożeniu nic nie generuje kosztów — rzeczywiste wywołania wyłączone (`OSF_SEO_AI_ENABLED`), bez domyślnego modelu i cen,
+  limity budżetu AI 0 USD (oddzielne od DataForSEO). Włączenie OpenAI (klucz `OSF_SEO_OPENAI_API_KEY` wyłącznie w `wp-config.php`, model, ceny
+  z cennika dostawcy, limity) — krok po kroku w [`docs/AI-SETUP.md`](docs/AI-SETUP.md). Uprawnienie `osf_seo_manage_ai` — tylko administratorzy.
+
+- Page Intelligence: strony pobierane wyłącznie jawnie (`wp osf-seo pages:fetch`, uprawnienie `osf_seo_manage_page_intelligence` — tylko
+  administratorzy) przez bezpieczny transport ext-curl (wymagany `CURLOPT_RESOLVE`; bez proxy). Opcjonalnie: `OSF_SEO_PAGES_TTL_HOURS` (24),
+  `OSF_SEO_PAGES_MAX_BYTES` (2 MB), `OSF_SEO_PAGES_TIMEOUT` (15 s), `OSF_SEO_PAGES_DOMAIN_INTERVAL` (10 s), `OSF_SEO_PAGES_DOMAIN_DAILY_LIMIT` (30),
+  `OSF_SEO_PAGES_RETENTION_DAYS` (90), `OSF_SEO_PAGES_COMPETITORS_ENABLED` (`0` wyłącza pobieranie stron konkurencji). Bez sekretów.
+
 Pełna lista stałych: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md), sekcja 17.
 
 ## Bezpieczeństwo
 
 - Repozytorium jest publiczne: żadnych sekretów w kodzie, testach, fixture'ach, dokumentacji
-  i historii Git (także danych logowania DataForSEO — testy i CI używają wyłącznie atrapy HTTP).
+  i historii Git (także danych logowania DataForSEO i kluczy API AI — testy i CI używają wyłącznie atrapy HTTP i syntetycznych wartości).
 - Wdrożenie wyłącznie zawężone: `plugins/osf-seo/` → `wp-content/plugins/osf-seo/`, `themes/seo/` → `wp-content/themes/seo/`
   — nigdy całe repozytorium do `wp-content`.
 - Zgłoszenia problemów bezpieczeństwa kieruj bezpośrednio do zespołu OhSoFresh, nie przez publiczne issues.

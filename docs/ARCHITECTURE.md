@@ -31,6 +31,8 @@ nigdy wartości sekretów.
 19. [Roadmapa i stan prac](#19-roadmapa-i-stan-prac)
 20. [Porządki w motywie (C1–C5)](#20-porządki-w-motywie-c1c5)
 21. [Ryzyka i otwarte kwestie](#21-ryzyka-i-otwarte-kwestie)
+22. [Analizy AI (STEP 17)](#22-analizy-ai-step-17)
+23. [Page Intelligence (STEP 17, faza B)](#23-page-intelligence-step-17-faza-b)
 
 ---
 
@@ -142,6 +144,25 @@ API wymaga osobnej decyzji architektonicznej; integracje dostawców wyłącznie 
 | D83 | Statusy panelu z zapisanego stanu zadania: Aktualne dane, Oczekuje na przeliczenie (zmiana danych, zlecenie, ponowienie), Przeliczanie, Zakończono (15 min po zakończeniu), Błąd przeliczenia; endpoint `GET /strategy/status` (JSON, dostęp do projektu) odpytywany co 5 s tylko, gdy przeliczenie czeka albo trwa; klient bez kodu błędu, źródła zlecenia i stanu kroku w tle; administrator — diagnostyka w ustawieniach Strategii i `wp osf-seo strategy:queue`, ostrzeżenie, gdy krok w tle nie działał od 10 min | Przejrzystość bez nowego panelu administracyjnego i bez szczegółów technicznych dla klienta. Sekcja 15.15 |
 | D84 | Wydajność: zostaje pełne przeliczenie projektu (benchmark `test:performance:strategy`: 5 000 fraz ok. 3 s, 230 zapytań, ok. 60 MB; bez zmian danych — sam klucz, 0 zapisów; wymuszone bez zmian danych — 0 zapisów kandydatów, tematów i zdarzeń); przeliczenie przyrostowe per fraza niepotrzebne — do ponownej oceny przy > 20 000 fraz albo > 10 s na projekt | Najpierw pomiar; brak złożoności bez potrzeby, stabilne ID i workflow bez zmian. Sekcja 15.15 |
 | D85 | Nazwa aplikacji w UI: **Whack-a-mole** (sidebar, tytuły kart, logowanie, komunikaty dostępu i 503, opis pluginu w wp-admin); identyfikatory techniczne bez zmian (`Plugin Name: OSF SEO`, slug i text domain `osf-seo`, `OsfSeo\`, `osf_*`, `osf_seo_*`, role i ich etykiety, capabilities, WP-CLI, trasy, hooki WP-Cron, wyjście CLI i logi). Logo aplikacji: załącznik biblioteki mediów WordPressa, w opcji `osf_seo_branding_logo` tylko jego ID; upload i wybór w Ustawieniach panelu po stronie serwera (bez modalu `wp.media` — panel nie ładuje `wp_head`, jQuery ani Backbone); wyłącznie PNG, JPG, WebP (typ z zawartości, maks. 2 MB i 4000 px; SVG odrzucane — brak sanityzacji); zmiana tylko z `osf_seo_manage_settings` (trasa, kontroler, usługa); brak logo albo plik usunięty → napis „Whack-a-mole” | Spójna marka bez technicznego rebrandu i bez nowego modułu; bezpieczny upload. Sekcja 4.5 |
+| D86 | Capability `osf_seo_manage_ai` (0.17.0; `administrator` i `osf_seo_admin`, nie klient): podgląd kontekstu i planu, uruchomienia (także płatne przy świadomej konfiguracji), historia, decyzje, usuwanie — sprawdzana w usłudze AI; temat i analiza wyłącznie w obrębie `ProjectContext` (obce → nie znaleziono) | Least privilege — koszty AI i dane wysyłane do dostawcy tylko pod kontrolą administratorów; dostęp klientów to osobna decyzja produktowa. Sekcja 22.11 |
+| D87 | Dostawcy AI za interfejsem `OsfSeo\Ai\Provider\AiProvider` + rejestr; adapter tylko transport i format (bez kontekstu, kosztów i historii); `FakeProvider` (koszt 0, bez sieci) domyślny w CLI; `OpenAiProvider` — Responses API (`instructions` + `input`, `text.format` `json_schema` `strict`, `max_output_tokens`, `store: false`) według oficjalnej specyfikacji OpenAPI, bez SDK i zależności Composera (`HttpTransport`), bez ponowień; Anthropic później jako kolejny adapter | Wymienny dostawca bez zmian w kontekście, kontrakcie, budżecie i historii; brak nowych zależności. Sekcja 22.3 |
+| D88 | Konfiguracja AI wyłącznie w `wp-config.php`/env (`OSF_SEO_AI_*`, `OSF_SEO_OPENAI_API_KEY`): wyłącznik domyślnie wyłączony, brak domyślnego modelu, ceny modelu (USD za 1 mln tokenów) tylko z konfiguracji — w kodzie żadnego cennika; klucz czytany w chwili żądania (nie pole obiektu), nigdy w bazie, logach, wyjątkach, HTML, JS i odpowiedziach; bez formularza z jawnym sekretem | Zmienne modele i ceny; brak kosztów po wdrożeniu; publiczne repozytorium. Sekcja 22.7, `docs/AI-SETUP.md` |
+| D89 | Budżet AI całkowicie oddzielny od DataForSEO (limity 1 / 10 USD bez zmian): dzienny, miesięczny, miesięczny na projekt i maks. koszt analizy (UTC), domyślnie 0 = blokada; rejestr kosztów = `ai_runs` (`COALESCE(actual_cost, reserved_cost)` płatnych uruchomień); rezerwacja kosztu maksymalnego (wejście z bajtów / 2,5 + 300, wyjście = `max_output_tokens`) i zapis uruchomienia w jednej sekcji krytycznej pod `GET_LOCK ai_budget` (zajęta → `budget_busy`); płatne uruchomienie dodatkowo z jawnym potwierdzeniem kosztu | Brak przekroczenia limitu przy równoległych uruchomieniach; brak wycieku kosztów AI do budżetu danych SEO. Sekcja 22.7 |
+| D90 | Prompt injection i minimalizacja danych: instrukcje aplikacji w osobnym polu żądania; zadanie i cel użytkownika, dowody strukturalne oraz treści zewnętrzne o dowolnej treści (tytuły SERP) w osobnych blokach; dane jako JSON z `<`, `>`, `&`, cudzysłowami jako `\u…`, bez znaków niewidocznych; ścieżki pól zewnętrznych w `untrusted`; do modelu tylko temat projektu z `ProjectContext` (bez notatek, użytkowników, sekretów i innych projektów); wynik zapisywany wyłącznie po walidacji odwołań — sama instrukcja w prompcie nie jest zabezpieczeniem | Kontrola dostępu, minimalizacja i walidacja zamiast zaufania do modelu. Sekcja 22.5 |
+| D91 | Rozliczenie błędów dostawcy: na pewno niewykonane (brak klucza — bez żądania, 401/403, 4xx, 429) → 0; zgłoszone zużycie (sukces, odmowa, odpowiedź niepełna, błąd modelu) → koszt z `usage`; wynik nieznany (timeout, sieć, 5xx, odpowiedź bez zużycia, przerwany proces) → `uncertain`, cała rezerwacja; bez ponowień; porzucone uruchomienia (timeout + 300 s): `reserved` → `failed` bez kosztu, `running` → `uncertain` | Ostrożne liczenie kosztów bez ryzyka podwójnej opłaty. Sekcje 22.7–22.8 |
+| D92 | Kontekst AI tematu (wersja 1) wyłącznie z pakietu kontekstu STEP 16 i istniejących odczytów Strategii (bez nowej logiki): proweniencja sekcji (źródło, rodzaj `fact`/`third_party_estimate`/`heuristic`, data, świeżość, wiarygodność), rozdzielone pola `average_position_gsc` / `serp_rank_group` / `rank_labs`, jawne braki danych (zawsze: treść strony niepobrana, indeks stron niepełny — „brak znanej strony” ≠ brak strony), odwołania `refs`, limity elementów i tekstów, maks. 32 KB z redukcją całych elementów od uzupełniających do fraz (JSON nigdy nie ucinany); odcisk = SHA-256 kanonicznego JSON-u bez czasu budowania (obejmuje status pracy), `evidence_hash` Strategii osobno | AI opiera się na rzeczywistych, udokumentowanych danych; determinizm i audytowalność wejścia. Sekcja 22.4 |
+| D93 | Kontrakt odpowiedzi (wersja 1): podsumowanie, problemy i szanse, rekomendacje z uzasadnieniem i jakościowym wpływem (bez prognoz liczbowych), odwołania do dowodów albo `hypothesis`, brakujące informacje, zastrzeżenia, kontrole ręczne; schemat `strict` tylko z typami i wyliczeniami, a pełna walidacja w PHP (`OutputValidator`: pola, typy, długości, liczby elementów, odwołania tylko z kontekstu, `evidence` z odwołaniem, bez prognoz i obietnic) — jakikolwiek błąd odrzuca całą odpowiedź (`invalid`) | Deklaracja modelu nie jest dowodem poprawności; brak wymyślonych uzasadnień w zapisanych wynikach. Sekcja 22.6 |
+| D94 | Historia AI: `ai_runs` (metadane i koszty) + `ai_run_payloads` (wejście, ograniczona surowa odpowiedź, zwalidowany wynik, walidacja) — M0015, schemat 15, wyłącznie addytywnie; decyzja użytkownika osobno od wyniku; historia nigdy nie zmienia Strategii ani statusu pracy; retencja 180 dni (min. 35), usuwanie pojedyncze; krok w tle (`SyncScheduler::onAfterRun`) wyłącznie porządkuje historię — żadnych wywołań modelu w ticku, przy renderowaniu, przeliczeniu Strategii ani synchronizacji; bez harmonogramu i drugiej kolejki | Rozdzielenie danych i odpowiedzialności, przewidywalne koszty, kontrolowany rozmiar bazy. Sekcja 22.9 |
+| D95 | Page Intelligence (przygotowanie, bez pobierania w fazie A): kontrakt `PageSnapshot` (title, meta description, canonical, robots/indeksowalność, H1–H6, główna treść, linki wewnętrzne, status HTTP, hash), punkt rozszerzenia `PageContentSource` (tylko zapisany stan projektu; faza A — `NoPageContentSource`), polityka SSRF `UrlSafetyPolicy` (http/https, porty 80/443, bez danych logowania, literałów IP i nazw wewnętrznych, wyłącznie domena projektu, wszystkie adresy DNS poza sieciami prywatnymi, loopback, link-local/metadanymi, CGNAT, multicast i zarezerwowanymi, kontrola każdego przekierowania, limity 3 / 10 s / 2 MB; w fazie B pinning IP) | Faza B dostaje gotowe granice bezpieczeństwa bez crawlera i nowych zależności teraz. Sekcja 22.10 |
+| D96 | Capability `osf_seo_manage_page_intelligence` (0.18.0; `administrator` i `osf_seo_admin`, nie klient): plan, pobranie (każdy ruch HTTP), diagnostyka adresu, usuwanie — sprawdzana w usłudze; odczyt zapisanych snapshotów z samym dostępem do projektu; strona i snapshot wyłącznie po (`project_id` z `ProjectContext`, identyfikator publiczny) — obce → nie znaleziono | Klient nie może wywołać żadnego żądania przez aplikację; IDOR egzekwowany w usługach. Sekcja 23.10 |
+| D97 | Transport stron: bezpośrednio ext-curl (nie WordPress HTTP API — `wp_safe_remote_get` rozwiązuje nazwę ponownie): każdy hop ręcznie (bez `FOLLOWLOCATION`) — składnia i zakres, DNS raz i kontrola każdego adresu, połączenie wyłącznie z nimi (`CURLOPT_RESOLVE` + kontrola `CURLINFO_PRIMARY_IP`), TLS weryfikowany względem oryginalnej nazwy hosta (nigdy wyłączany), bez proxy i ciasteczek, limity czasu (wspólny dla łańcucha), rozmiaru (po dekompresji), nagłówków, typu treści i przekierowań; https → http zabronione; bez ext-curl z `CURLOPT_RESOLVE` — odmowa (`transport_unavailable`) | Faktyczna ochrona przed SSRF i DNS rebinding w warstwie połączenia, nie tylko w polityce adresów; testy na prawdziwym transporcie z lokalnymi serwerami. Sekcja 23.4 |
+| D98 | Zakres pobierania: rodzina domeny projektu; konkurent — domena aktywnego konkurenta projektu albo **dokładny** adres organicznego wyniku zapisanego pomiaru SERP projektu (wybór pozycji `--keyword` + `--ranks`, bez wyróżnionych fragmentów); inne adresy — `url_not_allowed`; najwyżej `OSF_SEO_PAGES_MAX_URLS` adresów na zlecenie; bez automatycznego pobierania SERP-u; osobny wyłącznik pobierania konkurencji | Brak „otwartego proxy” i masowego scrapowania; jawne, ograniczone działania. Sekcja 23.5 |
+| D99 | Uprzejmość: robots.txt (RFC 9309, token `whack-a-mole`; 4xx → dozwolone, 429/5xx/sieć → nic nie pobieramy; pamięć 24 h), `crawl-delay` do 60 s, jawny User-Agent `Whack-a-mole/<wersja>`, odstęp, limit dzienny i `Retry-After` na host — wspólne dla wszystkich projektów; pobrania po kolei (blokady strony i hosta), CLI czeka na odstęp łącznie do 120 s; bez ponowień, logowania, CAPTCHA i obchodzenia zabezpieczeń | Odpowiedzialne pobieranie cudzych i własnych stron. Sekcja 23.5 |
+| D100 | Dane stron M0016 (schemat 16, addytywnie): `page_targets`, `page_snapshots`, `page_fetches`, `page_serp_links` (+ `ai_runs.evidence_fingerprint`) — wyłącznie w obrębie projektu (ten sam adres w dwóch projektach = osobne pobrania i snapshoty); snapshot = wyekstrahowana treść z limitami (bez surowego HTML), nowy tylko przy zmianie odcisku treści (bez metadanych pobrania), ta sama treść → `last_seen_at`; nieudane pobranie nigdy nie nadpisuje ostatniego poprawnego snapshotu; TTL, 304/ETag, maks. snapshotów na stronę, retencja 90 dni | Idempotencja, brak sztucznych zmian, przewidywalny rozmiar bazy, brak wycieku treści między projektami. Sekcje 23.3, 23.7 |
+| D101 | Krok w tle Page Intelligence (`SyncScheduler::onAfterRun`) wyłącznie porządkuje dane raz na dobę (retencja) — żadnego pobierania stron w tle, przy renderowaniu, odczycie tematu, przeliczeniu Strategii ani budowaniu kontekstu AI; cykliczne odświeżanie — osobna decyzja | Zero niezamierzonych żądań zewnętrznych. Sekcja 23.8 |
+| D102 | Ekstrakcja bez JavaScriptu (DOMDocument): kodowanie, meta, H1–H6 z kolejnością i strukturą, treść główna (`main` → `article` → `body` bez nawigacji, stopki, banerów), sekcje, linki, sygnały techniczne; indeksowalność wyłącznie z dyrektyw (`indexable_by_directives` / `blocked_by_directives` / `unknown`); jakość ekstrakcji (`good` / `partial` / `incomplete` / `empty`) z powodami — brak tekstu w pobranym HTML nie jest dowodem braku na stronie | Fakty z HTML odróżnione od faktów o Google i od heurystyk; strony JS jawnie oznaczone. Sekcja 23.6 |
+| D103 | Strategia bez zmian w fazie B: powiązania strony z tematem (`topic_id`) i z wynikiem SERP (fraza, pozycja, data pomiaru osobno od daty pobrania) tylko do odczytu; `TargetPageResolver`, klasyfikator działań, pewność, priorytet i grupowanie nie korzystają jeszcze ze snapshotów — wykorzystanie po kalibracji jako nowa wersja reguł | Brak pobrania / 403 / 404 nie może zmienić decyzji Strategii; reguły fazy C nie są zmieniane na ślepo. Sekcja 23.11 |
+| D104 | Kontekst AI wersja 2 (rozszerzony `TopicContextAssembler`, źródło `PageEvidenceSource` — tylko zapisane snapshoty): `target_page.page_content` (`page:<snapshot>`) i `evidence.competitor_pages` (`cpage:<snapshot>`) z proweniencją, jakością i datami (pobranie ≠ pomiar SERP); tytuły, opisy, nagłówki i fragmenty wyłącznie w bloku niezaufanym; nowe braki danych; budżet 32 KB bez zmian (pomiar) z deterministyczną redukcją (fragmenty → strony konkurencji → sekcje i nagłówki strony projektu); `evidence_fingerprint` bez stanu pracy obok pełnego odcisku; instrukcje `topic-analysis.v2` | Model widzi rzeczywistą treść stron z jawnymi ograniczeniami, bez możliwości wymyślenia zawartości; zmiana statusu pracy nie jest zmianą dowodów. Sekcja 23.12 |
 
 ## 3. Repozytorium i środowiska
 
@@ -375,7 +396,7 @@ themes/seo/
   (`wp_check_filetype_and_ext` + `wp_getimagesize`), rozmiaru (2 MB) i wymiarów (4000 px); zapis przez `media_handle_sideload` przy
   `upload_mimes` ograniczonym do PNG/JPG/WebP (także gdy inna wtyczka dopuszcza SVG); tytuł z nazwy pliku, domyślny tekst alternatywny
   „Whack-a-mole”. Wyświetlanie: composer `App\View\Composers\Panel\Branding` (układy `app` i `guest`) → komponent `x-panel.brand`
-  (rozmiar `medium` + `srcset`, proporcje zachowane, w sidebarze maks. 40 × 176 px, na logowaniu maks. 64 × 240 px). Brak opcji,
+  (rozmiar `medium` + `srcset`, proporcje zachowane, w sidebarze maks. 80 × 176 px, na logowaniu maks. 64 × 240 px). Brak opcji,
   usunięty załącznik albo brak pliku → napis „Whack-a-mole”. Klient widzi logo, nie widzi Ustawień (403 na stronie i akcjach).
 
 ## 5. Uprawnienia
@@ -396,6 +417,8 @@ Zaimplementowane w STEP 1 (`plugins/osf-seo/src/Auth`). Kod sprawdza **capabilit
 | `osf_seo_manage_serp_tracking` | pozycje SERP: ustawienia i włączenie płatnych pomiarów, plan i koszt, pomiar ręczny, anulowanie, monitorowane frazy, konkurenci, koszty (od STEP 14, wersja 0.14.0) |
 | `osf_seo_manage_keyword_gap` | luki SEO: plan i koszt, płatny import fraz konkurentów, anulowanie, przeliczenie, ustawienia analizy, harmonogram, warianty marki, status i notatki luk i grup, koszty (od STEP 15, wersja 0.15.0) |
 | `osf_seo_manage_strategy` | strategia: przeliczenie, wpisy ręczne, status pracy i notatka, ręczna strona docelowa, przypięcia (faza C), a w kolejnych fazach ustawienia; płatna analiza SERP dodatkowo z `osf_seo_manage_serp_tracking` (od STEP 16, wersja 0.16.0) |
+| `osf_seo_manage_ai` | analizy AI tematów Strategii: podgląd kontekstu i planu, uruchomienia (także płatne — przy świadomej konfiguracji dostawcy), historia, decyzje, usuwanie (od STEP 17, wersja 0.17.0; sekcja 22.11) |
+| `osf_seo_manage_page_intelligence` | Page Intelligence: plan i jawne pobranie stron (każdy ruch HTTP), diagnostyka adresu, usuwanie zapisanych treści; odczyt snapshotów — sam dostęp do projektu (od STEP 17 faza B, wersja 0.18.0; sekcja 23.10) |
 
 | Rola | Capabilities |
 |---|---|
@@ -921,7 +944,7 @@ ProjectGuard::authorizeSystem (tylko WP-CLI i WP-Cron) → GscImporter (sekcja 8
   `wp --path=<ścieżka> osf-seo sync:run` (zalecane; planowanie + kolejka) albo `wp cron event run --due-now`,
   a bez WP-CLI: `wget -q -O - https://seo.ohsofresh.top/wp-cron.php?doing_wp_cron >/dev/null 2>&1`.
   Hostinger: hPanel → Zaawansowane → Cron Jobs (minimalny interwał zależny od planu; co 1–5 min wystarcza) — krok po kroku
-  w `docs/HOSTINGER-CRON.md`. Ten sam cron wykonuje kroki po kolejce, w tym przeliczenie Strategii (15.15).
+  w `docs/HOSTINGER-CRON.md`. Ten sam cron wykonuje kroki po kolejce, w tym przeliczenie Strategii (15.15) i porządki historii AI bez wywołań modelu (22.9).
 - Heartbeat: opcja `osf_seo_sync_heartbeat` (ostatnie uruchomienie runnera) — `wp osf-seo status` (`sync_queue`)
   i `wp osf-seo gsc:status` pokazują, czy kolejka żyje.
 - Utrzymanie (raz na dobę, w runnerze): usunięcie zakończonych zadań starszych niż 90 dni i osieroconego stagingu.
@@ -2890,6 +2913,14 @@ odpytywanie statusu co 5 s działa tylko przy otwartej stronie; zadania nie maj�
   w `StrategyService`), klient bez notatek i odrzuconych tematów; podgląd i uruchomienie analizy SERP — `osf_seo_manage_strategy`
   i `osf_seo_manage_serp_tracking` (kontrola w `SerpAnalysisService`; koszty tylko dla uprawnionych); pomiary i profile SERP wyłącznie projektu;
   frazy i URL-e z dowodów to dane zewnętrzne (escapowanie jak w pozostałych modułach); sekcje 15.9, 15.12.
+- **Analizy AI** (STEP 17): wyłącznie z `osf_seo_manage_ai` (kontrola w `AiAnalysisService`); temat i analiza tylko w obrębie `ProjectContext`
+  (obce ID → nie znaleziono); klucz API tylko w `wp-config.php`/env, czytany w chwili żądania, maskowany w logach (`sk-…`, `x-api-key`); do dostawcy
+  wyłącznie dane tematu projektu (bez notatek, użytkowników i innych projektów), dane zewnętrzne w blokach niezaufanych, wynik zapisywany tylko
+  po walidacji; płatne wywołania domyślnie wyłączone, z limitami i potwierdzeniem; sekcja 22.
+- **Page Intelligence** (STEP 17 faza B): pobieranie wyłącznie jawnie i z `osf_seo_manage_page_intelligence`; zakres — domena projektu, konkurenci
+  projektu, dokładne adresy organicznych wyników zapisanego SERP-u; transport ext-curl z przypięciem zweryfikowanego IP (DNS rebinding), kontrolą
+  każdego przekierowania, TLS względem oryginalnej nazwy hosta, bez proxy i ciasteczek, z limitami; robots.txt i limity hosta; treści stron w obrębie
+  projektu (obce ID → nie znaleziono), bez surowego HTML, w kontekście AI wyłącznie w bloku niezaufanym; sekcja 23.
 - **Repozytorium publiczne**: sekcja 17; skan sekretów przed commitem; `.gitignore` blokuje pliki z sekretami.
 
 ## 17. Konfiguracja i sekrety
@@ -2939,6 +2970,24 @@ samej nazwie. W repozytorium wyłącznie placeholdery.
 | `OSF_SEO_STRATEGY_SERP_MAX_PER_RUN` | (opcjonalnie) maks. nowych pomiarów w jednej płatnej analizie SERP Strategii, 1–1000, domyślnie 100 (jawny wybór ponad limit jest odrzucany) | STEP 16 |
 | `OSF_SEO_STRATEGY_WINDOW_DAYS`, `…_GSC_MIN_IMPRESSIONS`, `…_GSC_MAX_POSITION` | (opcjonalnie) okno GSC faktów i źródła GSC (28–480 dni, 90), próg wyświetleń źródła GSC (50) i średniej pozycji GSC (50) | STEP 16 |
 | `OSF_SEO_STRATEGY_DISCOVERY_MIN_PRIORITY`, `…_GAP_MIN_PRIORITY` | (opcjonalnie) minimalny priorytet nowych / do analizy Nowych fraz (50) i Luk fraz (40) jako źródła Strategii | STEP 16 |
+| `OSF_SEO_AI_ENABLED` | wyłącznik rzeczywistych (płatnych) wywołań AI: `1` włącza, domyślnie wyłączone (dostawca testowy działa zawsze) | STEP 17 |
+| `OSF_SEO_AI_PROVIDER` | wybrany dostawca płatny (`openai`) | STEP 17 |
+| `OSF_SEO_AI_MODEL` | identyfikator modelu (bez wartości domyślnej) | STEP 17 |
+| `OSF_SEO_OPENAI_API_KEY` | klucz API OpenAI (sekret, tylko wp-config/env; czytany w chwili żądania) | STEP 17 |
+| `OSF_SEO_AI_PRICE_INPUT_PER_MTOK`, `…_CACHED_INPUT_PER_MTOK`, `…_OUTPUT_PER_MTOK` | ceny modelu w USD za 1 mln tokenów (z cennika dostawcy; bez cen płatne wywołania są blokowane; brak ceny cache → cena wejścia) | STEP 17 |
+| `OSF_SEO_AI_DAILY_LIMIT`, `OSF_SEO_AI_MONTHLY_LIMIT`, `OSF_SEO_AI_PROJECT_MONTHLY_LIMIT` | limity budżetu AI w USD (UTC), domyślnie 0 = blokada; oddzielne od limitów DataForSEO | STEP 17 |
+| `OSF_SEO_AI_MAX_RUN_COST` | maks. koszt jednej analizy w USD (szacunek maksymalny), domyślnie 0 = blokada | STEP 17 |
+| `OSF_SEO_AI_MAX_OUTPUT_TOKENS` | (opcjonalnie) limit tokenów odpowiedzi (z tokenami rozumowania), 256–16 000, domyślnie 3000 | STEP 17 |
+| `OSF_SEO_AI_TIMEOUT` | (opcjonalnie) timeout żądania do dostawcy, 10–300 s, domyślnie 90 | STEP 17 |
+| `OSF_SEO_AI_TEMPERATURE` | (opcjonalnie) temperatura 0–2, wysyłana tylko, gdy ustawiona (część modeli jej nie obsługuje) | STEP 17 |
+| `OSF_SEO_AI_RETENTION_DAYS` | (opcjonalnie) retencja historii AI, 35–3650 dni, domyślnie 180 | STEP 17 |
+| `OSF_SEO_PAGES_PROJECT_ENABLED`, `OSF_SEO_PAGES_COMPETITORS_ENABLED` | (opcjonalnie) `0` wyłącza pobieranie stron projektu / konkurencji (domyślnie włączone — zawsze jawną akcją administratora) | STEP 17 B |
+| `OSF_SEO_PAGES_TTL_HOURS` | (opcjonalnie) świeżość snapshotu, 1–720 h, domyślnie 24 | STEP 17 B |
+| `OSF_SEO_PAGES_MAX_BYTES`, `OSF_SEO_PAGES_TIMEOUT`, `OSF_SEO_PAGES_MAX_REDIRECTS` | (opcjonalnie) limity pobrania: rozmiar po dekompresji 64 KB–5 MB (2 MB), czas całkowity 3–60 s (15), przekierowania 0–5 (3) | STEP 17 B |
+| `OSF_SEO_PAGES_MAX_URLS` | (opcjonalnie) adresy w jednym zleceniu, 1–10, domyślnie 5 | STEP 17 B |
+| `OSF_SEO_PAGES_DOMAIN_INTERVAL`, `OSF_SEO_PAGES_DOMAIN_DAILY_LIMIT` | (opcjonalnie) odstęp między żądaniami do hosta 2–3600 s (10) i limit żądań na host na dobę 1–500 (30) — wszystkie projekty | STEP 17 B |
+| `OSF_SEO_PAGES_RETENTION_DAYS`, `OSF_SEO_PAGES_MAX_SNAPSHOTS` | (opcjonalnie) retencja snapshotów niepotwierdzonych i prób 7–730 dni (90); snapshoty na stronę 1–50 (5) | STEP 17 B |
+| `OSF_SEO_PAGES_CA_BUNDLE` | (opcjonalnie) ścieżka pakietu CA dla TLS (domyślnie pakiet WordPressa); weryfikacji TLS nie da się wyłączyć | STEP 17 B |
 
 ```php
 // wp-config.php — przykład z placeholderami
@@ -3006,12 +3055,13 @@ Warianty docelowe:
 | 19 | Pozycje SERP i konkurenci: monitorowane frazy, pomiary Google Organic (Standard, TOP100) z planem, rezerwacją kosztu i harmonogramem, pełne TOP N w historii, zmiany, konkurenci monitorowani i organiczni | ✅ STEP 14 (sekcja 13) |
 | 20 | Luki SEO: wspólne zbiory fraz domen konkurentów (Labs Ranked Keywords) z planem, limitami i importem w tle, punkt odniesienia projektu, widoczność SERP → GSC → Labs, typ i priorytet luki, filtry marki, grupy fraz, luka treści (heurystyka), strony konkurencji, historia zbiorów | ✅ STEP 15 (sekcja 14) |
 | 21 | Strategia i SERP Intelligence: kandydaci z modułów z dowodami, analiza zapisanych SERP-ów, strona docelowa, działania, priorytet i pewność, tematy, backlog z workflow | ⏳ STEP 16 (sekcja 15): fazy A (fundament), B (SERP Intelligence), C (rdzeń), D (panel) i E (tło i wydajność) zrobione; faza F według planu |
+| 22 | Analizy AI: dostawcy za interfejsem (testowy i OpenAI), deterministyczny kontekst tematu z proweniencją, wersjonowane instrukcje, kontrakt odpowiedzi z walidacją PHP, budżet AI z rezerwacją, historia, CLI; Page Intelligence: bezpieczne pobieranie stron projektu i wyników SERP, ekstrakcja, snapshoty, kontekst AI v2 | ⏳ STEP 17 (sekcje 22–23): faza A (fundament) i B (Page Intelligence) zrobione; fazy C–E do akceptacji |
 
 **MVP 2**: ~~Opportunity Score~~ (STEP 11), Pages/landing pages, zaawansowane filtry, automatyczna synchronizacja, raporty.
 **MVP 3**: własny crawler, audyt techniczny, połączenie crawler + GSC.
 **MVP 4**: panel klienta, raporty, rekomendacje AI.
 **Kolejne etapy** (kolejność orientacyjna): ~~odkrywanie nowych fraz~~ (STEP 13), ~~monitoring konkurencji i ranking SERP~~ (STEP 14),
-~~luka fraz/treści~~ (STEP 15), strategia i backlog SEO (STEP 16, w toku), AI (STEP 17), retencja/rollupy historii SERP po pomiarze wzrostu.
+~~luka fraz/treści~~ (STEP 15), strategia i backlog SEO (STEP 16), AI (STEP 17 — faza A: fundament, faza B: Page Intelligence), retencja/rollupy historii SERP po pomiarze wzrostu.
 
 ## 20. Porządki w motywie (C1–C5)
 
@@ -3045,6 +3095,13 @@ Każdy etap to osobny commit z testem (build, `php -l`, smoke test WordPress). K
   wyszukiwania może być ucięta przy bardzo dużych grupach (jawne `members_complete = false`; powiązanie przez podstronę to tylko kontekst).
   Faza B: reguły kształtu wyniku i sygnału intencji z SERP oraz progi overlapu i domen wszechobecnych do kalibracji na prawdziwych SERP-ach
   (wersja reguł profilu); koszt analizy = koszt pomiaru STEP 14 we wspólnych limitach (bez automatycznego harmonogramu).
+- **Page Intelligence (STEP 17 B)**: rzeczywiste pobranie publicznej strony z internetu nie było wykonane w środowisku agenta (testy i smoke na
+  lokalnych serwerach fixture) — pierwsze użycie na stagingu: `pages:check-url` i jedno `pages:fetch` strony projektu; transport bez proxy (hosting
+  wymagający proxy ruchu wychodzącego — pobieranie nie zadziała); strony renderowane JavaScriptem tylko jako `incomplete`; heurystyki treści głównej
+  i jakości do kalibracji; zakres ochrony SSRF — sekcja 23.15.
+- **Analizy AI (STEP 17)**: rzeczywiste API OpenAI nie było wywołane (atrapa HTTP w testach) — pierwsze użycie według `docs/AI-SETUP.md`
+  z niskimi limitami i porównaniem kosztu z panelem dostawcy; ceny i modele zmieniają się (konfiguracja, nie kod); jakość analiz i heurystyki
+  walidatora (prognozy, obietnice) do kalibracji na prawdziwych tematach; do dostawcy trafiają dane tematu projektu — decyzja administratora.
 - **OAuth Testing**: tokeny ważne 7 dni — publikacja aplikacji przed produkcją.
 - **Skala `query_page_daily`** — decyzja po pomiarze (sekcja 6.4).
 - **Wydajność raportów przy bardzo dużych property** — czasy rosną liniowo z liczbą wierszy fraz w okresie
@@ -3058,3 +3115,545 @@ Każdy etap to osobny commit z testem (build, `php -l`, smoke test WordPress). K
 - **Szanse SEO (STEP 11)**: progi i referencyjny CTR są przybliżeniem — do kalibracji na prawdziwych projektach (stałe `OSF_SEO_OPP_*`);
   analiza dużych property zajmuje ~1–2 s i ~50 MB pamięci na okres (w tle, po imporcie); bez crona systemowego przeliczanie
   następuje przy ruchu na stronie (jak kolejka). Obserwacja po wdrożeniu nie jest atrybucją przyczynową.
+
+## 22. Analizy AI (STEP 17)
+
+Faza A (fundament): warstwa techniczna analiz AI tematów Strategii — dostawcy za interfejsem, deterministyczny kontekst z dowodami,
+wersjonowane instrukcje, kontrakt odpowiedzi z walidacją po stronie PHP, budżet AI, historia uruchomień i CLI. **Bez** artykułów, edytora
+treści, chatbota, panelu AI, harmonogramu i automatycznych płatnych analiz. Najważniejsza zasada: AI korzysta wyłącznie z rzeczywistych,
+udokumentowanych danych Whack-a-mole (pakiet kontekstu Strategii STEP 16) i nie może wymyślać uzasadnień — każde twierdzenie „evidence”
+wskazuje odwołanie do dowodu z kontekstu, a odpowiedź niezgodna z kontraktem jest odrzucana w całości.
+
+### 22.1 Zasady
+
+- **Jedno miejsce wywołania modelu**: `OsfSeo\Ai\AiAnalysisService::run` — wyłącznie jawnie (CLI; w przyszłości akcja w panelu po potwierdzeniu).
+  Nigdy przy wejściu na dashboard, otwarciu Strategii, przeliczeniu Strategii, synchronizacji GSC ani w kroku w tle (D94).
+- **Bezpieczne domyślnie**: rzeczywiste wywołania wyłączone (`OSF_SEO_AI_ENABLED`), brak modelu i cen w kodzie, limity AI domyślnie 0 USD —
+  po wdrożeniu nic nie może wygenerować kosztu (D88, D89). Dostawca testowy `fake` (koszt 0, bez sieci) działa zawsze.
+- **Kontekst tylko z istniejących odczytów Strategii w obrębie projektu** (`StrategyService::topicView`, `panelState`) — bez równoległej
+  logiki Strategii, bez notatek wewnętrznych, identyfikatorów użytkowników i danych innych projektów (D90, D92).
+- **Historia nie zmienia Strategii ani workflow** — tylko się do nich odwołuje (temat, `evidence_hash`); decyzja użytkownika osobno od wyniku (D94).
+- Budżet AI **całkowicie oddzielny** od DataForSEO (limity 1 USD / 10 USD bez zmian, osobny rejestr kosztów `ai_runs`) (D89).
+
+### 22.2 Model danych (schemat 15, M0015)
+
+Wyłącznie addytywnie (nowe tabele; migracje STEP 11–16 bez zmian):
+
+- **`osf_ai_runs`** — uruchomienie i jednocześnie rejestr kosztów AI: `public_id` (ULID, utf8mb4_bin), `project_id`, `topic_id` (NULL),
+  `task` (`topic_analysis`), `provider`, `model`, `paid`, `prompt_version`, `context_version`, `contract_version`, `context_fingerprint`
+  BINARY(32), `evidence_hash` BINARY(32) NULL (odcisk dowodów Strategii), `status` (`reserved` → `running` → `succeeded` | `invalid` | `failed`
+  | `uncertain`), `trigger_type` (`cli`, `panel`), `requested_by`, czasy (`created_at`, `started_at`, `finished_at`), tokeny (szacunek wejścia,
+  wejście, z cache, wyjście), koszty `estimated_cost` / `reserved_cost` / `actual_cost` (DECIMAL 12,6) z `cost_basis` (`usage`, `reservation`,
+  `not_charged`, `free`), `provider_response_id`, `error_code` (rodzaj błędu, bez treści), `validation_errors`, decyzja użytkownika (`decision`
+  `accepted`/`rejected`, `decided_by`, `decided_at`). Indeksy: (`project_id`, `created_at`), (`project_id`, `topic_id`, `created_at`), (`status`, `created_at`).
+- **`osf_ai_run_payloads`** — dane uruchomienia oddzielone od metadanych (lista historii ich nie czyta): `input` (cel użytkownika + pełny kontekst
+  z odciskiem — dokładnie to, co trafiło do modelu, oprócz stałych instrukcji wersji), `input_hash` (SHA-256 wersji, instrukcji i wejścia),
+  `output_raw` (surowa odpowiedź, najwyżej 64 KB z jawnym znacznikiem ucięcia), `result` (zwalidowany wynik — tylko gdy poprawny), `validation`
+  (lista błędów: ścieżka + kod, bez treści).
+
+Rozmiar: kontekst ≤ 32 KB, odpowiedź ≤ 64 KB — bez dużych ani prywatnych ładunków (żadnych tokenów, kluczy, notatek, danych użytkowników).
+
+### 22.3 Dostawcy (D87)
+
+| Element | Odpowiedzialność |
+|---|---|
+| `Provider\AiProvider` | interfejs: `id()`, `isPaid()`, `model()`, `problems()` (kody braków konfiguracji), `generate(AiRequest): AiResponse` — tylko transport i format |
+| `Provider\AiProviderRegistry` | identyfikator → adapter (kontener); nieznany → odmowa `provider_unknown` |
+| `Provider\FakeProvider` (`fake`, model `fake-analysis-1`) | koszt 0, bez sieci; deterministyczna odpowiedź zgodna z kontraktem z odwołaniami wyłącznie do dowodów kontekstu (oznaczona „[TEST]”) — test całego przepływu |
+| `Provider\OpenAiProvider` (`openai`) | Responses API: `POST https://api.openai.com/v1/responses`, `instructions` + `input`, `text.format` = `json_schema` (`strict: true`), `max_output_tokens`, `store: false`, opcjonalnie `temperature`; parsowanie `output[].content[]` (`output_text`, `refusal`), `status` (`completed`, `incomplete`, `failed`), `usage` (w tym `cached_tokens`) |
+| `Context\AiTopicContextBuilder` + `TopicContextAssembler` | kontekst tematu (22.4) |
+| `Prompt\PromptTemplate` | wersjonowane instrukcje i bloki wejścia (22.5) |
+| `Contract\AnalysisContract` + `OutputValidator` | kontrakt odpowiedzi i walidacja (22.6) |
+| `Budget\AiPricing` + `AiBudget` | wycena z konfiguracji, limity, rezerwacja (22.7) |
+| `Run\AiRunRepository` | historia (22.9) |
+
+Adapter OpenAI zbudowano według oficjalnej specyfikacji OpenAPI (`openai/openai-openapi`); bez SDK i bez zależności Composera — ruch przez
+`Http\HttpTransport` (WP HTTP API, bez przekierowań, weryfikacja TLS, timeout `OSF_SEO_AI_TIMEOUT`). Klucz `OSF_SEO_OPENAI_API_KEY` czytany
+w chwili budowania nagłówka (nie jest polem obiektu); brak klucza → wyjątek `config` **bez żadnego żądania**. Bez ponowień.
+Rozszerzenie o Anthropic (później, osobna decyzja): klasa implementująca `AiProvider` + rejestracja w `Plugin::createContainer()` + stała klucza
+w `AiConfig`; reszta (kontekst, kontrakt, budżet, historia) bez zmian. W fazie A nie zaimplementowano.
+
+### 22.4 Kontekst tematu — wersja 1 (D92)
+
+`TopicContextAssembler` (czysta klasa, bez WordPressa) buduje kontekst wyłącznie z pakietu kontekstu STEP 16 (`TopicContextBuilder`),
+SERP Intelligence tematu (`topicView['serp']`), aktualności źródeł (`StrategyFreshness`), rynku i okna GSC (`panelState`) i dat pobrania metryk
+rynkowych fraz tematu. Struktura (`schema` = `whack-a-mole/ai-topic-context`, `context_version` = 1; od fazy B `context_version` = 2 — dodatkowo
+treść stron z zapisanych snapshotów: `target_page.page_content`, `evidence.competitor_pages`, nowe braki danych i `evidence_fingerprint`, sekcja 23.12):
+
+| Sekcja | Zawartość |
+|---|---|
+| `strategy` | wersje pakietu i reguł Strategii, `evidence_hash` |
+| `project` | domena i rynek (bez nazwy projektu) |
+| `topic` | `ref: topic`, ID, etykieta, fraza główna, liczba fraz, suma wolumenu, status pracy, `decision_changed_since_status` |
+| `decision` | heurystyka Strategii: działanie i powód (kody + etykiety), podstawy, ślad reguł, Priorytet Strategii z rozbiciem, pewność z czynnikami |
+| `keywords[]` | `kw:<id>`: fraza, rola, podstawa grupowania, źródła, `gsc` (kliknięcia, wyświetlenia, CTR = kliknięcia / wyświetlenia, `average_position_gsc`), `market` (`search_volume`, `keyword_difficulty`, `cpc_usd`, `intent`), `serp` (`serp_rank_group`, adres, `measured_at`, świeżość), strona docelowa frazy |
+| `evidence.gsc` | fakty GSC tematu z oknem, datą najnowszych danych (PT), świeżością, kompletnością okna |
+| `evidence.serp` | pomiar frazy odniesienia: data, świeżość, urządzenie, głębokość, projekt (`serp_rank_group`, adres, wyróżniony fragment), konkurenci TOP10/TOP20, profil (kształt, sygnał intencji — heurystyka), TOP10 wyników (`serp:<rank>`, domena, adres, kształt strony, tytuł jako odwołanie do treści zewnętrznej), overlap z frazami tematu (tylko poziomy wiarygodne) |
+| `evidence.market` | proweniencja metryk rynkowych (zakres dat pobrania), liczba fraz z wolumenem / trudnością |
+| `evidence.labs_gaps` | `gap:<id>`: typ luki, widoczność projektu i jej źródło, `project_rank_labs`, konkurenci, najlepszy konkurent z `rank_labs`, Priorytet luki |
+| `evidence.content_gaps`, `opportunities`, `discovery` | `cg:<id>`, `opp:<id>`, `disc:<id>` — heurystyki modułów z powodem i pewnością |
+| `target_page` | `ref: target`: stan, adres, rodziny dowodów, wskazania, alternatywy, konflikty (`conflict:<n>`), dowody przeciwne (brak widoczności), ślady możliwej strony, sygnały pochodne, `page_index` (`complete: false`, `gsc_known_pages`), `page_content` (wersja 1: zawsze `available: false`, `not_fetched`; wersja 2: snapshot strony albo jawny brak — 23.12) |
+| `external_texts[]` | treści zewnętrzne o dowolnej treści (tytuły wyników SERP) — osobny blok niezaufany (22.5) |
+| `data_gaps[]` | jawne braki danych (kod, odwołanie, znaczenie), np. `no_gsc_data`, `gsc_window_incomplete`, `gsc_no_impressions`, `no_serp_measurement`, `serp_stale`, `serp_expired`, `no_market_data`, `no_labs_import`, `target_unknown`, `target_none_not_proof`, `target_conflict`, `page_content_not_fetched`, `page_index_incomplete`, `keywords_omitted`, `context_reduced` |
+| `refs` | jedyne odwołania dozwolone w odpowiedzi |
+| `limits` | limity elementów, pominięcia (liczniki), wykonane kroki redukcji, liczba uciętych tekstów, `within_budget` |
+| `metric_definitions`, `untrusted` | definicje metryk i ścieżki pól z danymi zewnętrznymi |
+
+- **Proweniencja**: każda sekcja dowodów ma `provenance` (źródło, rodzaj `fact` / `third_party_estimate` / `heuristic`, data, świeżość,
+  wiarygodność), obowiązującą dla jej elementów, o ile element nie ma własnej daty pomiaru. Hipotezy tworzy wyłącznie model (oznaczone w odpowiedzi).
+- **Trzy pozycje rozdzielone nazwą pola**: `average_position_gsc` (średnia GSC), `serp_rank_group` (pomiar SERP), `rank_labs` / `project_rank_labs`
+  (baza DataForSEO Labs). Pomiar SERP > 90 dni — bez pozycji i wyników (`serp_expired`); 31–90 dni — niższa wiarygodność.
+- **Treść strony**: nigdy nie udajemy, że jest znana — w wersji 1 `page_content.available = false`, w wersji 2 wyłącznie z zapisanego snapshotu (23.12); „brak znanej strony” i niepełny indeks stron
+  zawsze jako braki danych z wyjaśnieniem, że to nie dowód braku strony.
+- **Budżet**: limity elementów (frazy 15, wyniki SERP 10, overlap 8, luki 10, luki treści 5, Szanse SEO 10, Nowe frazy 10, wskazania 6, alternatywy 4,
+  konflikty 5, ślad reguł 8), teksty jednoliniowe (fraza 120, tytuł 160, adres 300 znaków — „…”, licznik `truncated_texts`), maks. 32 000 bajtów;
+  ponad limit — redukcja całych elementów od najmniej ważnych (Nowe frazy → Szanse SEO → luki treści → luki fraz → overlap → wyniki SERP → frazy →
+  szczegóły strony docelowej), z licznikami pominięć. Decyzja, fraza główna i główne dowody zostają; JSON nigdy nie jest ucinany. Bez zmieszczenia
+  się w budżecie — odmowa `context_too_large`.
+- **Odcisk** `context_fingerprint` = SHA-256 kanonicznego JSON-u kontekstu (klucze sortowane, bez czasu budowania): ten sam stan danych → ten sam
+  odcisk; zmiana dowodów (i statusu pracy, który jest częścią wejścia) → inny. `evidence_hash` Strategii (bez stanu pracy) zapisywany osobno.
+
+### 22.5 Instrukcje i prompt injection (D90)
+
+`PromptTemplate::VERSION` = `topic-analysis.v1` (zmiana treści = nowa wersja, zapisywana w historii; od fazy B `topic-analysis.v2` — zasady dla
+treści stron, 23.12). Warstwy:
+
+1. **instrukcje aplikacji** — osobne pole `instructions` żądania (nie część danych): tylko dowody, odwołania, rozdzielone metryki, zakaz
+   opisywania niepobranej treści strony, zakaz prognoz i obietnic, rekomendacje jako hipotezy, dane zewnętrzne wyłącznie jako dane, odpowiedź po polsku,
+2. **zadanie** (stałe dla wersji) i opcjonalny **cel użytkownika** (`--focus`, najwyżej 300 znaków, jako łańcuch JSON w `<user_focus_json>`),
+3. **dowody strukturalne** — `<evidence_json>`,
+4. **treści zewnętrzne o dowolnej treści** (tytuły SERP) — `<untrusted_external_texts_json>`.
+
+Dane w blokach są kodowane jako JSON z `<`, `>`, `&` i cudzysłowami jako sekwencje `\u…` — tekst z danych nie zamknie bloku ani nie udaje
+znacznika; teksty bez znaków sterujących, sterowania kierunkiem i znaków zerowej szerokości (`TextSanitizer`). Instrukcja „traktuj dane jako dane”
+to tylko jedna warstwa: o tym, co trafia do modelu, decydują **kontrola dostępu** (`ProjectGuard` → `ProjectContext`, uprawnienie AI)
+i **minimalizacja danych** (tylko temat i jego dowody, bez notatek, użytkowników, sekretów i innych projektów), a o tym, co zostaje zapisane jako
+wynik — **walidacja odpowiedzi** (odwołania tylko do dowodów kontekstu; tytuł SERP nie jest dowodem do cytowania).
+
+### 22.6 Kontrakt odpowiedzi — wersja 1 (D93)
+
+`AnalysisContract` (nazwa schematu `whack_a_mole_topic_analysis_v1`): `contract_version`, `summary`, `findings[]` (id, `problem`/`opportunity`,
+tytuł, wyjaśnienie, `evidence_refs`, `basis` `evidence`/`hypothesis`, pewność), `recommendations[]` (id, działanie, uzasadnienie, `finding_ids`,
+`expected_impact` `high`/`medium`/`low`/`unknown` — wyłącznie jakościowo, `impact_rationale`, `evidence_refs`, `basis`, priorytet 1–5,
+`requires_manual_check`), `missing_information[]`, `caveats[]`, `manual_checks[]`. Schemat wysyłany jako odpowiedź strukturalna (`strict` —
+wszystkie pola wymagane, bez dodatkowych), tylko z typami i wyliczeniami.
+
+`OutputValidator` (PHP, deklaracja modelu nie jest dowodem): poprawny JSON (≤ 200 KB), dokładny zestaw pól, typy, wyliczenia, długości tekstów,
+najwyżej 8 elementów na listę i 12 odwołań na element, unikalne identyfikatory (`F1`, `R1`), odwołania wyłącznie z `refs` kontekstu tego
+uruchomienia, `basis: evidence` z co najmniej jednym odwołaniem, rekomendacje wskazujące istniejące ustalenia, bez prognoz liczbowych w ocenie
+wpływu (procenty, mnożniki, „+N”) i bez obietnic („gwarantuje”). Jakikolwiek błąd → status `invalid`, wynik niezapisany (surowa odpowiedź
+i lista błędów zostają do diagnostyki). Przykładowa odpowiedź: `FakeProvider::sample()`.
+
+### 22.7 Koszty i budżet AI (D88, D89, D91)
+
+- **Ceny wyłącznie z konfiguracji** (`OSF_SEO_AI_PRICE_INPUT_PER_MTOK`, `…_CACHED_INPUT_PER_MTOK`, `…_OUTPUT_PER_MTOK`, USD za 1 mln tokenów) —
+  w kodzie nie ma modelu ani cennika. Bez cen nie da się oszacować kosztu → odmowa `missing_prices`.
+- **Szacunek maksymalny przed wywołaniem**: wejście = bajty instrukcji, wejścia i schematu / 2,5 + 300 (ostrożnie dla polskiego tekstu w UTF-8),
+  wyjście = pełny `max_output_tokens` (obejmuje tokeny rozumowania), bez rabatu za cache.
+- **Limity AI** (domyślnie 0 = każde płatne wywołanie zablokowane): dzienny, miesięczny, miesięczny na projekt i maksymalny koszt jednej analizy
+  (UTC). Do limitów liczy się `COALESCE(actual_cost, reserved_cost)` płatnych uruchomień.
+- **Rezerwacja przed wywołaniem**: kontrola limitów z aktualnych sum i zapis uruchomienia z `reserved_cost` w jednej sekcji krytycznej pod blokadą
+  `GET_LOCK ai_budget` (5 s; zajęta → `budget_busy`) — równoległe uruchomienia nie przekroczą limitu.
+- **Rozliczenie**: odpowiedź ze zgłoszonym zużyciem → koszt z `usage` (wejście z cache po cenie cache); dostawca na pewno niczego nie wykonał
+  (brak klucza, 401/403, 4xx, 429) → 0; wynik nieznany (timeout, sieć, 5xx, odpowiedź bez zużycia, przerwany proces) → status `uncertain`, liczy
+  się cała rezerwacja. Bez ponawiania płatnego żądania.
+- Uruchomienie płatne wymaga dodatkowo jawnego potwierdzenia maksymalnego kosztu (`--yes` albo pytanie w CLI) — inaczej `confirmation_required`.
+
+### 22.8 Przebieg uruchomienia
+
+```
+ai:run → kontekst (StrategyService, projekt z ProjectContext) → plan (zero żądań: dostawca, model, tokeny, koszt maks., blokady, budżet)
+  → [płatny: potwierdzenie] → rezerwacja pod blokadą (ai_runs: reserved + wejście w ai_run_payloads)
+  → reserved → running (warunkowo) → jedno wywołanie dostawcy
+  → walidacja PHP → succeeded | invalid  (albo failed | uncertain z kodem rodzaju błędu) → rozliczenie
+```
+
+Kolejność powodów odmowy w planie: `provider_unknown`; dla płatnego: `ai_disabled`, `provider_not_configured`, `missing_api_key`,
+`model_not_configured`, `missing_prices`; `context_too_large`; `run_cost_limit`, `budget_daily`, `budget_monthly`, `budget_project`.
+Porzucone uruchomienia (status w toku dłużej niż timeout + 300 s): `reserved` → `failed` (`not_sent`, bez kosztu), `running` → `uncertain`
+(`interrupted`, rezerwacja) — warunkowa aktualizacja, bez ponawiania żądania.
+
+### 22.9 Historia, decyzje, retencja (D94)
+
+- Historia w obrębie projektu: lista (metadane), szczegóły (wynik, walidacja; wejście i surowa odpowiedź na życzenie), decyzja użytkownika
+  (`accepted`, `rejected`, cofnięcie — tylko dla `succeeded`; nie zmienia Strategii ani statusu pracy tematu), usunięcie (nie w toku).
+- Retencja `OSF_SEO_AI_RETENTION_DAYS` (domyślnie 180, min. 35 — dłużej niż okres limitu miesięcznego): zakończone uruchomienia starsze
+  niż retencja usuwane paczkami z danymi.
+- Krok w tle: `SyncScheduler::onAfterRun` → `AiAnalysisService::maintenance()` — **wyłącznie porządki** (odzyskanie porzuconych uruchomień,
+  retencja raz na dobę), bez żadnego wywołania modelu i bez drugiej kolejki.
+
+### 22.10 Page Intelligence — przygotowanie do fazy B (D95)
+
+**Zrealizowane w fazie B — sekcja 23** (D96–D104). Kontrakt `PageSnapshot` i punkt rozszerzenia `PageContentSource` z fazy A zastąpiono
+snapshotami Page Intelligence (`page_snapshots`) i interfejsem `Ai\Context\PageEvidenceSource`; `UrlSafetyPolicy` przeniesiono do
+`PageIntelligence\Fetch` i rozszerzono o politykę sieci i resolver, a pinning IP jest w transporcie (`CurlPageFetcher`). Opis fazy A (historycznie):
+
+Bez crawlera, przeglądarki i pobierania treści w fazie A. Przygotowane:
+
+- **Kontrakt danych** `Page\PageSnapshot`: adres i adres końcowy, status HTTP, czas pobrania, title, meta description, canonical, robots,
+  indeksowalność, nagłówki H1–H6 (≤ 30), główna treść (≤ 6000 znaków), liczba słów, linki wewnętrzne (≤ 30), hash treści, znacznik ucięcia.
+  W kontekście AI — w `target_page.page_content` (ścieżka niezaufana); w fazie B treść strony trafi do bloku niezaufanego.
+- **Punkt rozszerzenia** `Page\PageContentSource::snapshot(ProjectContext, url)` — wyłącznie odczyt zapisanego stanu w obrębie projektu (nigdy
+  pobieranie przy budowaniu kontekstu ani w żądaniu WWW); faza A: `NoPageContentSource` (zawsze brak).
+- **Cache i świeżość (plan)**: migawka na (projekt, adres) z `fetched_at` i hashem treści; ponowne pobranie po TTL albo jawnie; tylko strony projektu.
+- **Uprawnienia (plan)**: pobieranie tylko z uprawnieniem AI i w domenie projektu; klient bez dostępu.
+- **Ochrona przed SSRF** `Page\UrlSafetyPolicy` (czysta, z testami): wyłącznie `http`/`https` na portach 80/443, bez danych logowania w adresie
+  i literałów IP, bez `localhost` i nazw wewnętrznych (`.local`, `.internal`, `metadata.google.internal`…), wyłącznie host z rodziny domeny
+  projektu, każdy adres z DNS (A i AAAA, także IPv4 zagnieżdżony w IPv6) poza sieciami prywatnymi, loopback, link-local (metadane chmury
+  169.254.169.254), CGNAT, multicast i zarezerwowanymi; każde przekierowanie (`redirectTarget`) kontrolowane od nowa; limity: 3 przekierowania,
+  10 s, 2 MB. Faza B musi łączyć się z zweryfikowanym adresem IP (pinning) — ochrona przed DNS rebinding.
+
+### 22.11 Uprawnienia i bezpieczeństwo (D86)
+
+- Capability **`osf_seo_manage_ai`** (wersja 0.17.0; `administrator` i `osf_seo_admin`, nie klient): podgląd kontekstu i planu, uruchomienia
+  (także płatne — przy świadomej konfiguracji), historia, decyzje, usuwanie. Sprawdzana w usłudze (`ProjectContext::assertCan`); CLI z `--user`
+  autoryzuje projekt z tą capability.
+- Temat i analiza wyłącznie po (`project_id` z `ProjectContext`, identyfikator publiczny) — temat albo analiza innego projektu są nieodróżnialne
+  od nieistniejących (`StrategyNotFound`, `AiRunNotFound`); test IDOR w `tests/Integration/Ai/AiIsolationTest.php`.
+- Klucz API wyłącznie w `wp-config.php`/env, czytany w chwili żądania; nigdy w repozytorium, bazie, logach, wyjątkach, HTML, JS, odpowiedziach
+  API ani w ustawieniach efektywnych (`ai:status` pokazuje tylko obecność). Brak formularza z jawnym sekretem. `Redactor` maskuje klucze `sk-…`
+  i nagłówek `x-api-key`. Logi: rodzaj błędu, status HTTP i kod błędu dostawcy — bez komunikatów, treści żądań i odpowiedzi.
+- Do dostawcy trafiają dane tematu projektu (frazy, metryki GSC, adresy, domeny konkurentów) — świadoma decyzja administratora przy konfiguracji
+  (`store: false`); bez notatek wewnętrznych, danych użytkowników i innych projektów.
+
+### 22.12 CLI (bez żądań poza jawnie potwierdzonym `ai:run` z płatnym dostawcą)
+
+```bash
+wp osf-seo ai:status [--format=json]                         # konfiguracja bez sekretów: wyłącznik, dostawca, model, obecność klucza, ceny, limity, wersje
+wp osf-seo ai:context --project=<id> --topic=<temat>         # kontekst AI tematu (JSON)
+wp osf-seo ai:validate-context --project=<id> --topic=…      # determinizm, rozmiar, odwołania, braki danych (kod wyjścia 1 przy problemach)
+wp osf-seo ai:plan --project=<id> --topic=… [--provider=openai] [--focus="…"]   # plan: tokeny, koszt maks., budżet, blokady (zero żądań)
+wp osf-seo ai:run --project=<id> --topic=… [--provider=fake]   # domyślnie dostawca testowy (koszt 0); płatny: --provider=openai + potwierdzenie (--yes)
+wp osf-seo ai:runs --project=<id> [--topic=…]                 # historia (metadane)
+wp osf-seo ai:show --project=<id> --run=<id> [--payload]      # wynik i walidacja; --payload: wejście i surowa odpowiedź
+wp osf-seo ai:decide --project=<id> --run=<id> --decision=accepted|rejected|clear
+wp osf-seo ai:delete --project=<id> --run=<id> [--yes]
+wp osf-seo ai:budget [--project=<id>]                         # budżet AI (oddzielny od DataForSEO)
+wp osf-seo ai:purge                                           # porządki bez wywołań AI: porzucone uruchomienia i retencja
+```
+
+### 22.13 Konfiguracja
+
+Instrukcja krok po kroku (placeholdery): [`docs/AI-SETUP.md`](AI-SETUP.md). Stałe — sekcja 17.
+
+### 22.14 Plan kolejnych faz (do osobnej akceptacji)
+
+| Faza | Zakres |
+|---|---|
+| B | ✅ Page Intelligence — sekcja 23 (bez `ProjectPageIndex` z mapy witryny — przeniesione do fazy D, 23.16) |
+| C | Panel: analiza AI w szczegółach tematu — plan z kosztem → potwierdzenie → uruchomienie; wynik z odwołaniami do dowodów, braki danych, decyzja użytkownika, historia; ustawienia i budżet AI dla administratora |
+| D | Kolejne zadania na tym samym fundamencie (np. brief strony, porównanie z konkurencją) — nowe wersje instrukcji i kontraktu; drugi dostawca (Anthropic) jako adapter |
+| E | Ewentualne zadania w tle — wyłącznie przez `SyncScheduler` (bez drugiej kolejki), po jawnym włączeniu i w budżecie AI; kalibracja jakości na prawdziwych tematach |
+
+### 22.15 Ograniczenia
+
+- Rzeczywiste wywołanie OpenAI nie było wykonane (testy na atrapie HTTP; brak klucza w środowisku) — przed pierwszym użyciem: konfiguracja
+  według `docs/AI-SETUP.md`, plan (`ai:plan`), jedno uruchomienie z niskimi limitami i porównanie kosztu z panelem dostawcy.
+- Szacunek tokenów jest przybliżeniem (górna granica z bajtów); koszt rozliczany ze zgłoszonego zużycia.
+- Część modeli nie obsługuje `temperature` — parametr wysyłany tylko, gdy ustawiony (`OSF_SEO_AI_TEMPERATURE`).
+- Walidacja wykrywa prognozy liczbowe i obietnice heurystycznie (wzorce) — nie zastępuje przeglądu wyniku przez człowieka.
+- Treść stron tylko z jawnie pobranych snapshotów (faza B, bez renderowania JS); indeks stron niepełny (GSC) — analizy oznaczają to jako braki danych.
+
+## 23. Page Intelligence (STEP 17, faza B)
+
+Faza B: bezpieczne pobieranie publicznych stron projektu i wybranych organicznych wyników SERP, ekstrakcja rzeczywistej zawartości HTML,
+snapshoty w obrębie projektu, cache ze świeżością i retencją, powiązania ze Strategią i SERP oraz treść stron w kontekście AI (wersja 2).
+**Bez** crawlera witryny, audytu technicznego, renderowania JavaScript (headless), edytora treści, generowania artykułów, publikacji
+w WordPressie, nowych płatnych endpointów i nowych reguł Strategii. Najważniejsza zasada: Whack-a-mole rozróżnia, co **rzeczywiście
+pobraliśmy** (snapshot z datą), co wynika z GSC, SERP i Labs, czego **jeszcze nie sprawdziliśmy**, co jest **heurystyką** i czego **nie możemy
+potwierdzić** — brak pobrania, timeout, 403, 404 czy brak tekstu w pobranym HTML nigdy nie dowodzą, że strony albo treści nie ma.
+
+### 23.1 Zasady
+
+- **Pobieranie wyłącznie jawnie** (`pages:fetch`, uprawnienie `osf_seo_manage_page_intelligence`, D96). Status, lista, szczegóły, plan
+  i budowanie kontekstu AI wykonują **zero żądań HTTP** (plan także zero DNS; wyjątek: diagnostyka `pages:check-url` — samo DNS, bez HTTP).
+  Odczyt tematu Strategii nigdy nie uruchamia pobrania. Krok w tle wyłącznie porządkuje dane (retencja, D101).
+- **Bezpieczny transport z przypięciem zweryfikowanego IP** (ext-curl, nie WordPress HTTP API) albo odmowa — nigdy wyłączenie TLS ani
+  cichy powrót do niechronionego transportu (D97).
+- **Zakres**: strony domeny projektu; strony konkurencji — domeny konkurentów projektu albo dokładne adresy organicznych wyników zapisanych
+  pomiarów SERP projektu; nic poza tym (`url_not_allowed`). Bez automatycznego pobierania całego SERP-u (D98).
+- **Uprzejmość**: robots.txt, jawny User-Agent, odstęp i limit dzienny na host (wspólne dla wszystkich projektów), `Retry-After`, pobrania po kolei,
+  bez ponowień; bez obchodzenia logowania, CAPTCHA i zabezpieczeń antybotowych (D99).
+- **Dane w obrębie projektu**: każdy projekt ma własne strony, snapshoty i próby — także dla tego samego adresu (bez współdzielenia treści) (D100).
+- **Fakty z HTML ≠ fakty o Google**: indeksowalność wyłącznie z dyrektyw (`indexable_by_directives` / `blocked_by_directives` / `unknown`),
+  nigdy „strona jest zaindeksowana” (D102).
+- **Strategia bez zmian** — wyniki pobrania nie są jeszcze dowodem dla `TargetPageResolver` ani klasyfikatora działań (D103).
+
+### 23.2 Architektura i przepływ
+
+| Element | Odpowiedzialność |
+|---|---|
+| `PageIntelligence\PageIntelligenceService` | jedyny punkt pobierania i odczytu: wybór adresów → plan → pobranie → zapis; odczyty w obrębie `ProjectContext`; dowody stron dla kontekstu AI (`PageEvidenceSource`) |
+| `PageIntelligence\PageIntelligenceRepository` | tabele `page_*` (23.3), zawsze z `project_id` z `ProjectContext` |
+| `Fetch\UrlSafetyPolicy` + `NetworkPolicy` + `HostResolver` | składnia i zakres adresu, DNS i kontrola każdego adresu IP (23.4) |
+| `Fetch\CurlPageFetcher` (`PageFetcher`) | transport: przypięcie IP, TLS, ręczne przekierowania, limity (23.4) |
+| `Robots\RobotsPolicy` + `RobotsTxt` (+ `TransientRobotsCache`) | robots.txt (RFC 9309) z pamięcią na origin (23.5) |
+| `Extract\HtmlExtractor` + `Charset` → `PageExtraction` | ekstrakcja (23.6) i odcisk treści |
+| `Cli\PagesCommand` | `wp osf-seo pages:*` (23.13) |
+
+```
+pages:fetch → wybór (adresy | temat Strategii | fraza + pozycje SERP) → zakres (projekt / konkurent / wynik SERP) — bez HTTP i DNS
+  → plan: stan pamięci (fresh → bez HTTP, chyba że --force), limity hosta → [potwierdzenie z listą hostów]
+  → dla każdego adresu po kolei: blokada strony + blokada hosta (bez czekania) → Retry-After / odstęp / limit dzienny hosta
+  → robots.txt (pamięć 24 h) → transport (DNS raz, kontrola IP, połączenie z przypiętym IP, TLS, przekierowania od nowa)
+  → 304 / ta sama treść → potwierdzenie snapshotu (last_seen_at) | nowa treść → nowy snapshot | błąd → zapis próby (snapshot bez zmian)
+```
+
+### 23.3 Model danych (schemat 16, M0016)
+
+Wyłącznie addytywnie (nowe tabele i jedna kolumna; dane STEP 11–17A bez zmian; test migracji 15 → 16 w `MigratorTest`):
+
+- **`osf_page_targets`** — strona w projekcie: `public_id` (ULID, utf8mb4_bin), `project_id`, `url_key` BINARY(32) (SHA-256 adresu
+  znormalizowanego), `url` (znormalizowany: małe litery schematu i hosta, IDN → ASCII, bez fragmentu, port tylko niedomyślny), `host`, `kind`
+  (`project` / `competitor`), `source` (`manual` / `topic` / `serp`), `topic_id` (NULL), `status` (`new` / `ok` / `failed` / `blocked`),
+  ostatnia próba (`last_attempt_at`, `last_error` — kod, `last_http_status`), `last_success_at`, `last_snapshot_id`, `final_url`, `created_by`.
+  Klucze: UNIQUE (`project_id`, `url_key`), (`project_id`, `kind`, `updated_at`), (`project_id`, `topic_id`).
+- **`osf_page_snapshots`** — wyekstrahowana treść jednego stanu strony (**bez surowego HTML**): `public_id`, `project_id`, `target_id`,
+  `extractor_version`, `fetched_at` (pierwsze pobranie tej treści), `last_seen_at` (ostatnie potwierdzenie), `http_status`, `content_type`,
+  `charset`, `final_url`, `bytes`, `fetch_ms`, `body_hash` (SHA-256 odpowiedzi), `content_hash` (SHA-256 treści — 23.7), `etag`, `last_modified`,
+  podsumowanie (`title`, `word_count`, `h1_count`, `headings_count`, `links_internal`, `links_external`, `content_quality`, `indexability`,
+  `canonical_status`) i `data` (JSON ekstrakcji z limitami: meta, nagłówki, treść główna i sekcje, linki, sygnały techniczne, jakość, ograniczenia
+  odczytu, łańcuch przekierowań). Klucze: (`project_id`, `target_id`, `fetched_at`), (`project_id`, `last_seen_at`).
+- **`osf_page_fetches`** — każda próba (także odmowa i odczyt z pamięci): źródło (`cli`, `panel`), `requested_by`, czasy, `network` (czy był
+  ruch sieciowy), `outcome` (`created`, `changed`, `unchanged`, `cached`, `not_modified`, `http_error`, `failed`, `refused`, `robots_*`),
+  `error_code`, `http_status`, `bytes`, `retry_after_at`, `diagnostics` (bezpieczna: wynik, kody, typ, rozmiar, czas, łańcuch przekierowań,
+  stan robots — bez treści, nagłówków żądania i adresów IP), `request_key` (MD5 adresu). Klucze: (`host`, `started_at`) — limity hosta dla
+  wszystkich projektów, (`project_id`, `target_id`, `started_at`).
+- **`osf_page_serp_links`** — strona ↔ organiczny wynik zapisanego pomiaru SERP projektu: `target_id`, `serp_snapshot_id`, `project_id`,
+  `market_keyword_id`, `rank_group`, `serp_checked_at` (data pomiaru — osobno od daty pobrania strony). PK (`target_id`, `serp_snapshot_id`).
+- **`osf_ai_runs.evidence_fingerprint`** BINARY(32) NULL — odcisk dowodów kontekstu AI bez stanu pracy tematu (23.12); stare uruchomienia — NULL.
+
+### 23.4 Transport, SSRF, DNS rebinding i TLS (D97)
+
+**Dlaczego nie WordPress HTTP API**: `wp_safe_remote_get()` sprawdza adres hosta, ale połączenie nawiązuje biblioteka po ponownym rozwiązaniu
+nazwy (drugie zapytanie DNS — okno na DNS rebinding), a transport strumieni nie daje przypięcia adresu. Sama polityka adresów (`UrlSafetyPolicy`)
+**nie** chroni przed rebindingiem — chroni dopiero połączenie z adresem sprawdzonym w tej samej chwili.
+
+`CurlPageFetcher` (ext-curl) dla **każdego** kroku łańcucha (żądanie i każde przekierowanie, obsługiwane ręcznie — bez `FOLLOWLOCATION`):
+
+1. **Składnia i zakres** (`UrlSafetyPolicy::inspect` + `inScope`): tylko `http`/`https`, porty 80/443 (polityka produkcyjna `PublicNetworkPolicy`),
+   bez danych logowania w adresie, bez literałów IP (także zapisy dziesiętne, ósemkowe, szesnastkowe, skrócone, IPv6 w nawiasach), bez znaków
+   sterujących i `\`, bez `localhost` i nazw wewnętrznych (`.local`, `.localhost`, `.internal`, `.lan`, `.home.arpa`, `.intranet`, `.corp`,
+   `.svc`, `.cluster.local`, `metadata.google.internal`…),
+   bez ostatniej etykiety liczbowej, IDN → ASCII; host musi należeć do zakresu żądania (rodzina domeny projektu albo host wyniku/konkurenta);
+   przekierowanie https → http — odmowa (`redirect_downgrade`), poza zakres — `redirect_outside_scope`.
+2. **DNS raz** (A i AAAA) i kontrola **każdego** adresu (`UrlSafetyPolicy::resolve`): jeden zablokowany adres blokuje host. Blokowane: sieci
+   prywatne (RFC 1918, ULA `fc00::/7`, site-local), loopback, link-local (w tym metadane chmury `169.254.169.254`, `fe80::/10`), CGNAT
+   `100.64.0.0/10`, `0.0.0.0/8`, multicast, broadcast, zakresy dokumentacyjne i zarezerwowane, benchmark `198.18.0.0/15`, IPv4 zagnieżdżony
+   w IPv6 (mapowany, zgodny, NAT64 `64:ff9b::/96`, 6to4 `2002::/16` — oceniany adres IPv4). Brak adresów → `dns_failed`.
+3. **Połączenie wyłącznie z tymi adresami**: `CURLOPT_RESOLVE` (host:port → zweryfikowane IP — curl nie pyta DNS ponownie), po połączeniu
+   kontrola `CURLINFO_PRIMARY_IP` (inny adres → `pinning_violation`), `FORBID_REUSE` + `FRESH_CONNECT` (bez ponownego użycia połączeń).
+4. **TLS**: `SSL_VERIFYPEER` + `SSL_VERIFYHOST=2` zawsze; SNI i certyfikat weryfikowane względem **oryginalnej nazwy hosta** (przypięcie IP
+   nie zmienia nazwy w TLS); magazyn CA — `OSF_SEO_PAGES_CA_BUNDLE` albo pakiet WordPressa; błąd certyfikatu → `tls_error`. Weryfikacji nie da się wyłączyć.
+5. **Bez proxy** (`CURLOPT_PROXY=''`, `NOPROXY='*'` — zmienne środowiskowe proxy są ignorowane: proxy rozwiązywałoby nazwę samo), bez ciasteczek,
+   bez nagłówka `Authorization`, tylko protokoły http/https (także dla przekierowań).
+6. **Limity**: czas połączenia (5 s, stała `PageIntelligenceConfig::CONNECT_TIMEOUT`) i czas całkowity wspólny dla całego łańcucha (`OSF_SEO_PAGES_TIMEOUT`),
+   rozmiar odpowiedzi (`OSF_SEO_PAGES_MAX_BYTES`, liczony **po dekompresji** — przerwanie strumienia, `too_large`; ochrona przed „bombą gzip”),
+   nagłówki (200 linii / 64 KB), typ treści sprawdzany po nagłówkach (`text/html`, `application/xhtml+xml`; robots.txt: `text/plain`) — inny
+   lub brak → `unsupported_content_type` bez pobierania treści, liczba przekierowań (`OSF_SEO_PAGES_MAX_REDIRECTS`, potem `too_many_redirects`).
+7. Zachowywane tylko wybrane nagłówki odpowiedzi (`content-type`, `content-length`, `location`, `etag`, `last-modified`, `x-robots-tag`,
+   `retry-after`, `content-language`); adres IP nie jest zapisywany.
+
+Bez ext-curl z `CURLOPT_RESOLVE` — odmowa całego zlecenia (`transport_unavailable`, widoczne w `pages:status`).
+
+Kody wyniku: `refused` (polityka — żadne połączenie albo przerwane przekierowanie; powód z prefiksem `redirect_` dla przekierowań, np.
+`redirect_ip_private`), `failed` (`dns_failed`, `connect_failed`, `timeout`, `tls_error`, `too_large`, `unsupported_content_type`,
+`too_many_redirects`, `pinning_violation`…), `http_error` (`http_403`, `http_404`, `http_429`, `http_500`… — z `Retry-After`), `not_modified` (304).
+
+**Testy na prawdziwym transporcie** (bez internetu): `tests/Unit/PageIntelligence/CurlPageFetcherTest.php` i
+`tests/Integration/PageIntelligence/PageRealTransportTest.php` (grupa `transport`) uruchamiają lokalne serwery PHP na `127.0.0.1` (w polityce
+testowej `FixtureNetwork` — „publiczny”) i `127.0.0.2` (zawsze blokowany jako loopback) na **tym samym porcie** oraz serwer HTTPS z certyfikatem
+testowego CA dla `secure.fixture.example`: poprawny HTTPS z przypiętym IP i weryfikacją nazwy, certyfikat spoza magazynu zaufania i niezgodna
+nazwa (odrzucone), DNS rebinding (pierwsze rozwiązanie publiczne, każde kolejne wewnętrzne — odpowiedź serwera „internal” = wyciek; test
+sprawdza, że jej nie ma), przekierowanie na adres wewnętrzny, poza zakres i https → http, łańcuch ponad limit, timeout, odpowiedź ponad limit
+(także gzip), zły typ treści, kody 403/404/429/500, brak proxy i ciasteczek, User-Agent, żądanie warunkowe, kodowanie ISO-8859-2.
+Zakres ochrony jest tak szeroki, jak te testy i polityka — **nie** obejmuje np. błędów samego libcurl czy serwera DNS systemu.
+
+### 23.5 Zakres adresów i zasady pobierania (D98, D99)
+
+| Wybór | Zakres |
+|---|---|
+| `--page-url` / `--urls` (najwyżej `OSF_SEO_PAGES_MAX_URLS`, powtórzenia usuwane) | host z rodziny domeny projektu → `project`; host z rodziny domeny aktywnego konkurenta projektu → `competitor`; **dokładny** adres organicznego wyniku zapisanego (zakończonego) pomiaru SERP projektu (bez wyróżnionych fragmentów) → `competitor` / źródło `serp` z powiązaniem; inaczej `url_not_allowed` |
+| `--topic` | strona docelowa tematu Strategii (`targetUrl`; temat bez strony → `topic_without_target`) — powiązanie `topic_id` |
+| `--keyword` + `--ranks` | wskazane pozycje organiczne najnowszego pomiaru SERP frazy kandydata (wynik projektu → strona projektu); pozycja bez wyniku → `rank_not_found`; nigdy cały SERP automatycznie |
+
+- Wyłączniki: `OSF_SEO_PAGES_PROJECT_ENABLED`, `OSF_SEO_PAGES_COMPETITORS_ENABLED` (pobieranie konkurencji można wyłączyć osobno — `kind_disabled`).
+- **robots.txt** (RFC 9309, `RobotsTxt`): grupa `whack-a-mole` przed `*`, najdłuższe dopasowanie, przy remisie `Allow`, `*` i `$`; 4xx (bez 429)
+  → wszystko dozwolone; 429, 5xx, błąd sieci → nic nie pobieramy (`robots_unreachable`); odmowa polityki już przy robots.txt (np. host w sieci
+  wewnętrznej) → powód polityki (`ip_private`…); maks. 500 KB i 2000 reguł; pamięć na origin 24 h (niedostępny / odmowa — 1 h);
+  `crawl-delay` respektowany do 60 s. robots.txt pobierany tym samym bezpiecznym transportem.
+- **Uprzejmość wobec hosta** (wspólna dla wszystkich projektów — liczy się każdy ruch sieciowy z `page_fetches`): `Retry-After` z 429/503
+  (`host_retry_after`), odstęp między żądaniami (`OSF_SEO_PAGES_DOMAIN_INTERVAL`, `domain_cooldown`), limit na dobę (`OSF_SEO_PAGES_DOMAIN_DAILY_LIMIT`,
+  `domain_daily_limit`). CLI czeka na odstęp hosta między adresami zlecenia (łącznie najwyżej 120 s, potem odmowa); bez czekania (przyszły panel) —
+  odmowa z `retry_in`. Pobrania zawsze po kolei; blokady `page_fetch_<strona>` (ten sam adres — `fetch_in_progress`) i `page_host_<host>`
+  (`host_busy`) bez czekania.
+- **User-Agent**: `Whack-a-mole/<wersja> (Page Intelligence; +<adres aplikacji>)`. Bez ciasteczek i logowania; strona wymagająca logowania,
+  CAPTCHA czy blokada antybotowa (401/403/429) to wynik próby — nigdy nie obchodzimy zabezpieczeń.
+- **Bez automatycznych ponowień**: każda próba to jedno żądanie (plus robots.txt z pamięci); kolejna — tylko jawnie.
+
+### 23.6 Ekstrakcja HTML (D102)
+
+`HtmlExtractor` (wersja 1; DOMDocument/libxml z `LIBXML_NONET`, bez wykonywania JavaScriptu i bez pobierania zasobów):
+
+- **Kodowanie**: nagłówek → BOM → `<meta charset>` → poprawny UTF-8 → Windows-1250 (polskie strony); konwersja do UTF-8 (mbstring, a gdy nie
+  zna kodowania — iconv), deklaracja w dokumencie podmieniana na UTF-8.
+- **Meta**: `title`, `meta description`, `canonical` (jeden; wiele → `multiple`; adres względny rozwiązany), `meta robots` (także `googlebot`),
+  `X-Robots-Tag` (nagłówek), `lang`, Open Graph (`og:title`, `og:description`, `og:type`).
+- **Nagłówki H1–H6** w kolejności dokumentu (z oznaczeniem, czy są w treści głównej; do 150), liczniki poziomów i struktura: brak H1, wiele H1,
+  pierwszy poziom, przeskoki poziomów, puste nagłówki.
+- **Treść główna**: usunięcie `script`, `style`, `noscript`, `template`, `svg`, `iframe`, formularzy i mediów; korzeń: `main` / `[role=main]`
+  (≥ 20 słów) → `article` (≥ 50 słów) → `body`; usunięcie elementów nawigacji, banerów cookies/zgód, newslettera, udostępniania, reklam,
+  okruszków (klasy/ID/role), a przy korzeniu `body` także nagłówka, stopki, menu i paska bocznego (chyba że zawierają H1). Bloki → sekcje
+  (nagłówek + tekst + liczba słów, do 60 sekcji po 3000 znaków), tekst główny do 30 000 znaków, liczba słów.
+- **Linki** (do 300, bez duplikatów): wewnętrzne (rodzina domeny strony) i zewnętrzne z tekstem kotwicy (150 znaków), `nofollow`, w treści głównej;
+  adresy względne rozwiązywane względem `<base>`/adresu końcowego; `javascript:`, `mailto:`, `tel:` i fragmenty pomijane (licznik).
+- **Sygnały techniczne**: status HTTP, łańcuch przekierowań, adres końcowy, `canonical_status` (`self`, `other`, `missing`, `invalid`, `multiple`),
+  indeksowalność **z dyrektyw**: `blocked_by_directives` (`noindex`/`none` w meta albo `X-Robots-Tag`), `indexable_by_directives`, `unknown` —
+  z notatką „Directives only: HTML does not prove whether Google indexed the page.”
+- **Jakość ekstrakcji** (`content_quality`): `good`, `partial` (brak `main`, mało tekstu, przycięcie), `incomplete` (znaczniki frameworków JS
+  — `__NEXT_DATA__`, `__NUXT__`, `ng-version`, `data-reactroot`, `data-server-rendered`, puste `#root`/`#app`/`#__next`, `<noscript>` wymagający JS — przy
+  małej ilości tekstu: `js_rendered_suspected`; albo < 20 słów), `empty` (brak tekstu, nagłówków i znaczników JS);
+  z listą powodów i notatką „Content not detected in the fetched HTML may still exist on the page” — w UI/CLI: **„W pobranym HTML nie wykryto
+  tej treści”** zamiast „strona tego nie zawiera”.
+- **Limity parsowania**: wejście do 3 MB (dłuższe — przycięte, `html` w `limits.truncated`), nagłówki 150, sekcje 60, linki 300, tekst 30 000 znaków —
+  każde przycięcie zapisane w `limits.truncated` (jakość co najwyżej `partial`).
+
+### 23.7 Snapshoty, cache i świeżość (D100)
+
+- **Odcisk treści** `content_hash` = SHA-256 kanonicznego JSON-u: wybrane meta (title, description, canonical, robots, X-Robots-Tag, lang),
+  nagłówki, tekst główny, linki — **bez** metadanych pobrania (data, czas, ETag, nagłówki, skrypty, komentarze). Ta sama treść → ten sam odcisk.
+- **Idempotencja**: ta sama treść (i wersja ekstraktora) → bez nowego snapshotu, tylko `last_seen_at` (ponowne potwierdzenie) i zapis próby
+  `unchanged`; zmiana samej daty, skryptu czy komentarza w HTML nie tworzy sztucznej zmiany. Nowa treść → nowy snapshot (`changed`).
+- **304**: przy ponownym pobraniu bez `--force` żądanie warunkowe (`If-None-Match` / `If-Modified-Since` z ostatniego snapshotu); 304 → potwierdzenie.
+- **Nieudane pobranie nigdy nie nadpisuje** ostatniego poprawnego snapshotu (zapisywana jest tylko próba i stan strony `failed`/`blocked`).
+- **Stan pamięci**: `fresh` (potwierdzony w TTL, `OSF_SEO_PAGES_TTL_HOURS`), `stale` (starszy — dane nadal są), `failed` (brak snapshotu po nieudanej
+  próbie), `missing` (nigdy nie pobrano). Świeży → pobranie bez HTTP (`cached`), chyba że `--force`.
+- Najwyżej `OSF_SEO_PAGES_MAX_SNAPSHOTS` snapshotów na stronę (starsze usuwane po zapisie nowego; ostatni nigdy).
+
+### 23.8 Limity i retencja
+
+| Limit | Wartość domyślna (zakres) |
+|---|---|
+| adresy w zleceniu | 5 (1–10) |
+| rozmiar odpowiedzi (po dekompresji) | 2 MB (64 KB–5 MB) |
+| czas całkowity / połączenia | 15 s (3–60) / 5 s |
+| przekierowania | 3 (0–5) |
+| odstęp hosta / limit dzienny hosta | 10 s (2–3600) / 30 (1–500) |
+| czekanie na host w jednym zleceniu CLI | 120 s łącznie |
+| `crawl-delay` z robots.txt | do 60 s |
+| parsowanie HTML / tekst główny / sekcje / nagłówki / linki | 3 MB / 30 000 znaków / 60 × 3000 znaków / 150 / 300 |
+| snapshoty na stronę | 5 (1–50) |
+| retencja snapshotów niepotwierdzonych i prób | 90 dni (7–730) |
+| ponowienia | brak (każda próba jawnie) |
+
+Retencja: `pages:purge` albo krok w tle raz na dobę (`SyncScheduler::onAfterRun` → `maintenance()`, D101) — usuwa snapshoty z `last_seen_at`
+i próby starsze niż retencja (wszystkie projekty, bez HTTP); strona zostaje ze stanem bez treści (`missing`). Usunięcie strony
+(`pages:delete`) usuwa jej snapshoty, próby i powiązania SERP — tylko w obrębie projektu.
+
+### 23.9 Konfiguracja
+
+Stałe w `wp-config.php` albo zmienne środowiskowe (sekcja 17): `OSF_SEO_PAGES_PROJECT_ENABLED`, `OSF_SEO_PAGES_COMPETITORS_ENABLED`,
+`OSF_SEO_PAGES_TTL_HOURS`, `OSF_SEO_PAGES_MAX_BYTES`, `OSF_SEO_PAGES_TIMEOUT`, `OSF_SEO_PAGES_MAX_REDIRECTS`, `OSF_SEO_PAGES_MAX_URLS`,
+`OSF_SEO_PAGES_DOMAIN_INTERVAL`, `OSF_SEO_PAGES_DOMAIN_DAILY_LIMIT`, `OSF_SEO_PAGES_RETENTION_DAYS`, `OSF_SEO_PAGES_MAX_SNAPSHOTS`,
+`OSF_SEO_PAGES_CA_BUNDLE`. Wartości spoza zakresu są przycinane; efektywne ustawienia — `wp osf-seo pages:status`. Brak sekretów.
+
+### 23.10 Uprawnienia i IDOR (D96)
+
+- Capability **`osf_seo_manage_page_intelligence`** (wersja 0.18.0; `administrator` i `osf_seo_admin`, nie klient): plan, pobranie (każdy ruch
+  HTTP), diagnostyka adresu, usuwanie. Sprawdzana w usłudze (`ProjectContext::assertCan`) — CLI z `--user` autoryzuje projekt z tą capability.
+- Odczyt zapisanych danych (status, lista, szczegóły, snapshot) — dostęp do projektu (`osf_seo_access` + przypisanie); klient tylko odczytuje
+  i **nie może uruchomić żadnego żądania**. Odczyty bez identyfikatorów użytkowników.
+- Strona i snapshot wyłącznie po (`project_id` z `ProjectContext`, identyfikator publiczny) — obce i nieistniejące są nieodróżnialne
+  (`PageNotFound`); testy w `tests/Integration/PageIntelligence/PageAuthorizationTest.php` (także ten sam adres w dwóch projektach — osobne
+  pobrania i snapshoty).
+
+### 23.11 Integracja ze Strategią (D103)
+
+- `--topic` pobiera stronę docelową tematu i zapisuje powiązanie `topic_id`; `--keyword` + `--ranks` pobiera wybrane wyniki organiczne zapisanego
+  pomiaru i zapisuje powiązanie z wynikiem (fraza, pozycja, **data pomiaru SERP** — osobno od **daty pobrania**).
+- Odczyt tematu, przeliczenie Strategii, panel i krok w tle **nie** pobierają stron i nie tworzą stron do pobrania.
+- Reguły fazy C (`TargetPageResolver`, klasyfikator działań, pewność, priorytet, grupowanie) **bez zmian**: brak pobrania, timeout, 403 czy 404
+  nie oznaczają, że odpowiedniej strony docelowej nie ma. Wykorzystanie snapshotów jako dowodu (np. potwierdzenie istnienia strony 200 z kanonicznym
+  adresem) — osobna decyzja z kalibracją (roadmapa 23.16).
+
+### 23.12 Integracja z kontekstem AI — wersja 2 (D104)
+
+Rozszerzony istniejący `TopicContextAssembler` (nie nowy builder): `context_version` = 2, źródło `pages` przez interfejs
+`Ai\Context\PageEvidenceSource` (implementuje `PageIntelligenceService::forTopic` — wyłącznie zapisane snapshoty projektu, zero HTTP).
+
+- **`target_page.page_content`**: `available: false` + `reason` (`not_fetched` albo `fetch_failed` z ostatnią próbą: data, kod, status HTTP) albo
+  `ref: page:<snapshot>` z proweniencją (`page_fetch`, `fact`, `as_of` = data pierwszego pobrania tej treści, świeżość, wiarygodność wg jakości
+  ekstrakcji, wersja ekstraktora, notatka o braku renderowania JS), status HTTP, jakość i jej powody, `indexability_by_directives`, `canonical_status`,
+  język, liczba H1 i nagłówków, nagłówki (poziom, w treści głównej, tekst jako odwołanie), liczba słów, źródło treści głównej, sekcje (nagłówek,
+  liczba słów, fragment do 500 znaków jako odwołanie), liczniki linków, ograniczenia odczytu.
+- **`evidence.competitor_pages`**: strony konkurencji powiązane z wynikami SERP fraz tematu (`cpage:<snapshot>`): adres, domena, `serp`
+  (fraza, `serp_rank_group`, `measured_at`) i osobno `fetch` (`fetched_at`, świeżość, status, jakość, indeksowalność z dyrektyw, słowa, H1),
+  tytuł, nagłówki H1–H3 i jeden fragment jako odwołania; `linked_total` i licznik pominięć.
+- **Treści stron** (tytuły, opisy, nagłówki, fragmenty) wyłącznie w `external_texts` (blok niezaufany, `txt:N`, nie są dowodem do cytowania);
+  adresy i domeny w `untrusted`. Nigdy cały HTML ani pełny tekst.
+- **Braki danych**: `page_content_not_fetched`, `page_fetch_failed` („NOT proof that the page does not exist”), `page_content_incomplete`
+  („missing text is NOT proof the page lacks it”), `page_content_partial`, `page_snapshot_stale`, `competitor_pages_not_fetched`,
+  `serp_and_page_dates_differ` (pobranie i pomiar SERP ponad 7 dni od siebie).
+- **Budżet 32 KB bez zmian** (pomiar: kontekst bez stron ~13 KB; strona projektu + 2 strony konkurencji z typowych snapshotów ~20 KB; strona
+  projektu + 5 stron konkurencji z dokumentów ~1 MB — ~29 KB bez redukcji, benchmark 23.14; skrajnie długie teksty mieszczą się po redukcjach). Kolejność wyboru deterministyczna: strona projektu → jej nagłówki i sekcje → strony konkurencji
+  (pozycja SERP, potem identyfikator) → fragmenty. Limity: nagłówki strony 25, sekcje 6, strony konkurencji 3, nagłówki konkurenta 8, fragment 1.
+  Redukcja ponad limit: najpierw fragmenty i część stron konkurencji, potem wszystkie strony konkurencji, na końcu sekcje i nagłówki strony
+  projektu (strona docelowa ważniejsza niż konkurencja); liczniki pominięć w `limits.omitted`.
+- **Odciski**: `context_fingerprint` (pełne wejście, z ustawieniem statusu pracy) i nowy **`evidence_fingerprint`** (bez `workflow_status`
+  i `decision_changed_since_status`) — zmiana statusu pracy nie jest zmianą danych, zmiana treści strony (nowy snapshot) zmienia oba; ponowne
+  potwierdzenie tej samej treści (`last_seen_at`) nie zmienia żadnego. Zapisywany w `ai_runs.evidence_fingerprint`, widoczny w `ai:plan`.
+- **Instrukcje** `topic-analysis.v2`: treść strony opisywać wyłącznie ze snapshotów z odwołaniem `page:`/`cpage:`; brak tekstu w snapshocie
+  nie dowodzi braku na stronie (szczególnie przy jakości `incomplete`/`partial`/`empty`); indeksowalność z dyrektyw ≠ indeksacja w Google;
+  `fetched_at` ≠ `measured_at`; nieudane pobranie / 403 / 404 ≠ brak strony. Bez wywołań OpenAI w fazie B (testy — dostawca testowy).
+
+### 23.13 CLI
+
+```bash
+wp osf-seo pages:status --project=<id> [--format=json]          # konfiguracja, transport, liczniki (bez HTTP)
+wp osf-seo pages:plan --project=<id> (--page-url=… | --urls="a b" | --topic=… | --keyword=… --ranks=1,2) [--force]   # zakres, pamięć, limity hosta (bez HTTP i DNS)
+wp osf-seo pages:fetch --project=<id> (wybór jak wyżej) [--force] [--yes] [--format=json]   # JAWNE pobranie: potwierdzenie z listą hostów
+wp osf-seo pages:check-url --project=<id> --page-url=…          # diagnostyka bezpieczeństwa: zakres, składnia, DNS i adresy IP (bez HTTP)
+wp osf-seo pages:list --project=<id> [--kind=project|competitor] [--format=json]
+wp osf-seo pages:show --project=<id> --page=<id>                # JSON: ostatni snapshot (meta, nagłówki, treść, linki, sygnały, jakość), snapshoty, próby, SERP
+wp osf-seo pages:snapshot --project=<id> --snapshot=<id>        # JSON jednego snapshotu
+wp osf-seo pages:delete --project=<id> --page=<id> [--yes]
+wp osf-seo pages:purge [--format=json]                          # retencja (bez HTTP)
+```
+
+Nie `--url` — to globalny parametr WP-CLI. Bez pobierania wsadowego bez limitu i bez automatycznego pobierania SERP-u; przygotowane pod przyszłe
+użycie z `SyncScheduler` (usługa bez stanu globalnego, blokady, limity hosta), ale **bez** cyklicznego crawlingu w fazie B.
+
+### 23.14 Testy i benchmark
+
+- Jednostkowe: `UrlSafetyPolicyTest` (składnia, schematy, localhost, prywatne IPv4/IPv6, nietypowe zapisy IP, metadane, IPv4 w IPv6, porty, IDN),
+  `CurlPageFetcherTest` (prawdziwy transport, 23.4), `HtmlExtractorTest` (meta, H1–H6 i kolejność, treść główna, skrypty i style, linki i adresy
+  względne, robots i X-Robots-Tag, strony JS, niepoprawny HTML, kodowania, duża liczba linków i nagłówków, menu/stopka, odcisk), `RobotsTxtTest`,
+  `TopicContextAssemblerTest` (kontekst v2, budżet, niezaufane treści stron, odciski).
+- Integracyjne (`tests/Integration/PageIntelligence`): cache i TTL, idempotencja, nieudane pobranie zachowuje snapshot, zmiana treści i odcisków,
+  zmiana daty bez zmiany treści, 304/ETag, kody HTTP i `Retry-After`, robots.txt, obejście zakresu ręcznym adresem, limity zlecenia, kolejne adresy
+  jednego hosta z czekaniem, równoległe zlecenia (blokady), temat i wynik SERP, nieświeży SERP + świeża strona, brak pobrania ≠ brak strony,
+  kontekst AI w budżecie i deterministyczny, niezaufane treści, brak wywołań OpenAI/DataForSEO i pobrań przy odczycie, IDOR, klient tylko do
+  odczytu, retencja i usuwanie, transport rzeczywisty z serwerami fixture; migracja 15 → 16 w `MigratorTest`.
+- Benchmark ekstrakcji: `composer test:performance:pages` (bez sieci i bazy) — mały / średni / duży / ponad limit / strona JS / wiele linków i nagłówków,
+  mediana czasu, pamięć, rozmiar zapisu, liczniki po limitach, koszt kontekstu AI ze stronami.
+
+### 23.15 Znane ograniczenia
+
+- **Bez renderowania JavaScript**: strony budowane w przeglądarce dają `incomplete` — brak treści w snapshocie to brak w pobranym HTML, nie na stronie.
+- **Bez proxy**: transport nie korzysta z serwera proxy (wymóg przypięcia IP); hosting wymagający proxy dla ruchu wychodzącego — pobieranie nie zadziała
+  (`connect_failed`), bez obejścia. Wymagany ext-curl z `CURLOPT_RESOLVE` (inaczej `transport_unavailable`).
+- Rzeczywiste pobranie publicznej strony z internetu nie było wykonane w środowisku agenta (testy i smoke na lokalnych serwerach fixture z testową
+  polityką sieci) — przed użyciem produkcyjnym: `pages:check-url` i jedno `pages:fetch` strony projektu na stagingu.
+- Ochrona przed SSRF obejmuje politykę adresów, przypięcie IP, kontrolę przekierowań i limity — nie chroni przed lukami w libcurl, systemowym
+  resolverze DNS ani przed treścią zwracaną przez dozwolony serwer publiczny.
+- Heurystyki treści głównej, boilerplate'u i jakości ekstrakcji są przybliżeniem (szablony stron są różne) — do kalibracji na prawdziwych stronach.
+- `ProjectPageIndex` nadal tylko z GSC (snapshoty nie uzupełniają indeksu stron); Strategia nie korzysta jeszcze ze snapshotów (23.11).
+- Limity hosta liczone z zapisanych prób w bazie (wszystkie projekty jednej instalacji) — nie między instalacjami.
+
+### 23.16 Roadmapa (do osobnej akceptacji)
+
+| Faza | Zakres |
+|---|---|
+| C | Panel: analiza AI w szczegółach tematu (plan z kosztem → potwierdzenie → uruchomienie), dane stron w szczegółach tematu (snapshot, jakość, data, „W pobranym HTML nie wykryto…”), jawny przycisk pobrania z planem (bez czekania na host — `retry_in`) |
+| D | Snapshoty jako dowody Strategii po kalibracji (np. potwierdzenie strony docelowej 200 + canonical, sygnał konfliktu canonical) — nowa wersja reguł; uzupełnienie `ProjectPageIndex` (mapa witryny / REST WordPressa projektu); porównanie struktury nagłówków ze stronami konkurencji jako zadanie AI |
+| E | Ewentualne odświeżanie snapshotów stron docelowych w tle — wyłącznie przez `SyncScheduler`, po jawnym włączeniu, w limitach hosta i bez crawlingu; ewentualne renderowanie JS jako osobna decyzja (koszt, bezpieczeństwo) |

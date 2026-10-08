@@ -1,0 +1,66 @@
+<?php
+
+declare(strict_types=1);
+
+namespace OsfSeo\Ai\Budget;
+
+use OsfSeo\Ai\AiConfig;
+use OsfSeo\Ai\Provider\AiUsage;
+
+/**
+ * Wycena wywołań AI wyłącznie z cen w konfiguracji (USD za 1 mln tokenów — D88; w kodzie nie ma żadnego cennika).
+ *
+ * Szacunek przed wywołaniem jest ostrożny (górna granica): wejście = bajty instrukcji, wejścia i schematu / 2,5 + narzut (polski tekst
+ * w UTF-8 tokenizuje się gorzej niż angielski), wyjście = pełny limit `max_output_tokens` (obejmuje tokeny rozumowania), bez rabatu za cache.
+ * Rozliczenie po odpowiedzi — ze zgłoszonego zużycia (wejście z cache po cenie cache, jeśli ustawiona).
+ */
+final class AiPricing
+{
+	public const BYTES_PER_TOKEN = 2.5;
+
+	public const OVERHEAD_TOKENS = 300;
+
+	public function __construct(private readonly AiConfig $config)
+	{
+	}
+
+	/** Czy da się wycenić wywołanie (ceny wejścia i wyjścia ustawione). */
+	public function known(): bool
+	{
+		return $this->config->priceInput() !== null && $this->config->priceOutput() !== null;
+	}
+
+	public static function estimateInputTokens(string ...$parts): int
+	{
+		$bytes = array_sum(array_map('strlen', $parts));
+
+		return (int) ceil($bytes / self::BYTES_PER_TOKEN) + self::OVERHEAD_TOKENS;
+	}
+
+	/** Maksymalny koszt (USD) albo null, gdy cen nie ustawiono. */
+	public function maxCost(int $inputTokens, int $maxOutputTokens): ?float
+	{
+		return $this->cost($inputTokens, 0, $maxOutputTokens);
+	}
+
+	/** Koszt ze zgłoszonego zużycia albo null bez cen. */
+	public function actualCost(AiUsage $usage): ?float
+	{
+		return $this->cost($usage->inputTokens, $usage->cachedTokens, $usage->outputTokens);
+	}
+
+	private function cost(int $input, int $cached, int $output): ?float
+	{
+		$priceInput = $this->config->priceInput();
+		$priceCached = $this->config->priceCachedInput();
+		$priceOutput = $this->config->priceOutput();
+
+		if ($priceInput === null || $priceOutput === null || $priceCached === null) {
+			return null;
+		}
+
+		$cached = max(0, min($cached, $input));
+
+		return round((($input - $cached) * $priceInput + $cached * $priceCached + $output * $priceOutput) / 1_000_000, 6);
+	}
+}

@@ -19,6 +19,8 @@ use OsfSeo\Database\Migrations\M0011SerpIntelligence;
 use OsfSeo\Database\Migrations\M0012StrategyTopics;
 use OsfSeo\Database\Migrations\M0013StrategyPanel;
 use OsfSeo\Database\Migrations\M0014StrategyRefreshQueue;
+use OsfSeo\Database\Migrations\M0015AiFoundation;
+use OsfSeo\Database\Migrations\M0016PageIntelligence;
 use OsfSeo\Support\Logger;
 
 /**
@@ -69,6 +71,8 @@ final class Migrator
 			new M0012StrategyTopics(),
 			new M0013StrategyPanel(),
 			new M0014StrategyRefreshQueue(),
+			new M0015AiFoundation(),
+			new M0016PageIntelligence(),
 		];
 	}
 
