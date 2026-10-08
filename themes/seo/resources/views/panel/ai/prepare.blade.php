@@ -287,6 +287,15 @@
               </label>
             </div>
           @endif
+          @if (($used ?? null) !== null)
+            <div class="rounded-md bg-amber-50 px-4 py-3 text-sm text-amber-900">
+              Ten sam plan został już wysłany do dostawcy i rozliczony, ale bez gotowego wyniku ({{ mb_strtolower($used['status_label']) }}): <a href="{{ AiController::runUrl($projectId, $used['id']) }}" class="font-medium underline">zobacz szczegóły</a>. Jedno zatwierdzenie to jedno wywołanie.
+              <label class="mt-2 flex items-start gap-2">
+                <input type="checkbox" name="repeat" value="1" required class="mt-0.5 rounded border-amber-300 text-brand-600">
+                <span>Wyślij ponownie świadomie (nowe wywołanie i nowy koszt).</span>
+              </label>
+            </div>
+          @endif
           @if ($plan['paid'])
             <label class="flex items-start gap-2 text-sm text-slate-800">
               <input type="checkbox" name="confirmed" value="1" required class="mt-0.5 rounded border-slate-300 text-brand-600">

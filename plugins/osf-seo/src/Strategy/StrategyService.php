@@ -487,6 +487,19 @@ final class StrategyService
 	}
 
 	/**
+	 * Rynek i okno GSC projektu (te same wartości co `panelState()['market']` i `['gsc_window']`) — bez klucza danych, liczników
+	 * i stanu kolejki; dla źródła kontekstu AI, które potrzebuje tylko tych dwóch pól.
+	 *
+	 * @return array{market: ?string, gsc_window: ?array{0: string, 1: string}}
+	 */
+	public function scopeSummary(ProjectContext $context): array
+	{
+		$scope = $this->refresher->scope($context->projectId(), true);
+
+		return ['market' => $scope?->market->label(), 'gsc_window' => $scope?->window];
+	}
+
+	/**
 	 * Stan Strategii dla panelu (faza D) — tanie odczyty zapisanego stanu: rynek, ostatnie przeliczenie, aktualność klucza danych,
 	 * przeliczenie w toku (blokada projektu), ręczne zlecenie przeliczenia, liczby kandydatów i statystyki ostatniego przeliczenia
 	 * (limit fraz). Bez przeliczania i bez żadnego żądania.

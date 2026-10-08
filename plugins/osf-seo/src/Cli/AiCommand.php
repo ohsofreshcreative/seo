@@ -642,8 +642,8 @@ final class AiCommand
 	{
 		$this->requireOperator();
 		$result = isset($assocArgs['run']) ? $this->service()->runQueued((float) max(1, (int) ($assocArgs['time-limit'] ?? 60))) : null;
-		$counts = $this->service()->status()['runs'];
-		$data = ['queued' => $counts[AiRun::STATUS_QUEUED] ?? 0, 'running' => ($counts[AiRun::STATUS_RUNNING] ?? 0) + ($counts[AiRun::STATUS_RESERVED] ?? 0), 'run' => $result];
+		$health = $this->service()->queueHealth();
+		$data = ['queued' => $health['queued'], 'running' => $health['in_progress'], 'oldest_queued' => $health['oldest_queued'], 'oldest_running' => $health['oldest_running'], 'background_heartbeat' => $health['background']['heartbeat'], 'background_stale' => $health['background']['stale'], 'stuck' => $health['stuck'], 'run' => $result];
 
 		if (($assocArgs['format'] ?? 'table') === 'json') {
 			self::json($data);
@@ -651,7 +651,11 @@ final class AiCommand
 			return;
 		}
 
-		WP_CLI::log(sprintf('AI queue: %d queued, %d in progress.', $data['queued'], $data['running']));
+		WP_CLI::log(sprintf('AI queue: %d queued, %d in progress. Oldest queued: %s UTC. Last background step: %s UTC.', $data['queued'], $data['running'], $data['oldest_queued'] ?? '-', $data['background_heartbeat'] ?? 'never'));
+
+		if ($health['stuck']) {
+			WP_CLI::warning('Queued analyses are waiting and the background step has not run recently — check the system cron (wp osf-seo sync:run).');
+		}
 
 		if ($result !== null) {
 			WP_CLI::success(sprintf('Background step: %d analysis(es) executed, %d not executed (plan changed, readiness or blockers — reservation released), %d abandoned run(s) recovered.', $result['processed'], $result['cancelled'], $result['recovered']));

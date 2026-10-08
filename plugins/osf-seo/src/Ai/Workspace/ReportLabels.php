@@ -142,7 +142,16 @@ final class ReportLabels
 		'invalid_response' => 'Niepoprawna odpowiedź dostawcy.',
 		'refused' => 'Model odmówił odpowiedzi.',
 		'incomplete' => 'Odpowiedź modelu była niepełna.',
+		'incomplete_max_output_tokens' => 'Odpowiedź przerwana na limicie tokenów odpowiedzi (koszt naliczony) — zwiększ OSF_SEO_AI_MAX_OUTPUT_TOKENS albo obniż OSF_SEO_AI_REASONING_EFFORT.',
+		'incomplete_content_filter' => 'Odpowiedź przerwana przez filtr treści dostawcy (koszt naliczony).',
 		'failed' => 'Dostawca zgłosił błąd wykonania.',
+		'plan_already_used' => 'Ten plan został już wysłany do dostawcy (koszt naliczony, bez gotowego wyniku) — ponowne wysłanie tylko jawnie, jako nowy koszt.',
+		'run_counts_toward_budget' => 'Płatnej analizy z bieżącego miesiąca nie można usunąć — jej koszt liczy się do budżetu.',
+		'run_active' => 'Analiza jest w toku — nie można jej usunąć.',
+		'project_not_allowed' => 'Płatne analizy są dozwolone tylko dla projektów wskazanych w konfiguracji testu (OSF_SEO_AI_ALLOWED_PROJECTS).',
+		'type_not_allowed' => 'Ten rodzaj analizy nie jest dozwolony w konfiguracji testu (OSF_SEO_AI_ALLOWED_TYPES).',
+		'invalid_reasoning_effort' => 'Niepoprawna wartość OSF_SEO_AI_REASONING_EFFORT w konfiguracji serwera.',
+		'request_encoding' => 'Nie udało się przygotować żądania do dostawcy — bez wysyłania.',
 	];
 
 	public const BASIS = [

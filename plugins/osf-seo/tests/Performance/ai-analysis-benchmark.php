@@ -402,3 +402,33 @@ $explain('lista tematu', "SELECT r.id FROM `{$t('ai_runs')}` r WHERE r.project_i
 $explain('duplikat planu', "SELECT r.id FROM `{$t('ai_runs')}` r WHERE r.project_id = %d AND r.plan_fingerprint = UNHEX(%s) AND r.status = 'succeeded' ORDER BY r.id DESC LIMIT 1", [$main['id'], $plan->fingerprint()]);
 $explain('uruchomienie w toku', "SELECT r.id FROM `{$t('ai_runs')}` r WHERE r.project_id = %d AND r.topic_id = %d AND r.task = %s AND r.status IN ('reserved', 'running') ORDER BY r.id DESC LIMIT 1", [$main['id'], $topic->id, AnalysisType::PAGE_OPTIMIZATION]);
 $explain('wydatki projektu', "SELECT COALESCE(SUM(COALESCE(actual_cost, reserved_cost)), 0) FROM `{$t('ai_runs')}` WHERE paid = 1 AND created_at >= %s AND project_id = %d", [gmdate('Y-m-01 00:00:00'), $main['id']]);
+
+// Scenariusz E (faza D/E): ekrany panelu na tych samych danych — wywołania usług dokładnie tak, jak robią to kontrolery motywu.
+$workspace = $plugin->get(\OsfSeo\Ai\Workspace\AiWorkspaceService::class);
+$pageService = $plugin->get(\OsfSeo\PageIntelligence\PageIntelligenceService::class);
+$panel = [];
+[, $panel['A. Szczegóły tematu (widok Strategii + sekcja AI)']] = $measure(static function () use ($strategy, $workspace, $context, $topic): array {
+	$view = $strategy->topicView($context, $topic->publicId);
+
+	return $workspace->topicSectionFromView($context, $view, $strategy->panelState($context));
+});
+[, $panel['B. Przygotowanie analizy (typy, gotowość, plan, koszt)']] = $measure(static fn (): array => $workspace->prepare($context, $topic->publicId, AnalysisType::PAGE_OPTIMIZATION));
+[, $panel['C. Historia analiz (strona 1 z 20 wierszami)']] = $measure(static fn (): array => $workspace->history($context, []));
+[, $panel['C2. Historia analiz (strona 100)']] = $measure(static fn (): array => $workspace->history($context, [], 100));
+[, $panel['D. Raport AI (z dokładną aktualnością)']] = $measure(static fn (): array => $workspace->report($context, $run->publicId));
+[, $panel['E. Lista stron']] = $measure(static fn (): array => $pageService->list($context, []));
+[, $panel['F. Szczegóły kopii strony']] = $measure(static fn (): array => $pageService->pageView($context, $target->publicId));
+[, $panel['G. Status analizy (odpytywanie co 5 s)']] = $measure(static fn (): array => $workspace->runStatus($context, $run->publicId));
+
+$out();
+$out('## E — ekrany panelu (te same dane, wywołania jak w kontrolerach)');
+$out();
+$out('| Ekran | Czas ms | Zapytania SQL | Zapisujące | Pamięć MB |');
+$out('|---|---:|---:|---:|---:|');
+
+foreach ($panel as $label => $step) {
+	$out(sprintf('| %s | %.1f | %d | %d | %.1f |', $label, $step['ms'], $step['queries'], $step['writes'], $step['peak_mb']));
+}
+
+$out();
+$out(sprintf('Żądania HTTP w całym benchmarku: %d.', $httpAttempts));

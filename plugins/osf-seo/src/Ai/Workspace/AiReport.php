@@ -26,7 +26,9 @@ final class AiReport
 	{
 		$labels = EvidenceLabels::fromContext($context);
 		$evidence = static fn (mixed $refs): array => EvidenceLabels::resolve($labels, $refs);
-		$text = static fn (mixed $value): string => is_string($value) ? trim($value) : '';
+		// Kody braków danych i odwołania do dowodów w tekście (dostawca testowy, ale też model, który powtórzy kod z kontekstu) → polskie
+		// etykiety; wyłącznie prezentacja — zapisany wynik pozostaje bez zmian.
+		$text = static fn (mixed $value): string => is_string($value) ? self::humanize(trim($value), $labels) : '';
 		$findings = [];
 		$findingTitles = [];
 
@@ -128,6 +130,46 @@ final class AiReport
 			], self::items($result['manual_checks'] ?? [])),
 			'limitations' => array_map(ReportLabels::readinessCode(...), array_values(array_filter((array) ($readiness['limitations'] ?? []), 'is_string'))),
 		];
+	}
+
+	/**
+	 * Tekst bez kodów technicznych: odwołania z kontekstu (`kw:7`, `cpage:…`) → etykieta dowodu, znane kody braków danych i ograniczeń
+	 * (`competitor_pages_not_fetched`, `page_index_incomplete`, `keywords_omitted`, `context_reduced` …) → zdanie po polsku. Nieznane kody
+	 * i odwołania zostają bez zmian (nie ukrywamy treści).
+	 *
+	 * @param array<string, array{label: string, url: ?string}> $labels `EvidenceLabels::fromContext()`
+	 */
+	public static function humanize(string $value, array $labels = []): string
+	{
+		if ($value === '' || (! str_contains($value, '_') && ! str_contains($value, ':'))) {
+			return $value;
+		}
+
+		$value = (string) preg_replace_callback(
+			'/\b(?:kw|page|cpage|serp|site|gap|cg|opp|disc|conflict):[0-9A-Za-z_\-]+/',
+			static fn (array $match): string => isset($labels[$match[0]]) ? $labels[$match[0]]['label'] : $match[0],
+			$value,
+		);
+		$codes = ReportLabels::DATA_GAPS + ReportLabels::READINESS_CODES;
+
+		return (string) preg_replace_callback(
+			'/\b[a-z][a-z0-9]*(?:_[a-z0-9]+)+\b/',
+			static fn (array $match): string => isset($codes[$match[0]]) ? self::inline($codes[$match[0]]) : $match[0],
+			$value,
+		);
+	}
+
+	/** Zdanie etykiety wstawiane w tekst: bez kropki końcowej, mała litera na początku (poza skrótami typu „GSC”). */
+	private static function inline(string $sentence): string
+	{
+		$sentence = rtrim($sentence, '.');
+		$second = mb_substr($sentence, 1, 1, 'UTF-8');
+
+		if ($second !== '' && mb_strtoupper($second, 'UTF-8') === $second && mb_strtolower($second, 'UTF-8') !== $second) {
+			return $sentence;
+		}
+
+		return mb_strtolower(mb_substr($sentence, 0, 1, 'UTF-8'), 'UTF-8') . mb_substr($sentence, 1, null, 'UTF-8');
 	}
 
 	/**

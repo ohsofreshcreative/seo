@@ -23,6 +23,8 @@ use OsfSeo\Auth\ProjectContext;
 use OsfSeo\PageIntelligence\PageJobService;
 use OsfSeo\Strategy\StrategyNotFound;
 use OsfSeo\Strategy\StrategyService;
+use OsfSeo\Strategy\Topics\TopicRow;
+use OsfSeo\Sync\SyncScheduler;
 
 /**
  * Przestrzeń robocza AI w panelu (STEP 17, faza D — docs/ARCHITECTURE.md, sekcja 25): wyłącznie odczyt i przygotowanie — zero wywołań
@@ -69,71 +71,32 @@ final class AiWorkspaceService
 	 */
 	public function topicSection(ProjectContext $context, string $topic): array
 	{
-		$row = $this->strategy->topic($context, $topic)['topic'];
-		$manage = $context->can(Capabilities::MANAGE_AI);
-		$canFetch = $context->can(Capabilities::MANAGE_PAGE_INTELLIGENCE);
-		$history = $this->runs->history($context->projectId(), ['topic_id' => $row->id], ! $manage, 10, 0);
-		$runs = array_map(fn (array $item): array => $this->summary($item, ! $manage), $history['rows']);
-
-		if (! $manage) {
-			return ['manage' => false, 'can_fetch' => false, 'topic' => $row->publicId, 'runs' => $runs, 'runs_total' => $history['total']];
+		if (! $context->can(Capabilities::MANAGE_AI)) {
+			return $this->section($context, $this->strategy->topic($context, $topic)['topic'], null);
 		}
 
-		$source = $this->contexts->source($context, $row->publicId);
-		$action = is_string($source['context']['decision']['action'] ?? null) ? $source['context']['decision']['action'] : null;
-		$recommended = self::RECOMMENDED[(string) $action] ?? null;
-		$latest = [];
+		return $this->topicSectionFromView($context, $this->strategy->topicView($context, $topic), $this->strategy->scopeSummary($context));
+	}
 
-		foreach ($history['rows'] as $item) {
-			$latest[$item['run']->task] ??= $item['run'];
-		}
+	/**
+	 * Sekcja „Analiza AI” z odczytów Strategii, które ekran tematu już wykonał (bez drugiego `topicView` i `panelState`). `$view` i `$state`
+	 * wyłącznie z `StrategyService::topicView` / `panelState` (albo `scopeSummary`) dla tego samego `ProjectContext`.
+	 *
+	 * @param array<string, mixed> $view
+	 * @param array<string, mixed> $state
+	 * @return array<string, mixed>
+	 */
+	public function topicSectionFromView(ProjectContext $context, array $view, array $state): array
+	{
+		$source = $context->can(Capabilities::MANAGE_AI) ? $this->contexts->sourceFromView($context, $view, $state) : null;
 
-		$siteTopics = null;
-		$types = [];
-
-		foreach (AnalysisType::RECOMMENDATIONS as $type) {
-			$readiness = $this->contexts->readinessFrom($source, $type);
-			$explicit = $readiness->mode === ActionCompatibility::EXPLICIT ? $this->contexts->readinessFrom($source, $type, true) : null;
-			$run = $latest[$type] ?? null;
-			$freshness = null;
-
-			if ($run !== null && $run->status === AiRun::STATUS_SUCCEEDED) {
-				$siteTopics ??= $this->contexts->siteTopics($context, $row->id);
-				$freshness = $this->freshness($run, $this->contexts->analysisFrom($context, $source, $type, ($run->sources['explicit'] ?? false) === true, $siteTopics)['context']);
-			}
-
-			$types[$type] = [
-				'type' => $type,
-				'label' => ReportLabels::type($type),
-				'description' => ReportLabels::TYPE_DESCRIPTIONS[$type] ?? '',
-				'recommended' => $type === $recommended,
-				'mode' => $readiness->mode,
-				'readiness' => self::readiness($explicit ?? $readiness),
-				'explicit' => $explicit !== null,
-				'latest' => $run === null ? null : $this->summary(['run' => $run, 'topic_status' => $row->status, 'topic_evidence_hash' => $row->evidenceHash], false) + ['freshness' => $freshness],
-			];
-		}
-
-		return [
-			'manage' => true,
-			'can_fetch' => $canFetch,
-			'topic' => $row->publicId,
-			'action' => $action,
-			'recommended' => $recommended,
-			'types' => $types,
-			'evidence' => self::evidence($source),
-			'serp_options' => self::serpOptions($source),
-			'fetch_target' => $row->targetUrl !== null && $row->targetUrl !== '',
-			'jobs' => $canFetch ? array_map(static fn ($job): array => $job->toArray(), $this->pageJobs->recent($context, $row->id, 3)) : [],
-			'runs' => $runs,
-			'runs_total' => $history['total'],
-			'enabled' => (bool) ($this->ai->status()['config']['enabled'] ?? false),
-		];
+		return $this->section($context, $view['topic'], $source);
 	}
 
 	/**
 	 * Ekran przygotowania analizy: plan fazy C (zero żądań) — gotowość, zgodność, koszt maksymalny, budżet, blokady, odcisk planu — oraz
-	 * podgląd danych wejściowych, dostępni dostawcy, analiza w toku i duplikat planu.
+	 * podgląd danych wejściowych, dostępni dostawcy, analiza w toku, duplikat planu i sekcja typów tematu. Jedno źródło danych tematu
+	 * dla sekcji i planu (plan z tego źródła ma ten sam odcisk co `planAnalysis`). Bez typu — typ zalecany według działania Strategii.
 	 *
 	 * @return array<string, mixed>
 	 *
@@ -141,17 +104,28 @@ final class AiWorkspaceService
 	 * @throws StrategyNotFound
 	 * @throws AiRefused
 	 */
-	public function prepare(ProjectContext $context, string $topic, string $type, bool $explicit = false, string $provider = FakeProvider::ID): array
+	public function prepare(ProjectContext $context, string $topic, ?string $type, bool $explicit = false, string $provider = FakeProvider::ID): array
 	{
 		$context->assertCan(Capabilities::MANAGE_AI);
-		$type = AnalysisType::fromInput($type) ?? throw new AiRefused('analysis_type_unknown');
+
+		if ($type !== null) {
+			$type = AnalysisType::fromInput($type) ?? throw new AiRefused('analysis_type_unknown');
+		}
+
 		$providers = $this->providers();
 		$provider = isset($providers[$provider]) ? $provider : FakeProvider::ID;
-		$row = $this->strategy->topic($context, $topic)['topic'];
-		$plan = $this->ai->planAnalysis($context, $row->publicId, $type, $provider, null, $explicit);
+		$view = $this->strategy->topicView($context, $topic);
+		$row = $view['topic'];
+		$source = $this->contexts->sourceFromView($context, $view, $this->strategy->scopeSummary($context));
+		$siteTopics = $this->contexts->siteTopics($context, $row->id);
+		$section = $this->section($context, $row, $source, $siteTopics);
+		$type ??= $section['recommended'] ?? AnalysisType::PAGE_OPTIMIZATION;
+		$plan = $this->ai->planAnalysisFrom($context, $source, $siteTopics, $type, $provider, null, $explicit);
 		$readiness = $plan->readiness ?? throw new AiRefused('readiness_unknown');
 		$active = $this->runs->activeFor($context->projectId(), $row->id, $type);
 		$duplicate = $this->runs->succeededWithPlan($context->projectId(), $plan->fingerprint());
+		// Płatny plan już wysłany bez gotowego wyniku (niepewny, niepoprawny, błąd z kosztem) — ponowienie tylko jawnie (nowy koszt).
+		$used = $duplicate === null && $plan->paid ? $this->runs->sentWithPlan($context->projectId(), $plan->fingerprint()) : null;
 
 		return [
 			'topic' => ['id' => $row->publicId, 'label' => $row->label, 'action' => $row->action, 'status' => $row->status],
@@ -168,7 +142,9 @@ final class AiWorkspaceService
 			'preview' => self::preview($plan->context),
 			'active' => $active === null ? null : $this->summary(['run' => $active, 'topic_status' => $row->status, 'topic_evidence_hash' => $row->evidenceHash], false),
 			'duplicate' => $duplicate === null ? null : $this->summary(['run' => $duplicate, 'topic_status' => $row->status, 'topic_evidence_hash' => $row->evidenceHash], false),
+			'used' => $used === null ? null : $this->summary(['run' => $used, 'topic_status' => $row->status, 'topic_evidence_hash' => $row->evidenceHash], false),
 			'budget' => $plan->budget ?? $this->ai->budget($context),
+			'section' => $section,
 		];
 	}
 
@@ -308,6 +284,7 @@ final class AiWorkspaceService
 			'label' => ReportLabels::status($run->status, $run->decision),
 			'active' => $run->isActive(),
 			'error' => ReportLabels::error($run->errorCode),
+			'stuck' => $run->status === AiRun::STATUS_QUEUED && self::waiting($run->createdAt),
 		];
 	}
 
@@ -341,6 +318,85 @@ final class AiWorkspaceService
 			'budget' => $this->ai->budget(),
 			'runs' => $status['runs'],
 			'page_jobs' => $this->pageJobs->statusCounts(),
+			'queue' => $this->ai->queueHealth(),
+			'background' => SyncScheduler::backgroundHealth(),
+		];
+	}
+
+	/** Zlecenie czeka dłużej niż próg, a kroki w tle nie działają (cron) — panel pokazuje ostrzeżenie zamiast „w kolejce” bez końca. */
+	public static function waiting(string $createdAt): bool
+	{
+		$background = SyncScheduler::backgroundHealth();
+
+		return $background['stale'] && time() - (int) strtotime($createdAt . ' UTC') > SyncScheduler::BACKGROUND_STALE_SECONDS;
+	}
+
+	/**
+	 * Sekcja tematu z jednego źródła: gotowość trzech typów, typ zalecany, stan dowodów, ostatnie analizy z dokładną aktualnością.
+	 * `$source === null` — użytkownik bez uprawnienia AI (tylko zapisane, gotowe analizy).
+	 *
+	 * @param array<string, mixed>|null $source
+	 * @param list<array{label: ?string, action: ?string, target_url: ?string}>|null $siteTopics
+	 * @return array<string, mixed>
+	 */
+	private function section(ProjectContext $context, TopicRow $row, ?array $source, ?array $siteTopics = null): array
+	{
+		$manage = $source !== null && $context->can(Capabilities::MANAGE_AI);
+		$canFetch = $context->can(Capabilities::MANAGE_PAGE_INTELLIGENCE);
+		$history = $this->runs->history($context->projectId(), ['topic_id' => $row->id], ! $manage, 10, 0);
+		$runs = array_map(fn (array $item): array => $this->summary($item, ! $manage), $history['rows']);
+
+		if (! $manage) {
+			return ['manage' => false, 'can_fetch' => false, 'topic' => $row->publicId, 'runs' => $runs, 'runs_total' => $history['total']];
+		}
+
+		$action = is_string($source['context']['decision']['action'] ?? null) ? $source['context']['decision']['action'] : null;
+		$recommended = self::RECOMMENDED[(string) $action] ?? null;
+		$latest = [];
+
+		foreach ($history['rows'] as $item) {
+			$latest[$item['run']->task] ??= $item['run'];
+		}
+
+		$types = [];
+
+		foreach (AnalysisType::RECOMMENDATIONS as $type) {
+			$readiness = $this->contexts->readinessFrom($source, $type);
+			$explicit = $readiness->mode === ActionCompatibility::EXPLICIT ? $this->contexts->readinessFrom($source, $type, true) : null;
+			$run = $latest[$type] ?? null;
+			$freshness = null;
+
+			if ($run !== null && $run->status === AiRun::STATUS_SUCCEEDED) {
+				$siteTopics ??= $this->contexts->siteTopics($context, $row->id);
+				$freshness = $this->freshness($run, $this->contexts->analysisFrom($context, $source, $type, ($run->sources['explicit'] ?? false) === true, $siteTopics)['context']);
+			}
+
+			$types[$type] = [
+				'type' => $type,
+				'label' => ReportLabels::type($type),
+				'description' => ReportLabels::TYPE_DESCRIPTIONS[$type] ?? '',
+				'recommended' => $type === $recommended,
+				'mode' => $readiness->mode,
+				'readiness' => self::readiness($explicit ?? $readiness),
+				'explicit' => $explicit !== null,
+				'latest' => $run === null ? null : $this->summary(['run' => $run, 'topic_status' => $row->status, 'topic_evidence_hash' => $row->evidenceHash], false) + ['freshness' => $freshness],
+			];
+		}
+
+		return [
+			'manage' => true,
+			'can_fetch' => $canFetch,
+			'topic' => $row->publicId,
+			'action' => $action,
+			'recommended' => $recommended,
+			'types' => $types,
+			'evidence' => self::evidence($source),
+			'serp_options' => self::serpOptions($source),
+			'fetch_target' => $row->targetUrl !== null && $row->targetUrl !== '',
+			'jobs' => $canFetch ? array_map(static fn ($job): array => $job->toArray(), $this->pageJobs->recent($context, $row->id, 3)) : [],
+			'runs' => $runs,
+			'runs_total' => $history['total'],
+			'enabled' => (bool) ($this->ai->status()['config']['enabled'] ?? false),
 		];
 	}
 

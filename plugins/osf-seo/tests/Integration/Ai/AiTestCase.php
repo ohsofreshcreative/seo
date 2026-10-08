@@ -54,7 +54,8 @@ abstract class AiTestCase extends StrategyTestCase
 	protected const AI_ENV = [
 		AiConfig::ENABLED, AiConfig::PROVIDER, AiConfig::MODEL, AiConfig::OPENAI_API_KEY, AiConfig::PRICE_INPUT, AiConfig::PRICE_CACHED_INPUT,
 		AiConfig::PRICE_OUTPUT, AiConfig::DAILY_LIMIT, AiConfig::MONTHLY_LIMIT, AiConfig::PROJECT_MONTHLY_LIMIT, AiConfig::MAX_RUN_COST,
-		AiConfig::MAX_OUTPUT_TOKENS, AiConfig::TIMEOUT, AiConfig::TEMPERATURE, AiConfig::RETENTION_DAYS,
+		AiConfig::MAX_OUTPUT_TOKENS, AiConfig::TIMEOUT, AiConfig::TEMPERATURE, AiConfig::RETENTION_DAYS, AiConfig::PRICE_CACHE_WRITE,
+		AiConfig::REASONING_EFFORT, AiConfig::ALLOWED_PROJECTS, AiConfig::ALLOWED_TYPES,
 	];
 
 	protected const PAGE = 'https://example.pl/pozycjonowanie/';

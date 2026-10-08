@@ -8,6 +8,7 @@ use App\Panel\PageLabels;
 use App\Panel\PanelResponse;
 use App\Panel\PanelUrl;
 use Illuminate\Http\Request;
+use OsfSeo\Ai\Workspace\AiWorkspaceService;
 use OsfSeo\Auth\AccessDenied;
 use OsfSeo\Auth\ProjectContext;
 use OsfSeo\PageIntelligence\PageIntelligenceService;
@@ -141,6 +142,25 @@ final class PagesController
 		return response()->view('panel.pages.job', ['project' => $context->project(), 'job' => $row->toArray()]);
 	}
 
+	/** Anulowanie zlecenia czekającego w kolejce (bez żadnego żądania); w trakcie przebiegu — odmowa. */
+	public function cancel(Request $request, string $project, string $job): Response
+	{
+		$context = $this->context($request);
+
+		try {
+			$this->jobs()->cancel($context, $job);
+			Flash::success('Anulowano zlecenie pobrania.');
+		} catch (AccessDenied) {
+			return PanelResponse::forbidden();
+		} catch (PageNotFound) {
+			return PanelResponse::notFound();
+		} catch (PageRefused $refused) {
+			Flash::error(PageLabels::error($refused->reason()) ?? 'Nie można anulować.');
+		}
+
+		return redirect()->to(self::jobUrl($context->publicId(), $job));
+	}
+
 	public function jobStatus(Request $request, string $project, string $job): Response
 	{
 		$context = $this->context($request);
@@ -160,6 +180,7 @@ final class PagesController
 			'active' => $row->isActive(),
 			'items_done' => $row->itemsDone,
 			'items_total' => $row->itemsTotal,
+			'stuck' => $row->status === 'queued' && AiWorkspaceService::waiting($row->createdAt),
 		]);
 	}
 

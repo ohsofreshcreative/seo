@@ -17,7 +17,7 @@ use OsfSeo\Support\Clock;
 
 /**
  * Źródła kontekstu AI tematu: wyłącznie istniejące odczyty Strategii w obrębie projektu (`StrategyService::topicView` — pakiet
- * kontekstu STEP 16, SERP Intelligence tematu, aktualność źródeł; `panelState` — rynek i okno GSC), daty pobrania metryk rynkowych
+ * kontekstu STEP 16, SERP Intelligence tematu, aktualność źródeł; `scopeSummary` — rynek i okno GSC), daty pobrania metryk rynkowych
  * fraz tematu i zapisane snapshoty stron (Page Intelligence, faza B — strona docelowa i strony konkurencji z SERP-u fraz tematu).
  * Bez zapisu, bez żadnego żądania (także bez pobierania stron) i bez równoległej logiki Strategii.
  *
@@ -123,8 +123,19 @@ final class AiTopicContextBuilder
 	 */
 	public function source(ProjectContext $context, string $topic): array
 	{
-		$view = $this->strategy->topicView($context, $topic);
-		$state = $this->strategy->panelState($context);
+		return $this->sourceFromView($context, $this->strategy->topicView($context, $topic), $this->strategy->scopeSummary($context));
+	}
+
+	/**
+	 * Źródło kontekstu z odczytów Strategii już wykonanych przez ekran tematu (bez ponownego `topicView` i `panelState`). `$view` i `$state`
+	 * muszą pochodzić z `StrategyService::topicView` / `panelState` (albo `scopeSummary`) dla tego samego `ProjectContext` — wynik jest identyczny jak `source()`.
+	 *
+	 * @param array<string, mixed> $view `StrategyService::topicView()`
+	 * @param array<string, mixed> $state `StrategyService::panelState()` albo `scopeSummary()` (używane tylko `market` i `gsc_window`)
+	 * @return array<string, mixed>
+	 */
+	public function sourceFromView(ProjectContext $context, array $view, array $state): array
+	{
 		$members = (array) $view['members'];
 
 		return [

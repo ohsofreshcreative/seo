@@ -322,7 +322,10 @@ final class PagesCommand
 
 		$jobs = $this->plugin->get(PageJobService::class);
 		$result = isset($assocArgs['run']) ? $jobs->runBackground((float) max(1, (int) ($assocArgs['time-limit'] ?? 60))) : null;
-		$data = ['counts' => $this->plugin->get(PageJobRepository::class)->statusCounts(), 'run' => $result];
+		$repository = $this->plugin->get(PageJobRepository::class);
+		$background = \OsfSeo\Sync\SyncScheduler::backgroundHealth();
+		$oldest = $repository->oldestQueued();
+		$data = ['counts' => $repository->statusCounts(), 'oldest_queued' => $oldest, 'background_heartbeat' => $background['heartbeat'], 'background_stale' => $background['stale'], 'run' => $result];
 
 		if (($assocArgs['format'] ?? 'table') === 'json') {
 			self::json($data);
@@ -330,7 +333,11 @@ final class PagesCommand
 			return;
 		}
 
-		WP_CLI::log('Page jobs: ' . ($data['counts'] === [] ? 'none' : implode(', ', array_map(static fn (string $key, int $count): string => $key . ' ' . $count, array_keys($data['counts']), $data['counts']))) . '.');
+		WP_CLI::log('Page jobs: ' . ($data['counts'] === [] ? 'none' : implode(', ', array_map(static fn (string $key, int $count): string => $key . ' ' . $count, array_keys($data['counts']), $data['counts']))) . '. Oldest queued: ' . ($oldest ?? '-') . ' UTC. Last background step: ' . ($background['heartbeat'] ?? 'never') . ' UTC.');
+
+		if ($oldest !== null && $background['stale']) {
+			WP_CLI::warning('Page jobs are waiting and the background step has not run recently — check the system cron (wp osf-seo sync:run). Jobs expire after 24 h.');
+		}
 
 		if ($result !== null) {
 			WP_CLI::success(sprintf('Background step: %d job(s), %d URL(s) processed, %d interrupted job(s) recovered.', $result['jobs'], $result['items'], $result['recovered']));

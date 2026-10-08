@@ -175,6 +175,25 @@ final class PageJobRepository
 		return $this->db->update($this->table(), $data, ['id' => $job->id, 'status' => $from]) === 1;
 	}
 
+	/** Najstarsze zlecenie czekające w kolejce (UTC) — diagnostyka. */
+	public function oldestQueued(): ?string
+	{
+		return $this->db->fetchValue("SELECT MIN(created_at) FROM `{$this->table()}` WHERE status = %s", [PageJob::STATUS_QUEUED]);
+	}
+
+	/**
+	 * Zlecenia czekające w kolejce od dawna (utworzone przed chwilą) — wygasają.
+	 *
+	 * @return list<PageJob>
+	 */
+	public function queuedBefore(string $before): array
+	{
+		return array_map(PageJob::fromRow(...), $this->db->fetchAll(
+			"{$this->select()} WHERE j.status = %s AND j.created_at < %s ORDER BY j.id LIMIT 50",
+			[PageJob::STATUS_QUEUED, $before],
+		));
+	}
+
 	/**
 	 * Przebiegi przerwane (brak znaku życia od chwili) — do odzyskania.
 	 *

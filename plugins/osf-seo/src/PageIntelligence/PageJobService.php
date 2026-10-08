@@ -49,6 +49,9 @@ final class PageJobService
 
 	public const PURGE_TRANSIENT = 'osf_seo_page_jobs_purge';
 
+	/** Zlecenie nieodebrane przez krok w tle dłużej niż tyle sekund → `failed` (`job_expired`) — kolejka nie zostaje zablokowana. */
+	public const QUEUE_TTL = 86400;
+
 	/** Minimalny czas na kolejną pozycję w kroku (sekundy) poza limitem czasu pobrania. */
 	private const ITEM_MARGIN = 3;
 
@@ -194,6 +197,32 @@ final class PageJobService
 	}
 
 	/**
+	 * Anulowanie zlecenia czekającego w kolejce (bez żadnego żądania). Zlecenie w trakcie przebiegu — odmowa (`job_running`); pozycje już
+	 * pobrane zostają zapisane.
+	 *
+	 * @throws AccessDenied
+	 * @throws PageNotFound
+	 * @throws PageRefused
+	 */
+	public function cancel(ProjectContext $context, string $jobId): PageJob
+	{
+		$context->assertCan(Capabilities::MANAGE_PAGE_INTELLIGENCE);
+		$job = $this->jobs->find($context->projectId(), $jobId) ?? throw new PageNotFound();
+
+		if ($job->status !== PageJob::STATUS_QUEUED) {
+			throw new PageRefused($job->status === PageJob::STATUS_RUNNING ? 'job_running' : 'job_finished');
+		}
+
+		if (! $this->jobs->finish($job, PageJob::STATUS_CANCELLED, null, 'cancelled', PageJob::STATUS_QUEUED)) {
+			throw new PageRefused('job_running');
+		}
+
+		$this->logger->info('Page job {job} cancelled.', ['job' => $job->publicId]);
+
+		return $this->jobs->find($context->projectId(), $jobId) ?? $job;
+	}
+
+	/**
 	 * Krok w tle: odzyskanie przerwanych przebiegów i wykonanie zleceń w limicie czasu (co najmniej jedna pozycja na wywołanie, jeśli
 	 * jakieś zlecenie czeka). Wyłącznie proces systemowy (WP-Cron, WP-CLI).
 	 *
@@ -205,7 +234,7 @@ final class PageJobService
 			return ['recovered' => 0, 'jobs' => 0, 'items' => 0];
 		}
 
-		$recovered = $this->recoverStale();
+		$recovered = $this->recoverStale() + $this->expireQueued();
 
 		if (get_transient(self::PURGE_TRANSIENT) === false) {
 			set_transient(self::PURGE_TRANSIENT, '1', DAY_IN_SECONDS);
@@ -230,6 +259,21 @@ final class PageJobService
 		}
 
 		return ['recovered' => $recovered, 'jobs' => $jobs, 'items' => $items];
+	}
+
+	/** Zlecenia czekające dłużej niż QUEUE_TTL (np. po długiej przerwie crona) → `failed` (`job_expired`); pobrane pozycje zostają. */
+	public function expireQueued(): int
+	{
+		$expired = 0;
+
+		foreach ($this->jobs->queuedBefore(gmdate('Y-m-d H:i:s', (int) strtotime($this->jobs->now() . ' UTC') - self::QUEUE_TTL)) as $job) {
+			if ($this->jobs->finish($job, PageJob::STATUS_FAILED, null, 'job_expired', PageJob::STATUS_QUEUED)) {
+				$expired++;
+				$this->logger->warning('Page job {job} expired in the queue.', ['job' => $job->publicId]);
+			}
+		}
+
+		return $expired;
 	}
 
 	/** Przebiegi bez znaku życia (przerwany proces) wracają do kolejki; po MAX_JOB_ATTEMPTS — `failed`. */
@@ -266,6 +310,12 @@ final class PageJobService
 			return 0;
 		}
 
+		if ($context->project()->isArchived()) {
+			$this->jobs->finish($job, PageJob::STATUS_FAILED, null, 'project_unavailable');
+
+			return 0;
+		}
+
 		$items = $job->items;
 		$processed = 0;
 		$retryIn = null;
@@ -279,7 +329,7 @@ final class PageJobService
 				break;
 			}
 
-			$result = $this->fetchItem($context, (array) ($item['selection'] ?? []), $job->force);
+			$result = $this->fetchItem($context, $item, $job->force);
 			$processed++;
 			$attempts = (int) ($item['attempts'] ?? 0) + 1;
 			$retryable = ($result['outcome'] ?? null) === 'refused' && in_array($result['error'] ?? null, self::RETRYABLE, true);
@@ -318,15 +368,29 @@ final class PageJobService
 	}
 
 	/**
-	 * Jedna pozycja przez `PageIntelligenceService::fetch` (bez czekania na odstęp hosta — zamiast tego termin kolejnej próby).
+	 * Jedna pozycja przez `PageIntelligenceService::fetch` (bez czekania na odstęp hosta — zamiast tego termin kolejnej próby). Wybór
+	 * tematu albo pozycji SERP rozwiązywany teraz musi wskazywać dokładnie zatwierdzony adres (nowszy pomiar SERP albo zmieniona strona
+	 * tematu → odmowa `selection_changed`, bez pobierania innej witryny niż potwierdzona).
 	 *
-	 * @param array<string, mixed> $selection
+	 * @param array<string, mixed> $item
 	 * @return array<string, mixed>
 	 */
-	private function fetchItem(ProjectContext $context, array $selection, bool $force): array
+	private function fetchItem(ProjectContext $context, array $item, bool $force): array
 	{
+		$selection = (array) ($item['selection'] ?? []);
+
 		try {
-			return $this->pages->fetch($context, self::selection($selection), $force, PageIntelligenceService::TRIGGER_PANEL)[0] ?? ['outcome' => 'refused', 'error' => 'nothing_selected'];
+			$single = self::selection($selection);
+
+			if ($single->type !== PageSelection::URLS && is_string($item['url'] ?? null)) {
+				$current = $this->pages->plan($context, $single, $force)['items'][0]['url'] ?? null;
+
+				if ($current !== $item['url']) {
+					return ['outcome' => 'refused', 'error' => 'selection_changed'];
+				}
+			}
+
+			return $this->pages->fetch($context, $single, $force, PageIntelligenceService::TRIGGER_PANEL)[0] ?? ['outcome' => 'refused', 'error' => 'nothing_selected'];
 		} catch (PageRefused $refused) {
 			return ['outcome' => 'refused', 'error' => $refused->reason()];
 		} catch (StrategyNotFound) {

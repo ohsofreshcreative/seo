@@ -96,6 +96,34 @@ final class AiReportTest extends TestCase
 		self::assertSame('Analiza tematu', $report['type_label']);
 	}
 
+	/**
+	 * Faza E (obserwacja ze stagingu): raport dostawcy testowego pokazywał kody `competitor_pages_not_fetched`, `page_index_incomplete`,
+	 * `keywords_omitted`, `context_reduced`. Prezentacja zamienia znane kody i odwołania na polskie etykiety — zapisany wynik bez zmian.
+	 */
+	public function test_report_text_has_no_technical_codes_and_stored_result_is_unchanged(): void
+	{
+		$codes = ['competitor_pages_not_fetched', 'page_index_incomplete', 'keywords_omitted', 'context_reduced'];
+		$result = FakeProvider::recommendations(['analysis_type' => AnalysisType::CONTENT_GAP, 'refs' => self::refs(), 'action' => 'optimize', 'data_gaps' => $codes]);
+		$result['summary'] = 'Fraza kw:7 i strona cpage:01BBBBBBBBBBBBBBBBBBBBBBBB; nieznany_kod_x zostaje; kw:999 zostaje.';
+		$stored = $result;
+		$report = AiReport::build(AnalysisType::CONTENT_GAP, $result, self::context(), ['readiness' => ['limitations' => ['page_index_incomplete']]]);
+
+		self::assertSame($stored, $result, 'Wynik zapisany w historii nie jest zmieniany.');
+		self::assertSame('Fraza Fraza „pozycjonowanie stron” i strona Strona konkurenta konkurent.pl (#2 w SERP); nieznany_kod_x zostaje; kw:999 zostaje.', $report['summary']);
+
+		$texts = [AiReportText::summary($report, ['topic' => 't', 'date' => 'd']), AiReportText::recommendations($report, ['topic' => 't', 'date' => 'd']), (string) json_encode($report['missing'], JSON_UNESCAPED_UNICODE)];
+
+		foreach ($texts as $text) {
+			foreach ($codes as $code) {
+				self::assertStringNotContainsString($code, $text);
+			}
+		}
+
+		self::assertStringContainsString('nie pobrano stron konkurencji z SERP', implode(' ', array_column($report['missing'], 'item')));
+		self::assertSame('Dane GSC są średnią', AiReport::humanize('Dane GSC są średnią'), 'Tekst bez kodów — bez zmian.');
+		self::assertSame('Brak: projekt nie ma połączenia z Google Search Console — dane GSC są nieznane (nie zerowe)', AiReport::humanize('Brak: no_gsc_connection'));
+	}
+
 	public function test_labels_never_expose_codes(): void
 	{
 		foreach (array_keys(Readiness::MEANINGS) as $code) {

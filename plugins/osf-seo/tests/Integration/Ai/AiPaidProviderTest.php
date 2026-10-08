@@ -144,7 +144,7 @@ final class AiPaidProviderTest extends AiTestCase
 			'server' => [['status' => 500, 'json' => ['error' => ['message' => 'x', 'type' => 'server_error', 'code' => null]]], AiRun::STATUS_UNCERTAIN, AiRun::COST_RESERVATION, AiProviderException::SERVER],
 			'rate limit' => [['status' => 429, 'json' => ['error' => ['message' => 'x', 'type' => 'requests', 'code' => 'rate_limit_exceeded']]], AiRun::STATUS_FAILED, AiRun::COST_NOT_CHARGED, AiProviderException::RATE_LIMITED],
 			'auth' => [['status' => 401, 'json' => ['error' => ['message' => 'x', 'type' => 'invalid_request_error', 'code' => 'invalid_api_key']]], AiRun::STATUS_FAILED, AiRun::COST_NOT_CHARGED, AiProviderException::AUTH],
-			'incomplete' => [['status' => 200, 'json' => ['incomplete_details' => ['reason' => 'max_output_tokens']] + AiFakes::openAiResponse('{"summary": "', 6000, 3000, 0, 'incomplete')], AiRun::STATUS_FAILED, AiRun::COST_USAGE, AiProviderException::INCOMPLETE],
+			'incomplete' => [['status' => 200, 'json' => ['incomplete_details' => ['reason' => 'max_output_tokens']] + AiFakes::openAiResponse('{"summary": "', 6000, 3000, 0, 'incomplete')], AiRun::STATUS_FAILED, AiRun::COST_USAGE, 'incomplete_max_output_tokens'],
 			'invalid output' => [['status' => 200, 'json' => AiFakes::openAiResponse('To nie jest JSON', 6000, 50)], AiRun::STATUS_INVALID, AiRun::COST_USAGE, 'contract_invalid'],
 		];
 		$expectedRequests = 0;
