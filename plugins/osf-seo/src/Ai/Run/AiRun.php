@@ -8,12 +8,15 @@ namespace OsfSeo\Ai\Run;
  * Uruchomienie analizy AI (`ai_runs`) — metadane bez treści: zadanie, dostawca, model, wersje, odciski, status, tokeny, koszt i decyzja
  * użytkownika. Wejście, odpowiedź modelu, zwalidowany wynik i raport walidacji są osobno (`ai_run_payloads`).
  *
- * Statusy: `reserved` (koszt zarezerwowany, żądanie jeszcze niewysłane) → `running` (żądanie w toku) → `succeeded` (odpowiedź zgodna
+ * Statusy: `queued` (zlecenie z panelu czeka na krok w tle; koszt płatnego dostawcy zarezerwowany przy zakolejkowaniu — faza D),
+ * `reserved` (koszt zarezerwowany, żądanie jeszcze niewysłane) → `running` (żądanie w toku) → `succeeded` (odpowiedź zgodna
  * z kontraktem) | `invalid` (odpowiedź niezgodna z kontraktem — wynik odrzucony) | `failed` (błąd; dostawca na pewno niczego nie wykonał
  * albo rozliczono zgłoszone zużycie) | `uncertain` (nie wiadomo, czy dostawca wykonał i rozliczył żądanie — liczy się rezerwacja).
  */
 final class AiRun
 {
+	public const STATUS_QUEUED = 'queued';
+
 	public const STATUS_RESERVED = 'reserved';
 
 	public const STATUS_RUNNING = 'running';
@@ -26,8 +29,8 @@ final class AiRun
 
 	public const STATUS_UNCERTAIN = 'uncertain';
 
-	/** Statusy w toku (rezerwacja albo żądanie bez wyniku). */
-	public const ACTIVE = [self::STATUS_RESERVED, self::STATUS_RUNNING];
+	/** Statusy w toku (kolejka, rezerwacja albo żądanie bez wyniku). */
+	public const ACTIVE = [self::STATUS_QUEUED, self::STATUS_RESERVED, self::STATUS_RUNNING];
 
 	/** Koszt rozliczony ze zgłoszonego zużycia tokenów. */
 	public const COST_USAGE = 'usage';
@@ -93,6 +96,8 @@ final class AiRun
 		public readonly ?string $planFingerprint = null,
 		public readonly ?string $readiness = null,
 		public readonly ?array $sources = null,
+		public readonly ?string $projectPublicId = null,
+		public readonly ?string $topicLabel = null,
 	) {
 	}
 
@@ -142,6 +147,8 @@ final class AiRun
 			isset($row['plan_fingerprint']) ? bin2hex($row['plan_fingerprint']) : null,
 			$row['readiness'] ?? null,
 			self::sources($row['sources'] ?? null),
+			$row['project_public_id'] ?? null,
+			$row['topic_label'] ?? null,
 		);
 	}
 

@@ -255,7 +255,7 @@ final class TopicContextAssembler
 
 		$body['limits']['within_budget'] = strlen(AiContext::encode($body)) <= self::MAX_BYTES;
 
-		return new AiContext($body, $source['topic_id'], (string) ($source['context']['topic']['id'] ?? ''));
+		return new AiContext($body, $source['topic_id'], (string) ($source['context']['topic']['id'] ?? ''), is_string($source['strategy_hash'] ?? null) ? $source['strategy_hash'] : null);
 	}
 
 	/**

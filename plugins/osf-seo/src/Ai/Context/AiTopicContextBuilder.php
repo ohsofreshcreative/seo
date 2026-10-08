@@ -60,15 +60,48 @@ final class AiTopicContextBuilder
 	public function analysis(ProjectContext $context, string $topic, string $type, bool $explicit = false): array
 	{
 		$source = $this->source($context, $topic);
+
+		return $this->analysisFrom($context, $source, $type, $explicit, $this->siteTopics($context, (int) $source['topic_id']));
+	}
+
+	/**
+	 * Kontekst analizy z już odczytanego źródła (panel: jedno źródło dla gotowości trzech typów i aktualności ostatnich analiz).
+	 *
+	 * @param array<string, mixed> $source `source()`
+	 * @param list<array{label: ?string, action: ?string, target_url: ?string}> $siteTopics `siteTopics()`
+	 * @return array{context: AiContext, readiness: Readiness}
+	 */
+	public function analysisFrom(ProjectContext $context, array $source, string $type, bool $explicit, array $siteTopics): array
+	{
 		$readiness = $this->readiness->evaluate($source, $type, $explicit);
 		$source['analysis'] = [
 			'type' => $type,
 			'language' => AnalysisPrompts::language($context->project()->language),
 			'readiness' => $readiness->toArray(),
 		];
-		$source['site'] = ['topics' => $this->siteTopics($context, (int) $source['topic_id'])];
+		$source['site'] = ['topics' => $siteTopics];
 
 		return ['context' => $this->assembler->assemble($source), 'readiness' => $readiness];
+	}
+
+	/**
+	 * Gotowość z już odczytanego źródła (czysta funkcja).
+	 *
+	 * @param array<string, mixed> $source
+	 */
+	public function readinessFrom(array $source, string $type, bool $explicit = false): Readiness
+	{
+		return $this->readiness->evaluate($source, $type, $explicit);
+	}
+
+	/**
+	 * Kontekst analizy tematu (wersja 2) z już odczytanego źródła.
+	 *
+	 * @param array<string, mixed> $source
+	 */
+	public function buildFrom(array $source): AiContext
+	{
+		return $this->assembler->assemble($source);
 	}
 
 	/**
@@ -108,6 +141,7 @@ final class AiTopicContextBuilder
 			'pages' => $this->pageEvidence->forTopic($context, $view['topic'], $members),
 			'now' => $this->clock->now(),
 			'topic_id' => $view['topic']->id,
+			'strategy_hash' => $view['topic']->evidenceHash,
 		];
 	}
 
@@ -116,7 +150,7 @@ final class AiTopicContextBuilder
 	 *
 	 * @return list<array{label: ?string, action: ?string, target_url: ?string}>
 	 */
-	private function siteTopics(ProjectContext $context, int $topicId): array
+	public function siteTopics(ProjectContext $context, int $topicId): array
 	{
 		$rows = $this->strategy->topics($context, new TopicFilters(status: 'all', includeMonitor: true, perPage: self::SITE_TOPICS))['rows'];
 		$withUrl = [];

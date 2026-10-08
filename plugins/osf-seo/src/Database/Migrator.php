@@ -22,6 +22,7 @@ use OsfSeo\Database\Migrations\M0014StrategyRefreshQueue;
 use OsfSeo\Database\Migrations\M0015AiFoundation;
 use OsfSeo\Database\Migrations\M0016PageIntelligence;
 use OsfSeo\Database\Migrations\M0017AiRecommendations;
+use OsfSeo\Database\Migrations\M0018PageJobs;
 use OsfSeo\Support\Logger;
 
 /**
@@ -75,6 +76,7 @@ final class Migrator
 			new M0015AiFoundation(),
 			new M0016PageIntelligence(),
 			new M0017AiRecommendations(),
+			new M0018PageJobs(),
 		];
 	}
 

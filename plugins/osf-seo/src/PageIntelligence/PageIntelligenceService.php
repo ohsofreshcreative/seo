@@ -165,6 +165,112 @@ final class PageIntelligenceService implements PageEvidenceSource
 	}
 
 	/**
+	 * Lista stron panelu (faza D, bez HTTP): filtry i stronicowanie w SQL, stan pamięci liczony z daty ostatniego potwierdzenia treści.
+	 * Bez uprawnienia do pobierania (klient) — bez kodów błędów prób i bez tematów odrzuconych.
+	 *
+	 * @param array{kind?: ?string, status?: ?string, quality?: ?string, cache?: ?string, q?: ?string} $filters
+	 * @return array{rows: list<array<string, mixed>>, total: int, page: int, per_page: int, pages: int, counts: array<string, int>, ttl_hours: int}
+	 */
+	public function list(ProjectContext $context, array $filters, int $page = 1, int $perPage = 25): array
+	{
+		$manage = $context->can(Capabilities::MANAGE_PAGE_INTELLIGENCE);
+		$page = max(1, $page);
+		$perPage = max(5, min(100, $perPage));
+		$fresh = $this->ago($this->config->ttlHours() * 3600);
+		$result = $this->pages->listTargets($context->projectId(), $filters, $fresh, ! $context->can(Capabilities::MANAGE_STRATEGY), $perPage, ($page - 1) * $perPage);
+		$rows = array_map(static function (array $row) use ($fresh, $manage): array {
+			$snapshot = $row['snapshot_public_id'] === null ? null : [
+				'id' => (string) $row['snapshot_public_id'],
+				'fetched_at' => $row['snapshot_fetched_at'],
+				'last_seen_at' => $row['snapshot_last_seen_at'],
+				'http_status' => (int) $row['snapshot_http_status'],
+				'title' => $row['snapshot_title'],
+				'word_count' => (int) $row['snapshot_word_count'],
+				'content_quality' => $row['snapshot_quality'],
+				'indexability' => $row['snapshot_indexability'],
+			];
+
+			return [
+				'id' => (string) $row['public_id'],
+				'url' => (string) $row['url'],
+				'host' => (string) $row['host'],
+				'kind' => (string) $row['kind'],
+				'source' => (string) $row['source'],
+				'status' => (string) $row['status'],
+				'last_attempt_at' => $row['last_attempt_at'],
+				'last_error' => $manage ? $row['last_error'] : null,
+				'cache' => match (true) {
+					$snapshot !== null => (string) $row['snapshot_last_seen_at'] >= $fresh ? 'fresh' : 'stale',
+					$row['last_error'] !== null => 'failed',
+					default => 'missing',
+				},
+				'snapshot' => $snapshot,
+				'snapshots' => (int) $row['snapshots_count'],
+				'topic' => $row['topic_public_id'] === null ? null : ['id' => (string) $row['topic_public_id'], 'label' => $row['topic_label']],
+			];
+		}, $result['rows']);
+
+		return [
+			'rows' => $rows,
+			'total' => $result['total'],
+			'page' => $page,
+			'per_page' => $perPage,
+			'pages' => max(1, (int) ceil($result['total'] / $perPage)),
+			'counts' => $this->pages->kindCounts($context->projectId()),
+			'ttl_hours' => $this->config->ttlHours(),
+		];
+	}
+
+	/**
+	 * Szczegóły strony w panelu (bez HTTP): wybrany snapshot (domyślnie ostatni; inny — wyłącznie snapshot tej strony), historia snapshotów,
+	 * powiązania SERP i temat Strategii. Próby pobrania i kody błędów tylko z uprawnieniem do pobierania (bez diagnostyki sieciowej).
+	 *
+	 * @return array<string, mixed>
+	 *
+	 * @throws PageNotFound
+	 */
+	public function pageView(ProjectContext $context, string $pageId, ?string $snapshotId = null): array
+	{
+		$target = $this->pages->target($context->projectId(), $pageId) ?? throw new PageNotFound();
+		$latest = $this->pages->latestSnapshot($target);
+		$selected = $latest;
+
+		if ($snapshotId !== null && $snapshotId !== '') {
+			$selected = $this->pages->snapshot($context->projectId(), $snapshotId);
+
+			if ($selected === null || $selected->targetId !== $target->id) {
+				throw new PageNotFound();
+			}
+		}
+
+		$manage = $context->can(Capabilities::MANAGE_PAGE_INTELLIGENCE);
+		$topic = $this->pages->topicOf($target);
+
+		if ($topic !== null && $topic['status'] === 'dismissed' && ! $context->can(Capabilities::MANAGE_STRATEGY)) {
+			$topic = null;
+		}
+
+		$page = $target->toArray();
+
+		if (! $manage) {
+			$page['last_error'] = null;
+		}
+
+		return [
+			'page' => $page,
+			'cache' => $this->cacheState($target, $latest),
+			'latest' => $latest?->publicId,
+			'snapshot' => $selected?->toArray(true),
+			'snapshots' => array_map(static fn (PageSnapshotRecord $record): array => $record->toArray(), $this->pages->snapshots($target)),
+			'fetches' => $manage ? array_map(static fn (array $fetch): array => array_diff_key($fetch, ['diagnostics' => true]), $this->pages->fetches($target, 20)) : [],
+			'serp' => $this->pages->serpLinks($context->projectId(), [$target->id])[$target->id] ?? [],
+			'topic' => $topic,
+			'can_fetch' => $manage,
+			'ttl_hours' => $this->config->ttlHours(),
+		];
+	}
+
+	/**
 	 * Strona z ostatnim snapshotem (pełna treść), listą snapshotów, próbami i powiązaniami SERP — wyłącznie w obrębie projektu.
 	 *
 	 * @return array<string, mixed>

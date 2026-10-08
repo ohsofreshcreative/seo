@@ -123,6 +123,14 @@ final class AiCommand
 			'shortdesc' => 'AI budget (separate from DataForSEO): limits, spent today / this month (UTC), per project with --project.',
 			'synopsis' => [['type' => 'assoc', 'name' => 'project', 'description' => 'Project public ID (ULID).', 'optional' => true], $format],
 		]);
+		WP_CLI::add_command('osf-seo ai:queue', [$command, 'queue'], [
+			'shortdesc' => 'Panel AI queue: counts of queued and running analyses; --run executes the background step once (approved plans only, re-verified, one call each, no retry).',
+			'synopsis' => [
+				['type' => 'flag', 'name' => 'run', 'description' => 'Run the background step once now.', 'optional' => true],
+				['type' => 'assoc', 'name' => 'time-limit', 'description' => 'Time limit of --run in seconds (default 60).', 'optional' => true],
+				$format,
+			],
+		]);
 		WP_CLI::add_command('osf-seo ai:purge', [$command, 'purge'], [
 			'shortdesc' => 'Maintenance without AI calls: recover abandoned runs and delete runs older than the retention period (OSF_SEO_AI_RETENTION_DAYS).',
 			'synopsis' => [$format],
@@ -624,6 +632,30 @@ final class AiCommand
 		}
 
 		WP_CLI::log(sprintf('Max cost per analysis: %.6f USD.', $budget['limits']['max_run_cost']));
+	}
+
+	/**
+	 * @param list<string> $args
+	 * @param array<string, string> $assocArgs
+	 */
+	public function queue(array $args, array $assocArgs): void
+	{
+		$this->requireOperator();
+		$result = isset($assocArgs['run']) ? $this->service()->runQueued((float) max(1, (int) ($assocArgs['time-limit'] ?? 60))) : null;
+		$counts = $this->service()->status()['runs'];
+		$data = ['queued' => $counts[AiRun::STATUS_QUEUED] ?? 0, 'running' => ($counts[AiRun::STATUS_RUNNING] ?? 0) + ($counts[AiRun::STATUS_RESERVED] ?? 0), 'run' => $result];
+
+		if (($assocArgs['format'] ?? 'table') === 'json') {
+			self::json($data);
+
+			return;
+		}
+
+		WP_CLI::log(sprintf('AI queue: %d queued, %d in progress.', $data['queued'], $data['running']));
+
+		if ($result !== null) {
+			WP_CLI::success(sprintf('Background step: %d analysis(es) executed, %d not executed (plan changed, readiness or blockers — reservation released), %d abandoned run(s) recovered.', $result['processed'], $result['cancelled'], $result['recovered']));
+		}
 	}
 
 	/**

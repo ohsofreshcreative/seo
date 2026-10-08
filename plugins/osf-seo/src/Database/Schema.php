@@ -1358,6 +1358,35 @@ final class Schema
 				'unique' => [],
 				'indexes' => ['project_keyword' => ['project_id', 'market_keyword_id']],
 			],
+			'page_jobs' => [
+				'columns' => [
+					'id' => 'bigint unsigned',
+					'public_id' => 'char(26)',
+					'project_id' => 'int unsigned',
+					'topic_id' => 'int unsigned',
+					'status' => 'varchar(16)',
+					'force_fetch' => 'tinyint unsigned',
+					'items' => 'text',
+					'items_total' => 'smallint unsigned',
+					'items_done' => 'smallint unsigned',
+					'request_key' => 'binary(32)',
+					'requested_by' => 'bigint unsigned',
+					'created_at' => 'datetime',
+					'run_after' => 'datetime',
+					'started_at' => 'datetime',
+					'heartbeat_at' => 'datetime',
+					'finished_at' => 'datetime',
+					'attempts' => 'smallint unsigned',
+					'error_code' => 'varchar(64)',
+				],
+				'primary' => ['id'],
+				'unique' => ['public_id' => ['public_id']],
+				'indexes' => [
+					'status_run' => ['status', 'run_after'],
+					'project_created' => ['project_id', 'created_at'],
+					'project_key' => ['project_id', 'request_key'],
+				],
+			],
 		];
 	}
 

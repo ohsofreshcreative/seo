@@ -10,6 +10,8 @@ use OsfSeo\Strategy\Topics\TopicContextBuilder;
  * Kontekst AI tematu (wynik `TopicContextAssembler`): treść bez odcisku, odcisk (SHA-256 kanonicznego JSON-u treści), odcisk dowodów
  * (bez stanu pracy tematu), odwołania
  * do dowodów, braki danych i powiązanie z tematem. Ten sam stan danych → ta sama treść i ten sam odcisk (bez czasu budowania).
+ * `strategyHash` — odcisk dowodów tematu zapisany przy przeliczeniu Strategii (`strategy_topics.evidence_hash`, poza treścią i odciskami):
+ * tani wskaźnik zmian Strategii w historii analiz (faza D) bez odbudowy kontekstu.
  */
 final class AiContext
 {
@@ -25,6 +27,7 @@ final class AiContext
 		public readonly array $body,
 		public readonly int $topicId,
 		public readonly string $topicPublicId,
+		public readonly ?string $strategyHash = null,
 	) {
 	}
 

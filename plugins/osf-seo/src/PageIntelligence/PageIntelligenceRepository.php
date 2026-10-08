@@ -112,6 +112,108 @@ final class PageIntelligenceRepository
 	}
 
 	/**
+	 * Lista stron panelu (faza D): filtry i stronicowanie w SQL, ostatni poprawny snapshot (kolumny podsumowania — bez treści), temat
+	 * Strategii (bez tematów odrzuconych, gdy `$hideDismissed`) i liczba snapshotów. Jedno zapytanie na stronę listy.
+	 *
+	 * @param array{kind?: ?string, status?: ?string, quality?: ?string, cache?: ?string, q?: ?string} $filters
+	 * @return array{rows: list<array<string, mixed>>, total: int}
+	 */
+	public function listTargets(int $projectId, array $filters, string $freshSince, bool $hideDismissed, int $limit, int $offset): array
+	{
+		$where = ['t.project_id = %d'];
+		$params = [$projectId];
+
+		if (in_array($filters['kind'] ?? null, [PageTarget::KIND_PROJECT, PageTarget::KIND_COMPETITOR], true)) {
+			$where[] = 't.kind = %s';
+			$params[] = $filters['kind'];
+		}
+
+		if (in_array($filters['status'] ?? null, [PageTarget::STATUS_NEW, PageTarget::STATUS_OK, PageTarget::STATUS_FAILED, PageTarget::STATUS_BLOCKED], true)) {
+			$where[] = 't.status = %s';
+			$params[] = $filters['status'];
+		}
+
+		if (in_array($filters['quality'] ?? null, ['good', 'partial', 'incomplete', 'empty'], true)) {
+			$where[] = 's.content_quality = %s';
+			$params[] = $filters['quality'];
+		}
+
+		$cache = $filters['cache'] ?? null;
+
+		if ($cache === 'fresh' || $cache === 'stale') {
+			$where[] = 's.id IS NOT NULL AND s.last_seen_at ' . ($cache === 'fresh' ? '>=' : '<') . ' %s';
+			$params[] = $freshSince;
+		} elseif ($cache === 'missing') {
+			$where[] = 's.id IS NULL';
+		}
+
+		$query = trim((string) ($filters['q'] ?? ''));
+
+		if ($query !== '') {
+			$where[] = '(t.url LIKE %s OR s.title LIKE %s)';
+			$like = '%' . $this->db->escapeLike(mb_substr($query, 0, 200, 'UTF-8')) . '%';
+			array_push($params, $like, $like);
+		}
+
+		$topics = $this->db->table('strategy_topics');
+		$topicJoin = "LEFT JOIN `{$topics}` st ON st.id = t.topic_id AND st.project_id = t.project_id" . ($hideDismissed ? " AND st.status <> 'dismissed'" : '');
+		$params[] = max(1, min(200, $limit));
+		$params[] = max(0, $offset);
+		$rows = $this->db->fetchAll(
+			"SELECT t.*, s.public_id AS snapshot_public_id, s.fetched_at AS snapshot_fetched_at, s.last_seen_at AS snapshot_last_seen_at,
+				s.http_status AS snapshot_http_status, s.title AS snapshot_title, s.word_count AS snapshot_word_count,
+				s.content_quality AS snapshot_quality, s.indexability AS snapshot_indexability,
+				st.public_id AS topic_public_id, st.label AS topic_label,
+				(SELECT COUNT(*) FROM `{$this->table('page_snapshots')}` c WHERE c.project_id = t.project_id AND c.target_id = t.id) AS snapshots_count,
+				COUNT(*) OVER () AS total_rows
+			FROM `{$this->table('page_targets')}` t
+			LEFT JOIN `{$this->table('page_snapshots')}` s ON s.id = t.last_snapshot_id AND s.project_id = t.project_id
+			{$topicJoin}
+			WHERE " . implode(' AND ', $where) . ' ORDER BY COALESCE(t.last_attempt_at, t.created_at) DESC, t.id DESC LIMIT %d OFFSET %d',
+			$params,
+		);
+		$total = $rows === [] ? ($offset > 0 ? $this->countTargets($projectId) : 0) : (int) $rows[0]['total_rows'];
+
+		return ['rows' => $rows, 'total' => $total];
+	}
+
+	/** Liczba stron projektu według rodzaju (zakładki listy). */
+	public function kindCounts(int $projectId): array
+	{
+		$counts = [PageTarget::KIND_PROJECT => 0, PageTarget::KIND_COMPETITOR => 0];
+
+		foreach ($this->db->fetchAll("SELECT kind, COUNT(*) AS total FROM `{$this->table('page_targets')}` WHERE project_id = %d GROUP BY kind", [$projectId]) as $row) {
+			$counts[(string) $row['kind']] = (int) $row['total'];
+		}
+
+		return $counts;
+	}
+
+	private function countTargets(int $projectId): int
+	{
+		return (int) $this->db->fetchValue("SELECT COUNT(*) FROM `{$this->table('page_targets')}` WHERE project_id = %d", [$projectId]);
+	}
+
+	/**
+	 * Temat Strategii strony (odnośnik w szczegółach) — w obrębie projektu.
+	 *
+	 * @return array{id: string, label: ?string, status: string}|null
+	 */
+	public function topicOf(PageTarget $target): ?array
+	{
+		if ($target->topicId === null) {
+			return null;
+		}
+
+		$row = $this->db->fetchRow(
+			"SELECT public_id, label, status FROM `{$this->db->table('strategy_topics')}` WHERE project_id = %d AND id = %d",
+			[$target->projectId, $target->topicId],
+		);
+
+		return $row === null ? null : ['id' => (string) $row['public_id'], 'label' => $row['label'], 'status' => (string) $row['status']];
+	}
+
+	/**
 	 * Wynik próby na stronie (bez dotykania snapshotów; poprawny snapshot tylko przy sukcesie).
 	 */
 	public function recordAttempt(PageTarget $target, string $status, ?string $error, ?int $httpStatus, ?string $finalUrl, ?int $snapshotId): void

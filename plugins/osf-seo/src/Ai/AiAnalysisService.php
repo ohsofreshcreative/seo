@@ -30,6 +30,7 @@ use OsfSeo\Auth\AccessDenied;
 use OsfSeo\Auth\Capabilities;
 use OsfSeo\Auth\ProjectContext;
 use OsfSeo\Auth\ProjectGuard;
+use OsfSeo\Auth\ProjectNotFound;
 use OsfSeo\Strategy\StrategyNotFound;
 use OsfSeo\Support\Clock;
 use OsfSeo\Support\Logger;
@@ -40,8 +41,9 @@ use Throwable;
  * kontekst (odczyt Strategii w obrębie projektu) → plan bez żadnego żądania → rezerwacja kosztu pod blokadą budżetu → jedno wywołanie
  * dostawcy (bez ponowień) → walidacja odpowiedzi po stronie PHP → rozliczenie i zapis historii.
  *
- * Wywoływana wyłącznie jawnie (CLI; w przyszłości akcja w panelu) z uprawnieniem `osf_seo_manage_ai` — nigdy przy renderowaniu panelu,
- * przeliczeniu Strategii, synchronizacji GSC ani w kroku w tle (krok w tle tylko porządkuje historię: `maintenance`, bez wywołań).
+ * Wywoływana wyłącznie jawnie z uprawnieniem `osf_seo_manage_ai`: CLI albo zlecenie zatwierdzone w panelu (faza D: `queue` → krok w tle
+ * `runQueued`, sekcja 25.4) — nigdy przy renderowaniu panelu, przeliczeniu Strategii ani synchronizacji GSC; tło nigdy samo nie zleca analiz
+ * (`maintenance` tylko porządkuje historię, bez wywołań).
  * Płatny dostawca wymaga: włączonego wyłącznika, zgodnego dostawcy w konfiguracji, modelu, klucza, cen, limitów > 0 i potwierdzenia.
  * Historia nigdy nie zmienia danych Strategii ani statusu pracy tematu.
  *
@@ -56,6 +58,15 @@ final class AiAnalysisService
 
 	public const MAINTENANCE_TRANSIENT = 'osf_seo_ai_maintenance';
 
+	/** Zlecenie z panelu nieodebrane przez krok w tle dłużej niż tyle sekund → `failed` (`queue_expired`), rezerwacja zwolniona. */
+	public const QUEUE_TTL = 21600;
+
+	/** Najwięcej zleceń z kolejki w jednym kroku w tle (każde to jedno wywołanie dostawcy). */
+	public const QUEUE_PER_TICK = 2;
+
+	/** Blokady budżetu liczone już z rezerwacją zlecenia w kolejce — w kroku w tle nie są ponownie liczone. */
+	private const RESERVED_BUDGET_BLOCKERS = [AiBudget::DAILY, AiBudget::MONTHLY, AiBudget::PROJECT];
+
 	public function __construct(
 		private readonly AiTopicContextBuilder $contexts,
 		private readonly AiProviderRegistry $providers,
@@ -67,6 +78,7 @@ final class AiAnalysisService
 		private readonly Clock $clock,
 		private readonly Logger $logger,
 		private readonly RecommendationValidator $recommendations = new RecommendationValidator(),
+		private readonly ?ProjectGuard $guard = null,
 	) {
 	}
 
@@ -204,6 +216,122 @@ final class AiAnalysisService
 		bool $repeat = false,
 		string $trigger = AiRun::TRIGGER_CLI,
 	): AiRun {
+		[$plan, $spec] = $this->prepare($context, $topic, $type, $provider, $focus, $explicit, $approvedPlan, $confirmed);
+		$aiContext = $plan->context;
+
+		if (! $this->runs->acquireGenerationLock($context->projectId(), $aiContext->topicId, $plan->task)) {
+			throw new AiRefused('run_in_progress');
+		}
+
+		try {
+			$this->assertNotDuplicate($context, $plan, $repeat);
+
+			return $this->execute($context, $plan, $aiContext, $spec, $trigger);
+		} finally {
+			$this->runs->releaseGenerationLock($context->projectId(), $aiContext->topicId, $plan->task);
+		}
+	}
+
+	/**
+	 * Zakolejkowanie analizy rekomendacji z panelu (faza D, D111): te same kontrole co `generate` w chwili zatwierdzenia — gotowość,
+	 * blokady planu, **zawsze** zatwierdzony odcisk planu (także dla dostawcy testowego), potwierdzenie płatnego wywołania, blokada zlecenia,
+	 * brak uruchomienia w toku i duplikatu planu — oraz rezerwacja kosztu maksymalnego przy zakolejkowaniu (pod `GET_LOCK ai_budget`).
+	 * Bez żadnego wywołania dostawcy: wykonuje krok w tle (`runQueued`) po ponownej weryfikacji planu.
+	 *
+	 * @throws AccessDenied
+	 * @throws StrategyNotFound
+	 * @throws AiRefused
+	 */
+	public function queue(
+		ProjectContext $context,
+		string $topic,
+		string $type,
+		string $approvedPlan,
+		string $provider = FakeProvider::ID,
+		?string $focus = null,
+		bool $explicit = false,
+		bool $confirmed = false,
+		bool $repeat = false,
+		string $trigger = AiRun::TRIGGER_PANEL,
+	): AiRun {
+		[$plan, $spec] = $this->prepare($context, $topic, $type, $provider, $focus, $explicit, $approvedPlan, $confirmed);
+		$aiContext = $plan->context;
+
+		if (! $this->runs->acquireGenerationLock($context->projectId(), $aiContext->topicId, $plan->task)) {
+			throw new AiRefused('run_in_progress');
+		}
+
+		try {
+			$this->assertNotDuplicate($context, $plan, $repeat);
+			$run = $this->reserve($context, $plan, $aiContext, $spec, $trigger, AiRun::STATUS_QUEUED);
+		} finally {
+			$this->runs->releaseGenerationLock($context->projectId(), $aiContext->topicId, $plan->task);
+		}
+
+		$this->logger->info('AI run {run} queued: {task}, provider {provider}, reserved {cost} USD.', ['run' => $run->publicId, 'task' => $run->task, 'provider' => $run->provider, 'cost' => $run->reservedCost]);
+
+		return $run;
+	}
+
+	/**
+	 * Krok w tle (faza D): zlecenia z kolejki — przejęcie pod blokadą zlecenia, ponowne przeliczenie planu z zapisanych danych (inny odcisk
+	 * → `plan_changed`, gotowość niewystarczająca → odmowa; rezerwacja zwolniona), jedno wywołanie dostawcy bez ponowień, walidacja,
+	 * rozliczenie. Wyłącznie proces systemowy (WP-Cron, WP-CLI); co najmniej jedno zlecenie na wywołanie, jeśli jakieś czeka.
+	 *
+	 * @return array{processed: int, cancelled: int, recovered: int}
+	 */
+	public function runQueued(float $budget, int $max = self::QUEUE_PER_TICK): array
+	{
+		if (! ProjectGuard::isSystemProcess() || $this->guard === null) {
+			return ['processed' => 0, 'cancelled' => 0, 'recovered' => 0];
+		}
+
+		$recovered = $this->recoverStale();
+		$deadline = microtime(true) + max(0.0, $budget);
+		$processed = 0;
+		$cancelled = 0;
+
+		foreach ($this->runs->queued(10) as $run) {
+			if ($processed + $cancelled > 0 && ($processed >= $max || microtime(true) > $deadline)) {
+				break;
+			}
+
+			$result = $this->processQueued($run);
+
+			if ($result === null) {
+				continue;
+			}
+
+			$result->status === AiRun::STATUS_FAILED && $result->startedAt === null ? $cancelled++ : $processed++;
+		}
+
+		return ['processed' => $processed, 'cancelled' => $cancelled, 'recovered' => $recovered];
+	}
+
+	/**
+	 * Anulowanie zlecenia w kolejce (jeszcze niewysłanego) — rezerwacja zwolniona, bez kosztu.
+	 *
+	 * @throws AccessDenied
+	 * @throws AiRunNotFound
+	 * @throws AiRefused
+	 */
+	public function cancel(ProjectContext $context, string $runId): AiRun
+	{
+		$context->assertCan(Capabilities::MANAGE_AI);
+		$run = $this->runs->find($context->projectId(), $runId) ?? throw new AiRunNotFound();
+
+		return $this->abandon($run, 'cancelled') ?? throw new AiRefused('run_not_queued');
+	}
+
+	/**
+	 * Wspólne kontrole generowania (CLI) i zakolejkowania (panel): plan przeliczony teraz, gotowość, blokady, odcisk, potwierdzenie.
+	 *
+	 * @return array{0: AiPlan, 1: array<string, mixed>}
+	 *
+	 * @throws AiRefused
+	 */
+	private function prepare(ProjectContext $context, string $topic, string $type, string $provider, ?string $focus, bool $explicit, ?string $approvedPlan, bool $confirmed): array
+	{
 		$plan = $this->planAnalysis($context, $topic, $type, $provider, $focus, $explicit);
 		$readiness = $plan->readiness ?? throw new AiRefused('readiness_unknown');
 
@@ -223,31 +351,104 @@ final class AiAnalysisService
 			throw new AiRefused($confirmed ? 'plan_approval_required' : 'confirmation_required');
 		}
 
-		$aiContext = $plan->context;
-		$spec = $this->analysisSpec($plan->task, $aiContext, $plan->focus);
+		$spec = $this->analysisSpec($plan->task, $plan->context, $plan->focus);
 		$spec['data'] = [
 			'plan_fingerprint' => $plan->fingerprint(),
 			'readiness' => $readiness->state,
-			'sources' => (string) json_encode(self::sources($aiContext, $readiness, $explicit), AiContext::JSON_FLAGS),
+			'sources' => (string) json_encode(self::sources($plan->context, $readiness, $explicit), AiContext::JSON_FLAGS),
 		];
 
-		if (! $this->runs->acquireGenerationLock($context->projectId(), $aiContext->topicId, $plan->task)) {
+		return [$plan, $spec];
+	}
+
+	/** Uruchomienie w toku (także w kolejce) albo ten sam plan już wygenerowany (bez `$repeat`) → odmowa. Pod blokadą zlecenia. */
+	private function assertNotDuplicate(ProjectContext $context, AiPlan $plan, bool $repeat): void
+	{
+		if ($this->runs->activeFor($context->projectId(), $plan->context->topicId, $plan->task) !== null) {
 			throw new AiRefused('run_in_progress');
 		}
 
-		try {
-			if ($this->runs->activeFor($context->projectId(), $aiContext->topicId, $plan->task) !== null) {
-				throw new AiRefused('run_in_progress');
-			}
-
-			if (! $repeat && $this->runs->succeededWithPlan($context->projectId(), $plan->fingerprint()) !== null) {
-				throw new AiRefused('already_generated');
-			}
-
-			return $this->execute($context, $plan, $aiContext, $spec, $trigger);
-		} finally {
-			$this->runs->releaseGenerationLock($context->projectId(), $aiContext->topicId, $plan->task);
+		if (! $repeat && $this->runs->succeededWithPlan($context->projectId(), $plan->fingerprint()) !== null) {
+			throw new AiRefused('already_generated');
 		}
+	}
+
+	/**
+	 * Przebieg zlecenia z kolejki (null — przejął je inny proces albo nie jest już w kolejce).
+	 */
+	private function processQueued(AiRun $queued): ?AiRun
+	{
+		if ($queued->topicId === null || ! $this->runs->acquireGenerationLock($queued->projectId, $queued->topicId, $queued->task)) {
+			return $queued->topicId === null ? $this->abandon($queued, 'topic_not_found') : null;
+		}
+
+		try {
+			$run = $this->runs->reload($queued);
+
+			if ($run === null || $run->status !== AiRun::STATUS_QUEUED) {
+				return null;
+			}
+
+			try {
+				$context = $this->guard?->authorizeSystem((string) $run->projectPublicId) ?? throw new ProjectNotFound();
+			} catch (ProjectNotFound | AccessDenied) {
+				return $this->abandon($run, 'project_unavailable');
+			}
+
+			if ($run->topicPublicId === null) {
+				return $this->abandon($run, 'topic_not_found');
+			}
+
+			$input = json_decode((string) ($this->runs->payload($run)['input'] ?? ''), true);
+			$focus = is_array($input) && is_string($input['focus'] ?? null) ? $input['focus'] : null;
+			$explicit = ($run->sources['explicit'] ?? false) === true;
+
+			try {
+				$plan = $this->planAnalysis($context, $run->topicPublicId, $run->task, $run->provider, $focus, $explicit);
+			} catch (StrategyNotFound) {
+				return $this->abandon($run, 'topic_not_found');
+			} catch (AiRefused $refused) {
+				return $this->abandon($run, $refused->code());
+			}
+
+			// Nigdy inna (np. droższa) analiza niż zatwierdzona: odcisk planu przeliczony teraz musi być identyczny.
+			if ($run->planFingerprint === null || ! hash_equals($run->planFingerprint, $plan->fingerprint())) {
+				return $this->abandon($run, 'plan_changed');
+			}
+
+			$readiness = $plan->readiness;
+
+			if ($readiness === null || ! $readiness->runnable()) {
+				return $this->abandon($run, 'readiness_' . ($readiness->state ?? 'unknown'));
+			}
+
+			$blockers = array_values(array_diff($plan->blockers, self::RESERVED_BUDGET_BLOCKERS));
+
+			if ($blockers !== []) {
+				return $this->abandon($run, $blockers[0]);
+			}
+
+			return $this->call($run, $plan, $this->analysisSpec($plan->task, $plan->context, $plan->focus), AiRun::STATUS_QUEUED);
+		} finally {
+			$this->runs->releaseGenerationLock($queued->projectId, (int) $queued->topicId, $queued->task);
+		}
+	}
+
+	/** Zlecenie z kolejki zakończone bez wysłania żądania (`failed`, bez kosztu — rezerwacja zwolniona). Null — nie było w kolejce. */
+	private function abandon(AiRun $run, string $code): ?AiRun
+	{
+		$done = $this->runs->finish($run, [
+			'status' => AiRun::STATUS_FAILED,
+			'actual_cost' => 0.0,
+			'cost_basis' => $run->paid ? AiRun::COST_NOT_CHARGED : AiRun::COST_FREE,
+			'error_code' => $code,
+		], AiRun::STATUS_QUEUED);
+
+		if ($done !== null) {
+			$this->logger->info('AI run {run} not executed: {code} (reservation released).', ['run' => $run->publicId, 'code' => $code]);
+		}
+
+		return $done;
 	}
 
 	/**
@@ -257,6 +458,16 @@ final class AiAnalysisService
 	 * @param array<string, mixed> $spec
 	 */
 	private function execute(ProjectContext $context, AiPlan $plan, AiContext $aiContext, array $spec, string $trigger): AiRun
+	{
+		return $this->call($this->reserve($context, $plan, $aiContext, $spec, $trigger), $plan, $spec);
+	}
+
+	/**
+	 * Zapis uruchomienia z wejściem — dla płatnego dostawcy pod blokadą budżetu z rezerwacją kosztu maksymalnego.
+	 *
+	 * @param array<string, mixed> $spec
+	 */
+	private function reserve(ProjectContext $context, AiPlan $plan, AiContext $aiContext, array $spec, string $trigger, string $status = AiRun::STATUS_RESERVED): AiRun
 	{
 		$adapter = $this->providers->get($plan->provider) ?? throw new AiRefused('provider_unknown');
 		$data = [
@@ -279,10 +490,21 @@ final class AiAnalysisService
 			'reserved_cost' => $plan->paid ? round((float) $plan->maxCost, 6) : 0.0,
 		] + (array) ($spec['data'] ?? []);
 		$inputDocument = (string) json_encode(['focus' => $plan->focus, 'context' => $aiContext->toArray()], AiContext::JSON_FLAGS);
-		$create = fn (): AiRun => $this->runs->create($data, $inputDocument, (string) $spec['input_hash']);
-		$run = $plan->paid ? $this->budget->reserve($context->projectId(), (float) $plan->maxCost, $create) : $create();
+		$create = fn (): AiRun => $this->runs->create($data, $inputDocument, (string) $spec['input_hash'], $status);
 
-		if (! $this->runs->markRunning($run)) {
+		return $plan->paid ? $this->budget->reserve($context->projectId(), (float) $plan->maxCost, $create) : $create();
+	}
+
+	/**
+	 * `running` (warunkowo) → jedno wywołanie dostawcy (bez ponowień) → walidacja → rozliczenie i historia.
+	 *
+	 * @param array<string, mixed> $spec
+	 */
+	private function call(AiRun $run, AiPlan $plan, array $spec, string $from = AiRun::STATUS_RESERVED): AiRun
+	{
+		$adapter = $this->providers->get($plan->provider) ?? throw new AiRefused('provider_unknown');
+
+		if (! $this->runs->markRunning($run, $from)) {
 			throw new AiRefused('run_conflict');
 		}
 
@@ -536,6 +758,12 @@ final class AiAnalysisService
 		$before = $this->clock->now()->modify('-' . ($this->config->timeout() + self::STALE_GRACE) . ' seconds')->format('Y-m-d H:i:s');
 		$recovered = 0;
 
+		foreach ($this->runs->staleQueued($this->clock->now()->modify('-' . self::QUEUE_TTL . ' seconds')->format('Y-m-d H:i:s')) as $run) {
+			if ($this->abandon($run, 'queue_expired') !== null) {
+				$recovered++;
+			}
+		}
+
 		foreach ($this->runs->staleActive($before) as $run) {
 			$sent = $run->status === AiRun::STATUS_RUNNING;
 			$done = $this->runs->finish($run, [
@@ -696,6 +924,7 @@ final class AiAnalysisService
 			], array_filter((array) ($body['evidence']['competitor_pages']['items'] ?? []), 'is_array'))),
 			'serp' => $serp === null ? null : ['measured_at' => $serp['provenance']['as_of'] ?? null, 'freshness' => $serp['provenance']['freshness'] ?? null],
 			'site_pages' => count((array) ($body['site']['pages'] ?? [])),
+			'strategy_hash' => $aiContext->strategyHash,
 		];
 	}
 
