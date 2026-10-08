@@ -51,6 +51,27 @@ abstract class IntegrationTestCase extends TestCase
 		return Connection::fromGlobals();
 	}
 
+	/** Drugie, niezależne połączenie z bazą testową (blokady GET_LOCK innego procesu). */
+	protected function secondConnection(): \mysqli
+	{
+		$host = DB_HOST;
+		$socket = null;
+		$port = null;
+
+		if (str_contains($host, ':')) {
+			[$host, $suffix] = explode(':', $host, 2);
+			is_numeric($suffix) ? $port = (int) $suffix : $socket = $suffix;
+		}
+
+		$connection = new \mysqli($host, DB_USER, DB_PASSWORD, DB_NAME, $port, $socket);
+
+		if ($connection->connect_errno !== 0) {
+			throw new \RuntimeException('Second test connection failed.');
+		}
+
+		return $connection;
+	}
+
 	/** Logger zbierający wpisy w pamięci — do asercji, że sekrety nie trafiają do logów. */
 	protected function captureLogger(string $level = Logger::DEBUG): Logger
 	{

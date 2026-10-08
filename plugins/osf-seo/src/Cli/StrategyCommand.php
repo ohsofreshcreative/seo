@@ -15,6 +15,8 @@ use OsfSeo\Strategy\CandidateRow;
 use OsfSeo\Strategy\Serp\SerpAnalysisPlan;
 use OsfSeo\Strategy\Serp\SerpAnalysisService;
 use OsfSeo\Strategy\StrategyNotFound;
+use OsfSeo\Strategy\StrategyRefreshQueue;
+use OsfSeo\Strategy\StrategyScheduler;
 use OsfSeo\Strategy\StrategyService;
 use OsfSeo\Strategy\StrategySource;
 use OsfSeo\Support\ValidationException;
@@ -23,7 +25,8 @@ use WP_CLI\Utils;
 
 /**
  * `wp osf-seo strategy:*` — Strategia (STEP 16, faza A): stan, podgląd i lista kandydatów, fakty i dowody frazy, przeliczenie,
- * wpisy ręczne. Żadna komenda nie wysyła żądań do API. Wyjście po angielsku; `--format=json` wyłącznie JSON.
+ * wpisy ręczne, kolejka przeliczeń w tle (faza E). Żadna komenda poza `strategy:serp-run` nie wysyła żądań do API. Wyjście po angielsku;
+ * `--format=json` wyłącznie JSON.
  */
 final class StrategyCommand
 {
@@ -49,6 +52,14 @@ final class StrategyCommand
 		WP_CLI::add_command('osf-seo strategy:refresh', [$command, 'refresh'], [
 			'shortdesc' => 'Refresh strategy candidates, facts and evidence from stored data (no API call; only when the data key changed).',
 			'synopsis' => [$project, ['type' => 'flag', 'name' => 'force', 'description' => 'Refresh even if the data key did not change.', 'optional' => true], $format],
+		]);
+		WP_CLI::add_command('osf-seo strategy:queue', [$command, 'queue'], [
+			'shortdesc' => 'Background strategy refresh queue: job counts, pending and running jobs, errors, overdue leases, last background step (no API call). --run executes the background step once.',
+			'synopsis' => [
+				['type' => 'flag', 'name' => 'run', 'description' => 'Run the background step once now (recovery, change detection, due jobs) — local recalculation only.', 'optional' => true],
+				['type' => 'assoc', 'name' => 'time-limit', 'description' => 'Time limit of --run in seconds (default 20).', 'optional' => true],
+				$format,
+			],
 		]);
 		WP_CLI::add_command('osf-seo strategy:candidates', [$command, 'candidates'], [
 			'shortdesc' => 'List strategy candidates (no API call). SERP position and GSC average position are different metrics.',
@@ -142,7 +153,78 @@ final class StrategyCommand
 			$status['topics']['actions'] === [] ? 'none' : self::pairs($status['topics']['actions']),
 			$status['topics']['inactive'],
 		));
-		WP_CLI::log(sprintf('Last refresh: %s%s. Data key: %s.', $status['refreshed_at'] ?? 'never', $status['refresh_ms'] === null ? '' : ' (' . $status['refresh_ms'] . ' ms)', $status['up_to_date'] ? 'up to date' : 'changed — run strategy:refresh'));
+		WP_CLI::log(sprintf('Last refresh: %s%s. Data key: %s.', $status['refreshed_at'] ?? 'never', $status['refresh_ms'] === null ? '' : ' (' . $status['refresh_ms'] . ' ms)', $status['up_to_date'] ? 'up to date' : 'changed — the background step refreshes it (or run strategy:refresh)'));
+		$queue = $status['queue'];
+		WP_CLI::log(sprintf(
+			'Background job: %s%s (source %s, attempts %d/%d)%s%s%s.',
+			$queue['status'],
+			$queue['running'] ? ', lock held' : '',
+			$queue['source'] ?? '-',
+			$queue['attempts'],
+			StrategyRefreshQueue::MAX_ATTEMPTS,
+			$queue['status'] === StrategyRefreshQueue::STATUS_QUEUED ? '; due ' . ($queue['due_at'] ?? '-') . ' UTC' : '',
+			$queue['requested_at'] !== null ? '; requested ' . $queue['requested_at'] . ' UTC' : '',
+			$queue['error'] !== null ? '; last error ' . $queue['error'] . ' at ' . ($queue['error_at'] ?? '-') . ' UTC' : '',
+		));
+	}
+
+	/**
+	 * @param list<string> $args
+	 * @param array<string, string> $assocArgs
+	 */
+	public function queue(array $args, array $assocArgs): void
+	{
+		$scheduler = $this->plugin->get(StrategyScheduler::class);
+		$json = ($assocArgs['format'] ?? 'table') === 'json';
+		$run = null;
+
+		if (isset($assocArgs['run'])) {
+			$run = $scheduler->runBackground((float) max(1, min(300, (int) ($assocArgs['time-limit'] ?? 20))), true);
+		}
+
+		$diagnostics = $scheduler->diagnostics();
+
+		if ($json) {
+			self::json(['run' => $run] + $diagnostics);
+
+			return;
+		}
+
+		if ($run !== null) {
+			WP_CLI::log(sprintf(
+				'Background step: recovered %d, detection %s, jobs %s, deferred by time limit %d. No API request was made.',
+				count($run['recovered']),
+				$run['detected'] === [] ? 'not due' : self::pairs($run['detected']),
+				$run['jobs'] === [] ? 'none' : self::pairs(array_count_values($run['jobs'])),
+				$run['skipped_budget'],
+			));
+		}
+
+		WP_CLI::log(sprintf(
+			'Jobs: %s. Oldest due: %s. Running over the lease: %s.',
+			self::pairs($diagnostics['counts']),
+			$diagnostics['oldest_due_at'] === null ? '-' : $diagnostics['oldest_due_at'] . ' UTC',
+			$diagnostics['overdue'] === [] ? 'none' : implode(', ', $diagnostics['overdue']),
+		));
+		WP_CLI::log(sprintf(
+			'Last background step: %s; last sync queue run: %s (cron must run every minute: wp osf-seo sync:run).',
+			$diagnostics['heartbeat'] === null ? 'never' : $diagnostics['heartbeat'] . ' UTC',
+			$diagnostics['sync_heartbeat'] === null ? 'never' : $diagnostics['sync_heartbeat'] . ' UTC',
+		));
+
+		if ($diagnostics['projects'] !== []) {
+			Utils\format_items('table', array_map(static fn (array $row): array => [
+				'project' => $row['public_id'] ?? '-',
+				'status' => $row['refresh_status'],
+				'source' => $row['refresh_source'] ?? '-',
+				'due' => $row['refresh_due_at'] ?? '-',
+				'started' => $row['refresh_started_at'] ?? '-',
+				'attempts' => $row['refresh_attempts'],
+				'error' => $row['refresh_error'] === null ? '-' : $row['refresh_error'] . ' (' . $row['refresh_error_at'] . ')',
+				'last_refresh' => $row['refreshed_at'] === null ? 'never' : $row['refreshed_at'] . ' (' . $row['refresh_ms'] . ' ms)',
+				'changed_since' => $row['refresh_dirty_since'] ?? '-',
+			], $diagnostics['projects']), ['project', 'status', 'source', 'due', 'started', 'attempts', 'error', 'last_refresh', 'changed_since']);
+		}
 	}
 
 	/**
@@ -215,6 +297,10 @@ final class StrategyCommand
 			WP_CLI::success(sprintf('Nothing refreshed: %s. No API request was made.', $report['skipped']));
 
 			return;
+		}
+
+		if (! empty($report['changed_during_refresh'])) {
+			WP_CLI::warning('Module data changed during the refresh — the background step will refresh the strategy again.');
 		}
 
 		WP_CLI::success(sprintf(

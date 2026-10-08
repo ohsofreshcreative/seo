@@ -26,6 +26,9 @@ final class SyncScheduler
 	/** @var list<\Closure(): mixed> */
 	private array $followUps = [];
 
+	/** Początek bieżącego przebiegu (tick albo kroki po `sync:run`) — wspólny limit czasu kroków po kolejce (D63). */
+	private ?float $runStartedAt = null;
+
 	public function __construct(
 		private readonly SyncPlanner $planner,
 		private readonly SyncRunner $runner,
@@ -65,6 +68,8 @@ final class SyncScheduler
 			return new RunnerReport(true);
 		}
 
+		$this->runStartedAt = microtime(true);
+
 		if (get_transient(self::PLANNED_TRANSIENT) === false) {
 			set_transient(self::PLANNED_TRANSIENT, '1', SyncConfig::PLAN_INTERVAL);
 			$this->planAll();
@@ -89,13 +94,30 @@ final class SyncScheduler
 
 	public function runFollowUps(): void
 	{
-		foreach ($this->followUps as $step) {
-			try {
-				$step();
-			} catch (Throwable $exception) {
-				$this->logger->error('Post-sync step failed: {message}', ['message' => $exception->getMessage()]);
+		$this->runStartedAt ??= microtime(true);
+
+		try {
+			foreach ($this->followUps as $step) {
+				try {
+					$step();
+				} catch (Throwable $exception) {
+					$this->logger->error('Post-sync step failed: {message}', ['message' => $exception->getMessage()]);
+				}
 			}
+		} finally {
+			$this->runStartedAt = null;
 		}
+	}
+
+	/**
+	 * Czas pozostały ze wspólnego limitu ticka (od początku ticka albo kroków po `sync:run`) — dla kroku, który nie może wydłużyć
+	 * ticka ponad jeden limit (krok Strategii, D63).
+	 */
+	public function remainingBudget(): float
+	{
+		$elapsed = $this->runStartedAt === null ? 0.0 : microtime(true) - $this->runStartedAt;
+
+		return max(0.0, (float) $this->config->timeBudget() - $elapsed);
 	}
 
 	/** Planowanie wszystkich kwalifikujących się projektów (codzienne odświeżanie, wznowienie łańcuchów). */

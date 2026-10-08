@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace OsfSeo\Tests\Integration\Database;
 
-use mysqli;
 use OsfSeo\Database\Connection;
 use OsfSeo\Database\Migration;
 use OsfSeo\Database\MigrationLocked;
@@ -12,7 +11,6 @@ use OsfSeo\Database\Migrator;
 use OsfSeo\Database\Schema;
 use OsfSeo\Database\SchemaInspector;
 use OsfSeo\Tests\Integration\IntegrationTestCase;
-use RuntimeException;
 
 final class MigratorTest extends IntegrationTestCase
 {
@@ -213,7 +211,7 @@ final class MigratorTest extends IntegrationTestCase
 
 		// Ponowne uruchomienie migracji 5 (np. utracona wersja schematu) jest bezpieczne.
 		update_option(Migrator::OPTION_VERSION, '4');
-		self::assertSame(['0005 create_opportunities', '0006 create_market_data', '0007 create_keyword_discovery', '0008 create_serp_tracking', '0009 create_keyword_gap', '0010 create_strategy', '0011 serp_intelligence', '0012 strategy_topics', '0013 strategy_panel'], $this->migrator()->migrate());
+		self::assertSame(['0005 create_opportunities', '0006 create_market_data', '0007 create_keyword_discovery', '0008 create_serp_tracking', '0009 create_keyword_gap', '0010 create_strategy', '0011 serp_intelligence', '0012 strategy_topics', '0013 strategy_panel', '0014 strategy_refresh_queue'], $this->migrator()->migrate());
 		self::assertSame([], $inspector->problems());
 	}
 
@@ -259,7 +257,7 @@ final class MigratorTest extends IntegrationTestCase
 
 		// Ponowne uruchomienie migracji 6 (utracona wersja schematu) jest bezpieczne.
 		update_option(Migrator::OPTION_VERSION, '5');
-		self::assertSame(['0006 create_market_data', '0007 create_keyword_discovery', '0008 create_serp_tracking', '0009 create_keyword_gap', '0010 create_strategy', '0011 serp_intelligence', '0012 strategy_topics', '0013 strategy_panel'], $this->migrator()->migrate());
+		self::assertSame(['0006 create_market_data', '0007 create_keyword_discovery', '0008 create_serp_tracking', '0009 create_keyword_gap', '0010 create_strategy', '0011 serp_intelligence', '0012 strategy_topics', '0013 strategy_panel', '0014 strategy_refresh_queue'], $this->migrator()->migrate());
 		self::assertSame([], $inspector->problems());
 		self::assertSame($before, $this->dataSnapshot());
 	}
@@ -322,7 +320,7 @@ final class MigratorTest extends IntegrationTestCase
 
 		// Ponowne uruchomienie migracji 7 (utracona wersja schematu) jest bezpieczne.
 		update_option(Migrator::OPTION_VERSION, '6');
-		self::assertSame(['0007 create_keyword_discovery', '0008 create_serp_tracking', '0009 create_keyword_gap', '0010 create_strategy', '0011 serp_intelligence', '0012 strategy_topics', '0013 strategy_panel'], $this->migrator()->migrate());
+		self::assertSame(['0007 create_keyword_discovery', '0008 create_serp_tracking', '0009 create_keyword_gap', '0010 create_strategy', '0011 serp_intelligence', '0012 strategy_topics', '0013 strategy_panel', '0014 strategy_refresh_queue'], $this->migrator()->migrate());
 		self::assertSame([], $inspector->problems());
 		self::assertSame($before, $this->dataSnapshot());
 		self::assertSame($tasks, $rows('market_tasks'));
@@ -399,7 +397,7 @@ final class MigratorTest extends IntegrationTestCase
 
 		// Ponowne uruchomienie migracji 8 (utracona wersja schematu) jest bezpieczne.
 		update_option(Migrator::OPTION_VERSION, '7');
-		self::assertSame(['0008 create_serp_tracking', '0009 create_keyword_gap', '0010 create_strategy', '0011 serp_intelligence', '0012 strategy_topics', '0013 strategy_panel'], $this->migrator()->migrate());
+		self::assertSame(['0008 create_serp_tracking', '0009 create_keyword_gap', '0010 create_strategy', '0011 serp_intelligence', '0012 strategy_topics', '0013 strategy_panel', '0014 strategy_refresh_queue'], $this->migrator()->migrate());
 		self::assertSame([], $inspector->problems());
 		self::assertSame($before, $this->dataSnapshot());
 	}
@@ -476,7 +474,7 @@ final class MigratorTest extends IntegrationTestCase
 
 		// Ponowne uruchomienie migracji 9 (utracona wersja schematu) jest bezpieczne.
 		update_option(Migrator::OPTION_VERSION, '8');
-		self::assertSame(['0009 create_keyword_gap', '0010 create_strategy', '0011 serp_intelligence', '0012 strategy_topics', '0013 strategy_panel'], $this->migrator()->migrate());
+		self::assertSame(['0009 create_keyword_gap', '0010 create_strategy', '0011 serp_intelligence', '0012 strategy_topics', '0013 strategy_panel', '0014 strategy_refresh_queue'], $this->migrator()->migrate());
 		self::assertSame([], $inspector->problems());
 		self::assertSame($before, $this->dataSnapshot());
 		self::assertSame('gap', $db->fetchValue("SELECT source FROM `{$db->table('serp_tracked_keywords')}` WHERE market_keyword_id = 2"));
@@ -515,9 +513,9 @@ final class MigratorTest extends IntegrationTestCase
 		$inspector = new SchemaInspector(self::db());
 		self::assertSame([...self::schema11Enums("enum('manual','gsc','discovery','gap')"), ...self::schema10Tables(), ...self::schema11Tables(), ...self::schema12Tables()], $inspector->problems());
 
-		self::assertSame(['0010 create_strategy', '0011 serp_intelligence', '0012 strategy_topics', '0013 strategy_panel'], $this->migrator()->migrate());
-		self::assertSame(13, $this->migrator()->currentVersion());
-		self::assertSame([], $inspector->problems(), 'Schemat 13 zgodny ze specyfikacją.');
+		self::assertSame(['0010 create_strategy', '0011 serp_intelligence', '0012 strategy_topics', '0013 strategy_panel', '0014 strategy_refresh_queue'], $this->migrator()->migrate());
+		self::assertSame(14, $this->migrator()->currentVersion());
+		self::assertSame([], $inspector->problems(), 'Schemat 14 zgodny ze specyfikacją.');
 		self::assertSame($before, $this->dataSnapshot(), 'Projekty, słownik i fakty GSC bez zmian.');
 
 		foreach ($existing as $table => $data) {
@@ -533,7 +531,7 @@ final class MigratorTest extends IntegrationTestCase
 
 		// Ponowne uruchomienie migracji 10 (utracona wersja schematu) jest bezpieczne.
 		update_option(Migrator::OPTION_VERSION, '9');
-		self::assertSame(['0010 create_strategy', '0011 serp_intelligence', '0012 strategy_topics', '0013 strategy_panel'], $this->migrator()->migrate());
+		self::assertSame(['0010 create_strategy', '0011 serp_intelligence', '0012 strategy_topics', '0013 strategy_panel', '0014 strategy_refresh_queue'], $this->migrator()->migrate());
 		self::assertSame([], $inspector->problems());
 		self::assertSame($before, $this->dataSnapshot());
 	}
@@ -580,11 +578,11 @@ final class MigratorTest extends IntegrationTestCase
 		}
 
 		$inspector = new SchemaInspector(self::db());
-		self::assertSame([...self::schema11Enums("enum('manual','gsc','discovery','gap')"), ...self::schema13SettingsColumns(), ...self::schema12Columns(), ...self::schema11Tables(), ...self::schema12Tables()], $inspector->problems());
+		self::assertSame([...self::schema11Enums("enum('manual','gsc','discovery','gap')"), ...self::settingsColumnsSince13(), ...self::schema12Columns(), ...self::schema11Tables(), ...self::schema12Tables()], $inspector->problems());
 
-		self::assertSame(['0011 serp_intelligence', '0012 strategy_topics', '0013 strategy_panel'], $this->migrator()->migrate());
-		self::assertSame(13, $this->migrator()->currentVersion());
-		self::assertSame([], $inspector->problems(), 'Schemat 13 zgodny ze specyfikacją.');
+		self::assertSame(['0011 serp_intelligence', '0012 strategy_topics', '0013 strategy_panel', '0014 strategy_refresh_queue'], $this->migrator()->migrate());
+		self::assertSame(14, $this->migrator()->currentVersion());
+		self::assertSame([], $inspector->problems(), 'Schemat 14 zgodny ze specyfikacją.');
 		self::assertSame($before, $this->dataSnapshot(), 'Projekty, słownik i fakty GSC bez zmian.');
 
 		foreach ($existing as $table => $data) {
@@ -608,7 +606,7 @@ final class MigratorTest extends IntegrationTestCase
 
 		// Ponowne uruchomienie migracji 11 (utracona wersja schematu) jest bezpieczne.
 		update_option(Migrator::OPTION_VERSION, '10');
-		self::assertSame(['0011 serp_intelligence', '0012 strategy_topics', '0013 strategy_panel'], $this->migrator()->migrate());
+		self::assertSame(['0011 serp_intelligence', '0012 strategy_topics', '0013 strategy_panel', '0014 strategy_refresh_queue'], $this->migrator()->migrate());
 		self::assertSame([], $inspector->problems());
 		self::assertSame($before, $this->dataSnapshot());
 		self::assertSame('analysis', $db->fetchValue("SELECT status FROM `{$db->table('serp_tracked_keywords')}` WHERE market_keyword_id = 2"));
@@ -650,17 +648,17 @@ final class MigratorTest extends IntegrationTestCase
 		}
 
 		$inspector = new SchemaInspector(self::db());
-		self::assertSame([...self::schema13SettingsColumns(), ...self::schema12Columns(), ...self::schema12Tables()], $inspector->problems());
+		self::assertSame([...self::settingsColumnsSince13(), ...self::schema12Columns(), ...self::schema12Tables()], $inspector->problems());
 
-		self::assertSame(['0012 strategy_topics', '0013 strategy_panel'], $this->migrator()->migrate());
-		self::assertSame(13, $this->migrator()->currentVersion());
-		self::assertSame([], $inspector->problems(), 'Schemat 13 zgodny ze specyfikacją.');
+		self::assertSame(['0012 strategy_topics', '0013 strategy_panel', '0014 strategy_refresh_queue'], $this->migrator()->migrate());
+		self::assertSame(14, $this->migrator()->currentVersion());
+		self::assertSame([], $inspector->problems(), 'Schemat 14 zgodny ze specyfikacją.');
 		self::assertSame($before, $this->dataSnapshot(), 'Projekty, słownik i fakty GSC bez zmian.');
 
 		foreach ($existing as $table => $data) {
 			$expected = match ($table) {
 				'strategy_keywords' => array_map(static fn (array $row): array => $row + self::schema12KeywordDefaults() + ['serp_intel_at' => null], $data),
-				'strategy_settings' => array_map(static fn (array $row): array => $row + self::schema13SettingsDefaults(), $data),
+				'strategy_settings' => array_map(static fn (array $row): array => $row + self::settingsDefaultsSince13(), $data),
 				default => $data,
 			};
 			self::assertSame($expected, $rows($table), "{$table} bez zmian (nowe kolumny puste).");
@@ -683,7 +681,7 @@ final class MigratorTest extends IntegrationTestCase
 
 		// Ponowne uruchomienie migracji 12 (utracona wersja schematu) jest bezpieczne i nie kasuje danych.
 		update_option(Migrator::OPTION_VERSION, '11');
-		self::assertSame(['0012 strategy_topics', '0013 strategy_panel'], $this->migrator()->migrate());
+		self::assertSame(['0012 strategy_topics', '0013 strategy_panel', '0014 strategy_refresh_queue'], $this->migrator()->migrate());
 		self::assertSame([], $inspector->problems());
 		self::assertSame($before, $this->dataSnapshot());
 		self::assertSame('1', (string) $db->fetchValue("SELECT topic_id FROM `{$db->table('strategy_keywords')}` WHERE public_id = '01J0000000000000000000STR2'"));
@@ -723,17 +721,17 @@ final class MigratorTest extends IntegrationTestCase
 		}
 
 		$inspector = new SchemaInspector(self::db());
-		self::assertSame([...self::schema13SettingsColumns(), 'column strategy_keywords.serp_intel_at is missing', ...self::schema13TopicColumns()], $inspector->problems());
+		self::assertSame([...self::settingsColumnsSince13(), 'column strategy_keywords.serp_intel_at is missing', ...self::schema13TopicColumns()], $inspector->problems());
 
-		self::assertSame(['0013 strategy_panel'], $this->migrator()->migrate());
-		self::assertSame(13, $this->migrator()->currentVersion());
-		self::assertSame([], $inspector->problems(), 'Schemat 13 zgodny ze specyfikacją.');
+		self::assertSame(['0013 strategy_panel', '0014 strategy_refresh_queue'], $this->migrator()->migrate());
+		self::assertSame(14, $this->migrator()->currentVersion());
+		self::assertSame([], $inspector->problems(), 'Schemat 14 zgodny ze specyfikacją.');
 		self::assertSame($before, $this->dataSnapshot());
 		$topicDefaults = ['sources' => '0', 'serp_rank' => null, 'serp_checked_at' => null, 'gsc_impressions' => null, 'gsc_position' => null];
 
 		foreach ($existing as $table => $data) {
 			$expected = match ($table) {
-				'strategy_settings' => array_map(static fn (array $row): array => $row + self::schema13SettingsDefaults(), $data),
+				'strategy_settings' => array_map(static fn (array $row): array => $row + self::settingsDefaultsSince13(), $data),
 				'strategy_topics' => array_map(static fn (array $row): array => $row + $topicDefaults, $data),
 				'strategy_keywords' => array_map(static fn (array $row): array => $row + ['serp_intel_at' => null], $data),
 				default => $data,
@@ -743,9 +741,52 @@ final class MigratorTest extends IntegrationTestCase
 
 		// Ponowne uruchomienie migracji 13 jest bezpieczne.
 		update_option(Migrator::OPTION_VERSION, '12');
-		self::assertSame(['0013 strategy_panel'], $this->migrator()->migrate());
+		self::assertSame(['0013 strategy_panel', '0014 strategy_refresh_queue'], $this->migrator()->migrate());
 		self::assertSame([], $inspector->problems());
 		self::assertSame('completed', $db->fetchValue("SELECT status FROM `{$db->table('strategy_topics')}` WHERE public_id = '01J0000000000000000000TOP2'"));
+	}
+
+	public function test_upgrade_from_schema_13_adds_refresh_queue_state_and_keeps_pending_request(): void
+	{
+		// Stan po fazie D STEP 16: schemat 13 z przeliczoną Strategią, zleconym z panelu przeliczeniem i tematem z decyzją użytkownika.
+		$schema13 = array_slice(Migrator::defaultMigrations(), 0, 13);
+		$this->migrator($schema13)->migrate();
+		$this->seedData();
+		$db = self::db();
+		$now = gmdate('Y-m-d H:i:s');
+		$db->execute(
+			"INSERT INTO `{$db->table('strategy_settings')}` (project_id, revision, data_key, refreshed_at, refresh_ms, stats, location_code, language_code, updated_at, refresh_requested_at, refresh_requested_by)
+			VALUES (1, 4, UNHEX(%s), %s, 165, %s, 2616, 'pl', %s, %s, 7)",
+			[md5('klucz'), $now, '{"selected":96,"topics":{"topics":64}}', $now, $now],
+		);
+		$db->insert($db->table('strategy_topics'), [
+			'public_id' => '01J0000000000000000000TOP3', 'project_id' => 1, 'label' => 'strony www łódź', 'keywords_count' => 1, 'action' => 'optimize',
+			'priority' => 51, 'status' => 'planned', 'note' => 'Plan — Łódź', 'first_seen_at' => $now, 'created_at' => $now, 'updated_at' => $now,
+		]);
+		$before = $this->dataSnapshot();
+		$rows = static fn (string $table): array => $db->fetchAll("SELECT * FROM `{$db->table($table)}` ORDER BY 1");
+		$existing = ['strategy_settings' => $rows('strategy_settings'), 'strategy_topics' => $rows('strategy_topics')];
+
+		$inspector = new SchemaInspector(self::db());
+		self::assertSame([
+			...array_map(static fn (string $column): string => "column strategy_settings.{$column} is missing", array_keys(self::schema14SettingsDefaults())),
+			'index strategy_settings.refresh_queue is missing',
+		], $inspector->problems());
+
+		self::assertSame(['0014 strategy_refresh_queue'], $this->migrator()->migrate());
+		self::assertSame(14, $this->migrator()->currentVersion());
+		self::assertSame([], $inspector->problems(), 'Schemat 14 zgodny ze specyfikacją.');
+		self::assertSame($before, $this->dataSnapshot());
+		self::assertSame(array_map(static fn (array $row): array => $row + self::schema14SettingsDefaults(), $existing['strategy_settings']), $rows('strategy_settings'), 'Klucz danych, wynik przeliczenia i zlecenie z panelu zachowane; zadanie bezczynne.');
+		self::assertSame($existing['strategy_topics'], $rows('strategy_topics'), 'Tematy i decyzje użytkownika bez zmian.');
+		self::assertSame(['unique' => false, 'columns' => ['refresh_status', 'refresh_due_at']], $inspector->inspect()['strategy_settings']['indexes']['refresh_queue']);
+
+		// Ponowne uruchomienie migracji 14 jest bezpieczne i nie zmienia stanu zadania.
+		$db->execute("UPDATE `{$db->table('strategy_settings')}` SET refresh_status = 'queued', refresh_source = 'manual', refresh_due_at = %s WHERE project_id = 1", [$now]);
+		update_option(Migrator::OPTION_VERSION, '13');
+		self::assertSame(['0014 strategy_refresh_queue'], $this->migrator()->migrate());
+		self::assertSame([], $inspector->problems());
+		self::assertSame(['queued', 'manual'], array_values($db->fetchRow("SELECT refresh_status, refresh_source FROM `{$db->table('strategy_settings')}` WHERE project_id = 1") ?? []));
 	}
 
 	/**
@@ -759,21 +800,35 @@ final class MigratorTest extends IntegrationTestCase
 	}
 
 	/**
-	 * Addytywne kolumny schematu 13 w `strategy_settings` (gdy tabela już istnieje — schematy 10–12).
+	 * Addytywne kolumny schematów 13–14 w `strategy_settings` i indeks kolejki przeliczeń (gdy tabela już istnieje — schematy 10–12).
 	 *
 	 * @return list<string>
 	 */
-	private static function schema13SettingsColumns(): array
+	private static function settingsColumnsSince13(): array
 	{
-		return array_map(static fn (string $column): string => "column strategy_settings.{$column} is missing", array_keys(self::schema13SettingsDefaults()));
+		return [...array_map(static fn (string $column): string => "column strategy_settings.{$column} is missing", array_keys(self::settingsDefaultsSince13())), 'index strategy_settings.refresh_queue is missing'];
 	}
 
 	/**
-	 * @return array<string, null>
+	 * @return array<string, string|null>
 	 */
-	private static function schema13SettingsDefaults(): array
+	private static function settingsDefaultsSince13(): array
 	{
-		return ['refresh_requested_at' => null, 'refresh_requested_by' => null];
+		return ['refresh_requested_at' => null, 'refresh_requested_by' => null, ...self::schema14SettingsDefaults()];
+	}
+
+	/**
+	 * Addytywne kolumny schematu 14 (stan zadania przeliczenia Strategii) — wartości po migracji w kolejności kolumn.
+	 *
+	 * @return array<string, string|null>
+	 */
+	private static function schema14SettingsDefaults(): array
+	{
+		return [
+			'refresh_status' => 'idle', 'refresh_source' => null, 'refresh_due_at' => null, 'refresh_started_at' => null, 'refresh_lease_until' => null,
+			'refresh_finished_at' => null, 'refresh_attempts' => '0', 'refresh_error' => null, 'refresh_error_at' => null, 'refresh_failed_key' => null,
+			'refresh_seen_key' => null, 'refresh_seen_at' => null, 'refresh_dirty_since' => null,
+		];
 	}
 
 	/**
@@ -1025,26 +1080,6 @@ final class MigratorTest extends IntegrationTestCase
 	private static function allMigrationLabels(): array
 	{
 		return array_map(static fn (Migration $m): string => sprintf('%04d %s', $m->version(), $m->name()), Migrator::defaultMigrations());
-	}
-
-	private function secondConnection(): mysqli
-	{
-		$host = DB_HOST;
-		$socket = null;
-		$port = null;
-
-		if (str_contains($host, ':')) {
-			[$host, $suffix] = explode(':', $host, 2);
-			is_numeric($suffix) ? $port = (int) $suffix : $socket = $suffix;
-		}
-
-		$connection = new mysqli($host, DB_USER, DB_PASSWORD, DB_NAME, $port, $socket);
-
-		if ($connection->connect_errno !== 0) {
-			throw new RuntimeException('Second test connection failed.');
-		}
-
-		return $connection;
 	}
 
 	private function seedData(): void

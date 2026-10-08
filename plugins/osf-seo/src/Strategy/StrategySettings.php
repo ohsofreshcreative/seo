@@ -22,9 +22,26 @@ final class StrategySettings
 		public readonly ?int $locationCode = null,
 		public readonly ?string $languageCode = null,
 		public readonly ?string $updatedAt = null,
-		/** Ręcznie zlecone przeliczenie (panel) — wykona je krok w tle (faza E) albo CLI; czyszczone po przeliczeniu. */
+		/** Ręcznie zlecone przeliczenie (panel) — wykona je krok w tle albo CLI; czyszczone po przeliczeniu, które zaczęło się później. */
 		public readonly ?string $refreshRequestedAt = null,
 		public readonly ?int $refreshRequestedBy = null,
+		/** Stan zadania przeliczenia w tle (faza E, `StrategyRefreshQueue`): idle, queued, running, failed. */
+		public readonly string $refreshStatus = StrategyRefreshQueue::STATUS_IDLE,
+		public readonly ?string $refreshSource = null,
+		public readonly ?string $refreshDueAt = null,
+		public readonly ?string $refreshStartedAt = null,
+		public readonly ?string $refreshLeaseUntil = null,
+		public readonly ?string $refreshFinishedAt = null,
+		public readonly int $refreshAttempts = 0,
+		/** Kod ostatniego błędu (bez treści wyjątku — szczegóły tylko w logu) i jego chwila; zostają po udanym przeliczeniu (diagnostyka). */
+		public readonly ?string $refreshError = null,
+		public readonly ?string $refreshErrorAt = null,
+		/** Klucz danych, na którym wyczerpały się próby — automatyczne zlecenie dopiero po zmianie danych. */
+		public readonly ?string $refreshFailedKey = null,
+		/** Wykrywanie zmian (debounce): ostatnio widziany nowy klucz danych, od kiedy jest stabilny i od kiedy dane są nieaktualne. */
+		public readonly ?string $refreshSeenKey = null,
+		public readonly ?string $refreshSeenAt = null,
+		public readonly ?string $refreshDirtySince = null,
 	) {
 	}
 
@@ -47,6 +64,19 @@ final class StrategySettings
 			$row['updated_at'],
 			$row['refresh_requested_at'] ?? null,
 			isset($row['refresh_requested_by']) ? (int) $row['refresh_requested_by'] : null,
+			(string) ($row['refresh_status'] ?? StrategyRefreshQueue::STATUS_IDLE),
+			$row['refresh_source'] ?? null,
+			$row['refresh_due_at'] ?? null,
+			$row['refresh_started_at'] ?? null,
+			$row['refresh_lease_until'] ?? null,
+			$row['refresh_finished_at'] ?? null,
+			(int) ($row['refresh_attempts'] ?? 0),
+			$row['refresh_error'] ?? null,
+			$row['refresh_error_at'] ?? null,
+			$row['failed_key_hex'] ?? null,
+			$row['seen_key_hex'] ?? null,
+			$row['refresh_seen_at'] ?? null,
+			$row['refresh_dirty_since'] ?? null,
 		);
 	}
 }

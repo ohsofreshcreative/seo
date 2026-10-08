@@ -22,7 +22,11 @@ final class StrategySettingsRepository
 
 	public function get(int $projectId): StrategySettings
 	{
-		$row = $this->db->fetchRow("SELECT *, LOWER(HEX(data_key)) AS data_key_hex FROM `{$this->table()}` WHERE project_id = %d", [$projectId]);
+		$row = $this->db->fetchRow(
+			"SELECT *, LOWER(HEX(data_key)) AS data_key_hex, LOWER(HEX(refresh_failed_key)) AS failed_key_hex, LOWER(HEX(refresh_seen_key)) AS seen_key_hex
+			FROM `{$this->table()}` WHERE project_id = %d",
+			[$projectId],
+		);
 
 		return $row === null ? new StrategySettings($projectId) : StrategySettings::fromRow($row);
 	}
@@ -39,17 +43,22 @@ final class StrategySettingsRepository
 	}
 
 	/**
+	 * Wynik przeliczenia, które zaczęło się w `$startedAt`. Zlecenie ręczne złożone w trakcie przeliczenia (później niż jego początek)
+	 * nie ginie: zostaje razem z pustym kluczem danych, a kolejka zleca kolejne przeliczenie (`StrategyRefreshQueue::complete`).
+	 * Kolejność przypisań bez znaczenia (warunki czytają `refresh_requested_at` sprzed zmiany — przypisany jako ostatni).
+	 *
 	 * @param array<string, mixed> $stats
 	 */
-	public function recordRefresh(int $projectId, string $dataKeyHex, int $durationMs, array $stats, Market $market): void
+	public function recordRefresh(int $projectId, string $dataKeyHex, int $durationMs, array $stats, Market $market, string $startedAt): void
 	{
 		$now = $this->now();
 		$this->db->execute(
 			"INSERT INTO `{$this->table()}` (project_id, data_key, refreshed_at, refresh_ms, stats, location_code, language_code, updated_at)
 			VALUES (%d, UNHEX(%s), %s, %d, %s, %d, %s, %s)
-			ON DUPLICATE KEY UPDATE data_key = VALUES(data_key), refreshed_at = VALUES(refreshed_at), refresh_ms = VALUES(refresh_ms),
-				stats = VALUES(stats), location_code = VALUES(location_code), language_code = VALUES(language_code), updated_at = VALUES(updated_at),
-				refresh_requested_at = NULL, refresh_requested_by = NULL",
+			ON DUPLICATE KEY UPDATE data_key = IF(refresh_requested_at > %s, NULL, VALUES(data_key)), refreshed_at = VALUES(refreshed_at),
+				refresh_ms = VALUES(refresh_ms), stats = VALUES(stats), location_code = VALUES(location_code), language_code = VALUES(language_code),
+				updated_at = VALUES(updated_at), refresh_requested_by = IF(refresh_requested_at > %s, refresh_requested_by, NULL),
+				refresh_requested_at = IF(refresh_requested_at > %s, refresh_requested_at, NULL)",
 			[
 				$projectId,
 				$dataKeyHex,
@@ -59,21 +68,10 @@ final class StrategySettingsRepository
 				$market->locationCode,
 				$market->languageCode,
 				$now,
+				$startedAt,
+				$startedAt,
+				$startedAt,
 			],
-		);
-	}
-
-	/**
-	 * Ręczne zlecenie przeliczenia (panel): unieważnia klucz danych i zapisuje, kto i kiedy zlecił. Samo przeliczenie wykona krok w tle
-	 * Strategii (faza E) albo `wp osf-seo strategy:refresh` — nigdy żądanie WWW.
-	 */
-	public function requestRefresh(int $projectId, ?int $userId): void
-	{
-		$now = $this->now();
-		$this->db->execute(
-			"INSERT INTO `{$this->table()}` (project_id, refresh_requested_at, refresh_requested_by, updated_at) VALUES (%d, %s, NULLIF(%d, 0), %s)
-			ON DUPLICATE KEY UPDATE data_key = NULL, refresh_requested_at = VALUES(refresh_requested_at), refresh_requested_by = VALUES(refresh_requested_by)",
-			[$projectId, $now, max(0, (int) $userId), $now],
 		);
 	}
 
