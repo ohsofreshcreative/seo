@@ -4,6 +4,17 @@ declare(strict_types=1);
 
 namespace OsfSeo;
 
+use OsfSeo\Ai\AiAnalysisService;
+use OsfSeo\Ai\AiConfig;
+use OsfSeo\Ai\Budget\AiBudget;
+use OsfSeo\Ai\Budget\AiPricing;
+use OsfSeo\Ai\Context\AiTopicContextBuilder;
+use OsfSeo\Ai\Contract\OutputValidator;
+use OsfSeo\Ai\Page\NoPageContentSource;
+use OsfSeo\Ai\Provider\AiProviderRegistry;
+use OsfSeo\Ai\Provider\FakeProvider;
+use OsfSeo\Ai\Provider\OpenAiProvider;
+use OsfSeo\Ai\Run\AiRunRepository;
 use OsfSeo\Analytics\KeywordReport;
 use OsfSeo\Analytics\OverviewReport;
 use OsfSeo\Analytics\ReportCache;
@@ -14,6 +25,7 @@ use OsfSeo\Auth\RoleManager;
 use OsfSeo\Auth\WpAdminAccess;
 use OsfSeo\Auth\WpRoleStore;
 use OsfSeo\Branding\BrandingService;
+use OsfSeo\Cli\AiCommand;
 use OsfSeo\Cli\DbCommand;
 use OsfSeo\Cli\CompetitorCommand;
 use OsfSeo\Cli\DiscoveryCommand;
@@ -625,6 +637,26 @@ final class Plugin
 			$c->get(StrategyRefreshRunner::class),
 		));
 
+		// Analizy AI (STEP 17, faza A): dostawcy za interfejsem AiProvider, budżet AI oddzielny od DataForSEO; wywołanie modelu wyłącznie
+		// z AiAnalysisService na jawne polecenie — nigdy przy renderowaniu panelu, przeliczeniu Strategii, synchronizacji ani w kroku w tle.
+		$container->singleton(AiConfig::class, static fn (Container $c): AiConfig => new AiConfig($c->get(Config::class)));
+		$container->singleton(AiProviderRegistry::class, static fn (Container $c): AiProviderRegistry => new AiProviderRegistry([
+			new FakeProvider(),
+			new OpenAiProvider($c->get(AiConfig::class), new WpHttpTransport($c->get(AiConfig::class)->timeout())),
+		]));
+		$container->singleton(AiRunRepository::class, static fn (Container $c): AiRunRepository => new AiRunRepository($c->get(Connection::class), $c->get(Clock::class)));
+		$container->singleton(AiAnalysisService::class, static fn (Container $c): AiAnalysisService => new AiAnalysisService(
+			new AiTopicContextBuilder($c->get(StrategyService::class), $c->get(Connection::class), $c->get(ProjectPageIndex::class), new NoPageContentSource(), $c->get(Clock::class)),
+			$c->get(AiProviderRegistry::class),
+			$c->get(AiConfig::class),
+			new AiPricing($c->get(AiConfig::class)),
+			new AiBudget($c->get(AiConfig::class), $c->get(AiRunRepository::class), $c->get(Connection::class), $c->get(Clock::class)),
+			$c->get(AiRunRepository::class),
+			new OutputValidator(),
+			$c->get(Clock::class),
+			$c->get(Logger::class),
+		));
+
 		$container->singleton(KeywordReport::class, static fn (Container $c): KeywordReport => new KeywordReport(
 			$c->get(Connection::class),
 			$c->get(Config::class),
@@ -690,6 +722,8 @@ final class Plugin
 			// Strategia: lokalne przeliczenie zapisanych danych (zlecenia z panelu, wykryte zmiany modułów) — ostatni krok, w czasie
 			// pozostałym ze wspólnego limitu ticka (D63), bez żadnego żądania do API (D78).
 			$scheduler->onAfterRun(static fn (): array => $c->get(StrategyScheduler::class)->runBackground($scheduler->remainingBudget()));
+			// Analizy AI: wyłącznie porządki historii (porzucone uruchomienia, retencja raz na dobę) — żadnego wywołania modelu (D94).
+			$scheduler->onAfterRun(static fn (): array => $c->get(AiAnalysisService::class)->maintenance());
 
 			return $scheduler;
 		});
@@ -765,6 +799,7 @@ final class Plugin
 			StrategyCommand::register($this);
 			StrategyTopicCommand::register($this);
 			SyncCommand::register($this);
+			AiCommand::register($this);
 		}
 	}
 
