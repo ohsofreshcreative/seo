@@ -36,7 +36,10 @@ dostawca danych rynkowych (wolumen, historia wolumenu, CPC, konkurencja Ads, tru
 > i retencją, treść stron w kontekście AI jako dane niezaufane; bez crawlera i bez UI) i faza C — **Rekomendacje AI i briefy SEO** (optymalizacja
 > istniejącej strony, brief kandydata na nową stronę, luki treści względem konkurencji: zgodność z działaniem Strategii, gotowość z zapisanych
 > danych bez żadnych żądań, kontekst v3, wersjonowane instrukcje, kontrakt v2 z walidacją dowodów i reguł jakości, zatwierdzany odcisk planu,
-> blokada równoległych zleceń, historia z wykrywaniem nieaktualnych wyników; CLI, bez UI). Plan i postęp: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
+> blokada równoległych zleceń, historia z wykrywaniem nieaktualnych wyników; CLI) i faza D — **panel AI i Page Intelligence** (sekcja „Analiza AI”
+> w szczegółach tematu z gotowością i typem zgodnym ze Strategią, przygotowanie analizy z planem i kosztem przed zleceniem, analizy i pobrania stron
+> w tle po jawnym potwierdzeniu, raport z rekomendacjami i dowodami, kopiowanie i druk, historia analiz, lista i szczegóły stron; klient widzi tylko
+> gotowe analizy bez kosztów). Plan i postęp: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 >
 > **Repozytorium jest publiczne.** Nie commituj żadnych sekretów (sekcja „Konfiguracja”).
 
@@ -228,6 +231,7 @@ wp osf-seo ai:readiness --project=<public_id> --topic="fraza" --type=page-optimi
 wp osf-seo ai:plan --project=<public_id> --topic="fraza" --type=content-gap   # gotowość, koszt maks., blokady, odcisk planu (zero żądań)
 wp osf-seo ai:generate --project=<public_id> --topic="fraza" --type=new-page-brief [--explicit]   # dostawca testowy (koszt 0); płatny: --provider=openai + zatwierdzony plan
 wp osf-seo ai:show --project=<public_id> --run=<id>              # wynik, walidacja, źródła i aktualność; ai:runs --check-stale — aktualność historii
+wp osf-seo ai:queue [--run]                                      # analizy zlecone w panelu (faza D): stan kolejki; --run = krok w tle raz
 
 # Page Intelligence (STEP 17, faza B — pobieranie wyłącznie jawne; szczegóły: docs/ARCHITECTURE.md, sekcja 23)
 wp osf-seo pages:status --project=<public_id>                    # konfiguracja, transport, liczniki (bez HTTP)
@@ -236,6 +240,7 @@ wp osf-seo pages:fetch --project=<public_id> --topic="fraza"     # pobranie stro
 wp osf-seo pages:fetch --project=<public_id> --keyword="fraza" --ranks=1,2,3   # wybrane wyniki organiczne zapisanego pomiaru SERP (nigdy cały SERP)
 wp osf-seo pages:check-url --project=<public_id> --page-url=https://example.pl/strona/   # diagnostyka: zakres, DNS, adresy IP (bez HTTP)
 wp osf-seo pages:list|show|snapshot|delete|purge …               # strony, snapshot (JSON), usunięcie, retencja (bez HTTP)
+wp osf-seo pages:jobs [--run]                                    # pobrania zlecone w panelu (faza D): stan; --run = krok w tle raz
 ```
 
 Synchronizacja i kroki po niej (szanse SEO, dane rynkowe, Nowe frazy, Luki SEO, Pozycje i przeliczenie Strategii) działają w tle przez
@@ -291,10 +296,16 @@ define('OSF_SEO_DATAFORSEO_MONTHLY_COST_LIMIT', 10.00);
   limity budżetu AI 0 USD (oddzielne od DataForSEO). Włączenie OpenAI (klucz `OSF_SEO_OPENAI_API_KEY` wyłącznie w `wp-config.php`, model, ceny
   z cennika dostawcy, limity) — krok po kroku w [`docs/AI-SETUP.md`](docs/AI-SETUP.md). Uprawnienie `osf_seo_manage_ai` — tylko administratorzy.
 
-- Page Intelligence: strony pobierane wyłącznie jawnie (`wp osf-seo pages:fetch`, uprawnienie `osf_seo_manage_page_intelligence` — tylko
+- Page Intelligence: strony pobierane wyłącznie jawnie (`wp osf-seo pages:fetch` albo zlecenie w panelu „Strony” wykonywane w tle, uprawnienie `osf_seo_manage_page_intelligence` — tylko
   administratorzy) przez bezpieczny transport ext-curl (wymagany `CURLOPT_RESOLVE`; bez proxy). Opcjonalnie: `OSF_SEO_PAGES_TTL_HOURS` (24),
   `OSF_SEO_PAGES_MAX_BYTES` (2 MB), `OSF_SEO_PAGES_TIMEOUT` (15 s), `OSF_SEO_PAGES_DOMAIN_INTERVAL` (10 s), `OSF_SEO_PAGES_DOMAIN_DAILY_LIMIT` (30),
   `OSF_SEO_PAGES_RETENTION_DAYS` (90), `OSF_SEO_PAGES_COMPETITORS_ENABLED` (`0` wyłącza pobieranie stron konkurencji). Bez sekretów.
+
+- Panel (STEP 17, faza D): **Strategia → temat → „Analiza AI”** — sprawdź gotowość danych, w razie potrzeby zleć pobranie strony docelowej
+  albo stron konkurencji z SERP (plan bez żądań → potwierdzenie → pobranie w tle), wybierz rodzaj analizy (zalecany według działania Strategii),
+  przejrzyj plan i koszt maksymalny, potwierdź — analizę wykona krok w tle (WP-Cron co minutę albo `wp osf-seo sync:run`), a raport pojawi się
+  w temacie i w „Analizy AI” (kopiowanie podsumowania, rekomendacji i briefu, druk). Bez konfiguracji płatnego AI działa tylko dostawca testowy
+  (wynik przykładowy, koszt 0). Szczegóły: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md), sekcja 25.
 
 Pełna lista stałych: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md), sekcja 17.
 
