@@ -44,6 +44,12 @@ final class StrategyService
 	/** Najwięcej tekstów fraz w jednym zapytaniu o tematy (odnośniki z innych modułów). */
 	public const LINK_LOOKUP_LIMIT = 500;
 
+	/** Przez tyle sekund po zakończeniu zadania panel pokazuje „Zakończono” (potem „Aktualne dane”). */
+	public const DONE_WINDOW = 900;
+
+	/** Brak kroku Strategii w tle przez tyle sekund — administrator widzi ostrzeżenie o niedziałającym cronie. */
+	public const WORKER_STALE_AFTER = 600;
+
 	public function __construct(
 		private readonly StrategyRefresher $refresher,
 		private readonly StrategyKeywordRepository $keywords,
@@ -58,6 +64,8 @@ final class StrategyService
 		private readonly TopicEventRepository $events,
 		private readonly SerpDictionary $dictionary,
 		private readonly StrategyFreshness $freshness,
+		private readonly StrategyRefreshQueue $queue,
+		private readonly StrategyRefreshRunner $runner,
 	) {
 	}
 
@@ -95,6 +103,19 @@ final class StrategyService
 			'counts' => $this->keywords->counts($context->projectId()),
 			'topics' => $this->topics->counts($context->projectId()),
 			'last_refresh' => $settings->stats,
+			'queue' => [
+				'status' => $settings->refreshStatus,
+				'source' => $settings->refreshSource,
+				'requested_at' => $settings->refreshRequestedAt,
+				'due_at' => $settings->refreshDueAt,
+				'started_at' => $settings->refreshStartedAt,
+				'finished_at' => $settings->refreshFinishedAt,
+				'attempts' => $settings->refreshAttempts,
+				'error' => $settings->refreshError,
+				'error_at' => $settings->refreshErrorAt,
+				'dirty_since' => $settings->refreshDirtySince,
+				'running' => $this->refresher->running($context->projectId()),
+			],
 		];
 	}
 
@@ -116,7 +137,8 @@ final class StrategyService
 	public function refresh(ProjectContext $context, bool $force = false): array
 	{
 		$context->assertCan(Capabilities::MANAGE_STRATEGY);
-		$report = $this->refresher->refresh($context->projectId(), $force);
+		// Ta sama blokada i ten sam zapis stanu zadania co krok w tle (źródło `cli`) — oczekujące zlecenie sprzed startu zostaje wykonane.
+		$report = $this->runner->runNow($context->projectId(), $force);
 
 		if ($report['skipped'] === null) {
 			$this->logger->info('Strategy candidates of project {project} refreshed: {inserted} new, {updated} updated, {deactivated} deactivated; {topics} topics in {ms} ms.', [
@@ -478,22 +500,75 @@ final class StrategyService
 		$scope = $this->refresher->scope($projectId, true);
 		$key = $scope === null ? null : $this->refresher->dataKey($scope);
 
+		$upToDate = $key !== null && $settings->dataKey === $key;
+		$running = $this->refresher->running($projectId);
+		$manage = $context->can(Capabilities::MANAGE_STRATEGY);
+
 		return [
 			'supported' => $scope !== null,
 			'market' => $scope?->market->label(),
 			'gsc_window' => $scope?->window,
 			'refreshed_at' => $settings->refreshedAt,
 			'refresh_ms' => $settings->refreshMs,
-			'up_to_date' => $key !== null && $settings->dataKey === $key,
-			'running' => $this->refresher->running($projectId),
+			'up_to_date' => $upToDate,
+			'running' => $running,
 			'requested_at' => $settings->refreshRequestedAt,
-			'requested_by' => $context->can(Capabilities::MANAGE_STRATEGY) ? $settings->refreshRequestedBy : null,
+			'requested_by' => $manage ? $settings->refreshRequestedBy : null,
 			'candidates' => $this->keywords->counts($projectId),
 			'last_refresh' => [
 				'selected' => $settings->stats['selected'] ?? null,
 				'limit' => $settings->stats['limit'] ?? null,
 				'overflow' => $settings->stats['overflow'] ?? null,
+				'topics' => is_array($settings->stats['topics'] ?? null) ? array_intersect_key($settings->stats['topics'], array_flip(['topics', 'inserted', 'updated', 'deactivated', 'events'])) : null,
 			],
+			'job' => $this->jobState($settings, $scope !== null, $upToDate, $running, $manage),
+		];
+	}
+
+	/**
+	 * Stan przeliczenia dla panelu (endpoint statusu i baner): faza `current` (Aktualne dane), `pending` (zmiana danych czeka na krok
+	 * w tle), `queued` (zlecone), `retrying` (ponowienie po błędzie), `running` (Przeliczanie), `done` (Zakończono — niedawno), `failed`
+	 * (Błąd przeliczenia), `unsupported`. Bez uprawnień zarządzania: bez kodu błędu, źródła zlecenia i stanu zadań w tle.
+	 *
+	 * @return array<string, mixed>
+	 */
+	private function jobState(StrategySettings $settings, bool $supported, bool $upToDate, bool $running, bool $manage): array
+	{
+		$now = $this->clock->now()->getTimestamp();
+		$status = $settings->refreshStatus;
+		$finishedAgo = $settings->refreshFinishedAt === null ? null : $now - (int) strtotime($settings->refreshFinishedAt . ' UTC');
+		$phase = match (true) {
+			! $supported => 'unsupported',
+			$running || $status === StrategyRefreshQueue::STATUS_RUNNING => 'running',
+			$status === StrategyRefreshQueue::STATUS_QUEUED => $settings->refreshAttempts > 0 ? 'retrying' : 'queued',
+			$status === StrategyRefreshQueue::STATUS_FAILED => 'failed',
+			! $upToDate => 'pending',
+			$finishedAgo !== null && $finishedAgo <= self::DONE_WINDOW => 'done',
+			default => 'current',
+		};
+		$heartbeat = $manage ? (get_option(StrategyScheduler::HEARTBEAT_OPTION, null) ?: null) : null;
+
+		return [
+			'phase' => $phase,
+			'active' => in_array($phase, ['queued', 'retrying', 'running'], true),
+			'source' => $manage ? $settings->refreshSource : null,
+			'due_at' => in_array($phase, ['queued', 'retrying'], true) ? $settings->refreshDueAt : null,
+			'started_at' => $phase === 'running' ? $settings->refreshStartedAt : null,
+			'finished_at' => $settings->refreshFinishedAt,
+			'attempts' => $settings->refreshAttempts,
+			'max_attempts' => StrategyRefreshQueue::MAX_ATTEMPTS,
+			'error' => $manage && in_array($phase, ['retrying', 'failed'], true) ? $settings->refreshError : null,
+			'error_at' => $manage && in_array($phase, ['retrying', 'failed'], true) ? $settings->refreshErrorAt : null,
+			'dirty_since' => $phase === 'pending' ? $settings->refreshDirtySince : null,
+			// Diagnostyka administratora (ustawienia Strategii): stan zadania, ostatni błąd (kod), czasy faz ostatniego przeliczenia.
+			'status' => $manage ? $status : null,
+			'last_error' => $manage ? $settings->refreshError : null,
+			'last_error_at' => $manage ? $settings->refreshErrorAt : null,
+			'timings' => $manage && is_array($settings->stats['timings'] ?? null) ? $settings->stats['timings'] : null,
+			'worker_heartbeat' => $heartbeat,
+			// Zadania w tle nie działają (brak crona) — ostrzeżenie dla administratora, gdy coś czeka na przeliczenie.
+			'worker_stale' => $manage && in_array($phase, ['pending', 'queued', 'retrying'], true)
+				&& ($heartbeat === null || $now - (int) strtotime($heartbeat . ' UTC') > self::WORKER_STALE_AFTER),
 		];
 	}
 
@@ -571,10 +646,15 @@ final class StrategyService
 	 * Ręczne zlecenie przeliczenia z panelu: unieważnia klucz danych i zapisuje zlecenie. Samo przeliczenie wykona krok w tle Strategii
 	 * (faza E) albo `wp osf-seo strategy:refresh` — nigdy żądanie WWW (D74). Status pracy tematów nie zmienia się.
 	 */
+	/**
+	 * Zlecenie przeliczenia z panelu — wyłącznie zapis zadania w kolejce (`StrategyRefreshQueue::request`); przeliczenie wykona krok
+	 * w tle (WP-Cron albo `wp osf-seo sync:run`) albo CLI — nigdy żądanie WWW i nigdy żądanie do API. Ponowne kliknięcie nie tworzy
+	 * kolejnego zadania; kliknięcie w trakcie przeliczenia zleca jedno kolejne po jego zakończeniu.
+	 */
 	public function requestRefresh(ProjectContext $context): void
 	{
 		$context->assertCan(Capabilities::MANAGE_STRATEGY);
-		$this->settings->requestRefresh($context->projectId(), $context->userId());
+		$this->queue->request($context->projectId(), $context->userId());
 		$this->logger->info('Strategy refresh of project {project} requested from the panel.', ['project' => $context->publicId()]);
 	}
 

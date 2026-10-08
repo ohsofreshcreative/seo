@@ -125,6 +125,9 @@ use OsfSeo\Strategy\StrategyConfig;
 use OsfSeo\Strategy\StrategyFreshness;
 use OsfSeo\Strategy\StrategyKeywordRepository;
 use OsfSeo\Strategy\StrategyRefresher;
+use OsfSeo\Strategy\StrategyRefreshQueue;
+use OsfSeo\Strategy\StrategyRefreshRunner;
+use OsfSeo\Strategy\StrategyScheduler;
 use OsfSeo\Strategy\StrategyService;
 use OsfSeo\Strategy\StrategySettingsRepository;
 use OsfSeo\Strategy\Target\GscPageIndex;
@@ -583,6 +586,24 @@ final class Plugin
 			$c->get(Clock::class),
 			$c->get(TopicRefresher::class),
 		));
+		$container->singleton(StrategyRefreshQueue::class, static fn (Container $c): StrategyRefreshQueue => new StrategyRefreshQueue($c->get(Connection::class), $c->get(Clock::class)));
+		$container->singleton(StrategyRefreshRunner::class, static fn (Container $c): StrategyRefreshRunner => new StrategyRefreshRunner(
+			$c->get(Connection::class),
+			$c->get(StrategyRefresher::class),
+			$c->get(StrategyRefreshQueue::class),
+			$c->get(StrategySettingsRepository::class),
+			$c->get(Logger::class),
+		));
+		$container->singleton(StrategyScheduler::class, static fn (Container $c): StrategyScheduler => new StrategyScheduler(
+			$c->get(StrategyRefresher::class),
+			$c->get(StrategyRefreshRunner::class),
+			$c->get(StrategyRefreshQueue::class),
+			$c->get(StrategySettingsRepository::class),
+			$c->get(SyncRunRepository::class),
+			$c->get(ProjectGuard::class),
+			$c->get(Clock::class),
+			$c->get(Logger::class),
+		));
 		$container->singleton(StrategyService::class, static fn (Container $c): StrategyService => new StrategyService(
 			$c->get(StrategyRefresher::class),
 			$c->get(StrategyKeywordRepository::class),
@@ -597,6 +618,8 @@ final class Plugin
 			$c->get(TopicEventRepository::class),
 			new SerpDictionary($c->get(Connection::class), $c->get(Clock::class)),
 			new StrategyFreshness($c->get(Connection::class)),
+			$c->get(StrategyRefreshQueue::class),
+			$c->get(StrategyRefreshRunner::class),
 		));
 
 		$container->singleton(KeywordReport::class, static fn (Container $c): KeywordReport => new KeywordReport(
@@ -661,6 +684,9 @@ final class Plugin
 			$scheduler->onAfterRun(static fn (): array => $c->get(GapService::class)->runBackground((float) $c->get(SyncConfig::class)->timeBudget()));
 			// Pozycje SERP: odbiór wyników (bezpłatny), pomiary z harmonogramu i wysyłka paczek — osobny krok, błąd nie dotyka GSC.
 			$scheduler->onAfterRun(static fn (): array => $c->get(SerpTrackingService::class)->runBackground((float) $c->get(SyncConfig::class)->timeBudget()));
+			// Strategia: lokalne przeliczenie zapisanych danych (zlecenia z panelu, wykryte zmiany modułów) — ostatni krok, w czasie
+			// pozostałym ze wspólnego limitu ticka (D63), bez żadnego żądania do API (D78).
+			$scheduler->onAfterRun(static fn (): array => $c->get(StrategyScheduler::class)->runBackground($scheduler->remainingBudget()));
 
 			return $scheduler;
 		});

@@ -194,6 +194,16 @@ Motyw powstał z marketingowego motywu `h2otwock` i wciąż zawiera jego kod: bl
   w żądaniu WWW (wykonuje CLI, od fazy E krok w tle); płatna analiza SERP wyłącznie podgląd → potwierdzenie → `SerpAnalysisService::start`
   (obie capabilities sprawdzane w trasie, kontrolerze i usłudze); odnośniki z modułów: szansa SEO → temat tylko przez dowód `opportunity.direct`;
   klient bez odrzuconych tematów, notatek, identyfikatorów użytkowników, ustawień, kosztów i analizy SERP (egzekwowane w usłudze).
+  Tło (faza E, `StrategyRefreshQueue`, `StrategyRefreshRunner`, `StrategyScheduler`, sekcja 15.15): **krok w tle automatyzuje wyłącznie lokalne
+  przeliczenie zapisanych danych** — nigdy pomiarów SERP, Labs, wyszukiwania fraz, metryk ani rozszerzania monitorowanych fraz; limity kosztów bez
+  zmian. Zadanie = stan w wierszu `strategy_settings` (M0014, jedno na projekt, bez nowej tabeli kolejki i bez Action Scheduler); wykonawca to ostatni
+  krok `SyncScheduler::onAfterRun` w czasie pozostałym z limitu ticka (`remainingBudget`, D63). Blokada `StrategyRefresher::lock()` trzymana przez
+  przejęcie → `refreshLocked` → zakończenie (także CLI `strategy:refresh`); przejęcie tylko warunkowym UPDATE; `running` bez blokady = przerwany proces.
+  Ponowienia: 3 próby (1 min → 5 min), potem `failed` do zmiany danych albo ręcznego zlecenia; w stanie tylko kod błędu (szczegóły w logu). Zlecenie
+  w trakcie przeliczenia nie może zginąć (`refresh_requested_at` > początek przeliczenia → kolejne przeliczenie). Wykrywanie zmian z debounce
+  (stabilny klucz 120 s, brak oczekujących zadań GSC, maks. 60 min) — nie przeliczaj po każdym zapisie importu i nie dopuść do cyklu przeliczenie →
+  unieważnienie → przeliczenie (przeliczenie nie zmienia klucza danych). Projekt w tle wyłącznie przez `ProjectGuard::authorizeSystem` z identyfikatora
+  zapisanego w bazie. Panel: statusy z `panelState()['job']`, endpoint `GET /strategy/status`, klient bez kodu błędu i stanu kroku w tle.
 - `$wpdb` traktuje tabelę z kolumnami ascii i utf8mb4 bez kolumny binarnej jako ASCII i odrzuca zapytania z polskimi znakami
   („contains invalid data”) — w nowych tabelach z tekstem użytkownika daj co najmniej jedną kolumnę `*_bin` / binarną albo zapisuj
   tekst przez `insert()`/`update()`. Frazy liczbowe („2024”) jako klucze tablic PHP stają się int — rzutuj na `(string)`.
@@ -381,9 +391,11 @@ wp osf-seo strategy:list|topic|context --project=<id> [--topic=…] [--format=js
 wp osf-seo strategy:set-status --project=<id> --topic=… --status=… [--note=…]           # status pracy (przeliczenie go nie zmienia)
 wp osf-seo strategy:set-target --project=<id> --topic=… (--target-url=… | --confirm-missing | --clear)   # ręczna strona docelowa (nie `--url` — globalny parametr WP-CLI)
 wp osf-seo strategy:pin|unpin --project=<id> --keywords="a, b" [--topic=… | --new]   # przypięcia fraz do tematów (osf_seo_manage_strategy)
+wp osf-seo strategy:queue [--run] [--time-limit=<s>] [--format=json]   # kolejka przeliczeń Strategii w tle: diagnostyka; --run = krok w tle raz (bez API)
 composer test:performance       # benchmark raportów + EXPLAIN na syntetycznych danych (OSOBNA baza testowa)
 composer test:performance:serp  # benchmark pozycji SERP (100 projektów × 500 fraz, TOP100, historia, 2500 fraz) + EXPLAIN (OSOBNA baza)
 composer test:performance:gap   # benchmark Luk SEO (40 zbiorów × 10 000 fraz, 20 projektów, import 10 000 fraz atrapą HTTP) + EXPLAIN (OSOBNA baza)
+composer test:performance:strategy  # benchmark Strategii (100 / 1 000 / 5 000 fraz + 10 projektów, przebiegi bez zmian, krok w tle) (OSOBNA baza)
 ```
 
 Testy integracyjne czyszczą i usuwają tabele — **nigdy nie wskazuj bazy strony**. Zmienne:

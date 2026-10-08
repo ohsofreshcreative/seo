@@ -5,8 +5,12 @@
 @php
   use App\Panel\Format;
   use App\Panel\PanelUrl;
+  use App\Panel\StrategyRefreshView;
 
   $base = PanelUrl::project($project->publicId, 'strategy');
+  $job = $state['job'];
+  $jobStatuses = ['idle' => 'bezczynne', 'queued' => 'w kolejce', 'running' => 'trwa', 'failed' => 'wstrzymane po błędach'];
+  $jobSources = ['manual' => 'zlecenie z panelu', 'auto' => 'zmiana danych modułów', 'cli' => 'WP-CLI'];
   $limits = [
     'max_keywords' => ['Limit kandydatów Strategii', 'OSF_SEO_STRATEGY_MAX_KEYWORDS — nadmiar jest liczony i pokazywany, nie pomijany po cichu'],
     'serp_max_per_run' => ['Nowe pomiary SERP na jedną analizę', 'OSF_SEO_STRATEGY_SERP_MAX_PER_RUN — bez cichego obcinania wyboru'],
@@ -31,21 +35,41 @@
       <dl class="mt-2 divide-y divide-slate-100 text-sm">
         <div class="flex justify-between gap-4 py-2"><dt class="text-slate-500">Rynek</dt><dd class="text-slate-900">{{ $state['market'] ?? '—' }}</dd></div>
         <div class="flex justify-between gap-4 py-2"><dt class="text-slate-500">Okno GSC</dt><dd class="text-slate-900">{{ $state['gsc_window'] === null ? '—' : Format::date($state['gsc_window'][0]) . ' – ' . Format::date($state['gsc_window'][1]) }}</dd></div>
-        <div class="flex justify-between gap-4 py-2"><dt class="text-slate-500">Ostatnie przeliczenie</dt><dd class="text-slate-900">{{ Format::datetime($state['refreshed_at']) }}@if ($state['refresh_ms'] !== null) <span class="text-xs text-slate-500">({{ Format::number($state['refresh_ms'] / 1000, 1) }} s)</span>@endif</dd></div>
-        <div class="flex justify-between gap-4 py-2"><dt class="text-slate-500">Aktualność</dt><dd class="text-slate-900">{{ $state['running'] ? 'przeliczenie trwa' : ($state['up_to_date'] ? 'aktualne' : 'dane modułów zmieniły się') }}</dd></div>
+        <div class="flex justify-between gap-4 py-2"><dt class="text-slate-500">Ostatnie przeliczenie</dt><dd class="text-slate-900">{{ Format::datetime($state['refreshed_at']) }}@if ($state['refresh_ms'] !== null) <span class="text-xs text-slate-500">({{ Format::number($state['refresh_ms']) }} ms)</span>@endif</dd></div>
+        <div class="flex justify-between gap-4 py-2"><dt class="text-slate-500">Stan</dt><dd class="text-slate-900">{{ StrategyRefreshView::label($job['phase']) }}</dd></div>
+        <div class="flex justify-between gap-4 py-2">
+          <dt class="text-slate-500">Zadanie w tle</dt>
+          <dd class="text-right text-slate-900">
+            {{ $jobStatuses[$job['status']] ?? $job['status'] }}
+            <span class="block text-xs text-slate-500">źródło: {{ $jobSources[$job['source']] ?? '—' }} · próby {{ $job['attempts'] }} z {{ $job['max_attempts'] }}@if ($job['due_at'] !== null) · termin {{ Format::datetime($job['due_at']) }}@endif</span>
+          </dd>
+        </div>
         <div class="flex justify-between gap-4 py-2"><dt class="text-slate-500">Zlecone z panelu</dt><dd class="text-slate-900">{{ Format::datetime($state['requested_at']) }}</dd></div>
+        <div class="flex justify-between gap-4 py-2">
+          <dt class="text-slate-500">Ostatni błąd</dt>
+          <dd class="text-right text-slate-900">
+            @if ($job['last_error'] === null)
+              —
+            @else
+              {{ StrategyRefreshView::error($job['last_error']) }}
+              <span class="block text-xs text-slate-500">{{ Format::datetime($job['last_error_at']) }} · kod {{ $job['last_error'] }} · szczegóły w logu pluginu</span>
+            @endif
+          </dd>
+        </div>
+        <div class="flex justify-between gap-4 py-2"><dt class="text-slate-500">Blokada przeliczenia</dt><dd class="text-slate-900">{{ $state['running'] ? 'trzymana — przeliczenie trwa' : 'wolna' }}</dd></div>
+        <div class="flex justify-between gap-4 py-2"><dt class="text-slate-500">Ostatni krok w tle</dt><dd class="text-slate-900">{{ $job['worker_heartbeat'] === null ? 'jeszcze nie działał' : Format::datetime($job['worker_heartbeat']) }}</dd></div>
+        @if ($job['timings'] !== null)
+          <div class="flex justify-between gap-4 py-2">
+            <dt class="text-slate-500">Czasy faz (ms)</dt>
+            <dd class="text-right text-xs tabular-nums text-slate-900">klucz {{ Format::number($job['timings']['key'] ?? null) }} · zbieranie {{ Format::number($job['timings']['collect'] ?? null) }} · dowody {{ Format::number($job['timings']['evidence'] ?? null) }} · zapis {{ Format::number($job['timings']['save'] ?? null) }} · tematy {{ Format::number($job['timings']['topics'] ?? null) }}</dd>
+          </div>
+        @endif
         <div class="flex justify-between gap-4 py-2"><dt class="text-slate-500">Kandydaci aktywni / ręczni</dt><dd class="tabular-nums text-slate-900">{{ Format::number($state['candidates']['active']) }} / {{ Format::number($state['candidates']['manual']) }}</dd></div>
       </dl>
-      @if ($state['supported'])
-        <form method="post" action="{{ $base }}/refresh" class="mt-4">
-          <x-panel.nonce />
-          <input type="hidden" name="back" value="{{ $base }}/settings">
-          <x-panel.button type="submit" variant="secondary">Zleć przeliczenie</x-panel.button>
-        </form>
-      @endif
       <p class="mt-3 text-xs text-slate-500">
-        Przeliczenie jest lokalne (bez kosztów i bez żądań do API) i nigdy nie zmienia statusów pracy. Panel tylko zapisuje zlecenie — pełne przeliczenie nie działa
-        w żądaniu WWW. Automatyczne przeliczanie w tle nie jest jeszcze włączone; do tego czasu uruchamia je administrator komendą
+        Przeliczenie jest lokalne (bez kosztów i bez żądań do API) i nigdy nie zmienia statusów pracy. Panel tylko zapisuje zadanie — wykonuje je krok w tle
+        po kolejce synchronizacji (WP-Cron albo cron systemowy <code class="rounded bg-slate-100 px-1">wp osf-seo sync:run</code> co minutę), automatycznie także po zmianie
+        danych modułów, gdy import się zakończy. Diagnostyka kolejki: <code class="rounded bg-slate-100 px-1">wp osf-seo strategy:queue</code>; ręcznie:
         <code class="rounded bg-slate-100 px-1">wp osf-seo strategy:refresh --project={{ $project->publicId }}</code>.
       </p>
     </x-panel.card>

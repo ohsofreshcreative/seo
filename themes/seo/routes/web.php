@@ -184,6 +184,7 @@ Route::middleware([Authenticate::class, VerifyNonce::class])->group(function () 
 		Route::get('/projects/{project}/opportunities/{opportunity}', [OpportunitiesController::class, 'show'])
 			->where('opportunity', '[0-9A-Za-z]{26}');
 		Route::get('/projects/{project}/strategy', [StrategyController::class, 'index']);
+		Route::get('/projects/{project}/strategy/status', [StrategyController::class, 'status']);
 		Route::get('/projects/{project}/strategy/topics', [StrategyTopicsController::class, 'index']);
 		Route::get('/projects/{project}/strategy/topics/{topic}', [StrategyTopicsController::class, 'show'])
 			->where('topic', '[0-9A-Za-z]{26}');

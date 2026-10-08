@@ -35,6 +35,9 @@ use OsfSeo\Strategy\StrategyConfig;
 use OsfSeo\Strategy\StrategyFreshness;
 use OsfSeo\Strategy\StrategyKeywordRepository;
 use OsfSeo\Strategy\StrategyRefresher;
+use OsfSeo\Strategy\StrategyRefreshQueue;
+use OsfSeo\Strategy\StrategyRefreshRunner;
+use OsfSeo\Strategy\StrategyScheduler;
 use OsfSeo\Strategy\StrategyService;
 use OsfSeo\Strategy\StrategySettingsRepository;
 use OsfSeo\Strategy\StrategySource;
@@ -48,6 +51,7 @@ use OsfSeo\Strategy\Topics\TopicRefresher;
 use OsfSeo\Strategy\Topics\TopicRepository;
 use OsfSeo\Strategy\Topics\UrlConflictDetector;
 use OsfSeo\Support\Ulid;
+use OsfSeo\Sync\SyncRunRepository;
 use OsfSeo\Tests\Integration\Gap\GapTestCase;
 
 /**
@@ -74,6 +78,15 @@ abstract class StrategyTestCase extends GapTestCase
 	protected SerpAnalysisService $analysis;
 
 	protected StrategyRefresher $strategyRefresher;
+
+	protected StrategyRefreshQueue $refreshQueue;
+
+	/** Hak wywoływany w trakcie zbierania kandydatów (zmiana danych albo wyjątek w trakcie przeliczenia). */
+	protected ?\Closure $duringRefresh = null;
+
+	protected StrategyRefreshRunner $refreshRunner;
+
+	protected StrategyScheduler $strategyScheduler;
 
 	protected StrategyKeywordRepository $strategyKeywords;
 
@@ -125,7 +138,8 @@ abstract class StrategyTestCase extends GapTestCase
 		$this->strategyRefresher = new StrategyRefresher(
 			$db,
 			[
-				new ManualSource($db),
+				// Ręczne wpisy z hakiem testowym: `$duringRefresh` wywoływane w trakcie zbierania kandydatów (import albo błąd w trakcie przeliczenia).
+				new HookedSource(new ManualSource($db), fn () => $this->duringRefresh === null ? null : ($this->duringRefresh)()),
 				new SerpSource($db, $this->intelligence),
 				new OpportunitySource($db, new OpportunityKeywordIndex($db), $lookup),
 				new DiscoverySource($db),
@@ -161,6 +175,18 @@ abstract class StrategyTestCase extends GapTestCase
 				$this->clock,
 			),
 		);
+		$this->refreshQueue = new StrategyRefreshQueue($db, $this->clock);
+		$this->refreshRunner = new StrategyRefreshRunner($db, $this->strategyRefresher, $this->refreshQueue, $this->strategySettings, $this->captureLogger());
+		$this->strategyScheduler = new StrategyScheduler(
+			$this->strategyRefresher,
+			$this->refreshRunner,
+			$this->refreshQueue,
+			$this->strategySettings,
+			new SyncRunRepository($db, $this->clock),
+			$this->guard,
+			$this->clock,
+			$this->captureLogger(),
+		);
 		$this->strategy = new StrategyService(
 			$this->strategyRefresher,
 			$this->strategyKeywords,
@@ -175,6 +201,8 @@ abstract class StrategyTestCase extends GapTestCase
 			$this->topicEvents,
 			new SerpDictionary($db, $this->clock),
 			new StrategyFreshness($db),
+			$this->refreshQueue,
+			$this->refreshRunner,
 		);
 		$logger = $this->captureLogger();
 		$planner = new SerpPlanner($this->serpProvider, $this->tracked, new SerpConfig(), $this->market, $this->clock);

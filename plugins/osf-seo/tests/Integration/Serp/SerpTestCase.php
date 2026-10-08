@@ -298,16 +298,7 @@ abstract class SerpTestCase extends MarketTestCase
 	/** Blokada trzymana przez inny proces (osobne połączenie z bazą); zwolnienie przez `close()`. */
 	protected function holdLock(string $name): \mysqli
 	{
-		$host = DB_HOST;
-		$port = null;
-		$socket = null;
-
-		if (str_contains($host, ':')) {
-			[$host, $suffix] = explode(':', $host, 2);
-			is_numeric($suffix) ? $port = (int) $suffix : $socket = $suffix;
-		}
-
-		$other = new \mysqli($host, DB_USER, DB_PASSWORD, DB_NAME, $port, $socket);
+		$other = $this->secondConnection();
 		$other->query("SELECT GET_LOCK('" . $other->real_escape_string(self::db()->lockName($name)) . "', 0)");
 
 		return $other;

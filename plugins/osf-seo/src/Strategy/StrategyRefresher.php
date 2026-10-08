@@ -161,13 +161,38 @@ final class StrategyRefresher
 	}
 
 	/**
-	 * Przeliczenie i zapis kandydatów (tylko po zmianie klucza danych albo z `$force`).
+	 * Przeliczenie i zapis kandydatów (tylko po zmianie klucza danych albo z `$force`) pod blokadą projektu — bez równoległego przeliczenia
+	 * tego samego projektu (inny proces → `locked`).
 	 *
 	 * @return array<string, mixed>
 	 */
 	public function refresh(int $projectId, bool $force = false): array
 	{
+		$lock = self::lock($projectId);
+
+		if (! $this->db->acquireLock($lock, 0)) {
+			// Ten projekt przelicza właśnie inny proces (CLI albo krok w tle) — bez równoległego przeliczenia.
+			return ['skipped' => self::SKIPPED_LOCKED];
+		}
+
+		try {
+			return $this->refreshLocked($projectId, $force);
+		} finally {
+			$this->db->releaseLock($lock);
+		}
+	}
+
+	/**
+	 * Przeliczenie, gdy wywołujący trzyma już blokadę `self::lock($projectId)` (zadanie przeliczenia: przejęcie, przeliczenie i zakończenie
+	 * pod jedną blokadą — `StrategyRefreshRunner`). Klucz danych liczony przed pracą: dane zapisane w trakcie zostawiają klucz nieaktualny
+	 * i wykrywa je kolejne sprawdzenie. Statystyki zawierają czasy faz (zbieranie, fakty i dowody, zapis kandydatów, tematy).
+	 *
+	 * @return array<string, mixed>
+	 */
+	public function refreshLocked(int $projectId, bool $force = false): array
+	{
 		$started = microtime(true);
+		$startedAt = $this->clock->now()->format('Y-m-d H:i:s');
 		$scope = $this->scope($projectId);
 
 		if ($scope === null) {
@@ -180,33 +205,38 @@ final class StrategyRefresher
 			return ['skipped' => self::SKIPPED_UNCHANGED, 'data_key' => $key];
 		}
 
-		$lock = self::lock($projectId);
-
-		if (! $this->db->acquireLock($lock, 0)) {
-			// Ten projekt przelicza właśnie inny proces (CLI albo krok w tle) — bez równoległego przeliczenia.
-			return ['skipped' => self::SKIPPED_LOCKED];
-		}
-
-		try {
-			// Klucze rynkowe fraz GSC (wyliczane także w tle) — przed zbieraniem, potem klucz danych od nowa (inna liczba fraz bez klucza).
-			$this->backfill->fillProject($projectId);
-			$key = $this->dataKey($scope);
-			$set = $this->collect($scope);
-			$selected = $this->resolveMarketKeywords($scope, $set->selected);
-			$facts = (new EvidenceBuilder($this->sources))->build($scope, $selected);
-			$now = $this->clock->now()->format('Y-m-d H:i:s');
-			$report = $this->keywords->sync($projectId, $scope->market, $facts, $this->inactiveReasons($scope, $set, $facts), $now);
-			$gsc = $this->gscState($scope);
-			// Tematy (faza C) — po zapisie kandydatów, pod tą samą blokadą.
-			$topics = $this->topics->refresh($scope, $gsc['complete']['query'] && $gsc['complete']['query_page'], $now);
-			$stats = $set->stats() + ['gsc' => $gsc, 'market' => $scope->market->label(), 'topics' => $topics];
-			$durationMs = (int) round((microtime(true) - $started) * 1000);
-			$this->settings->recordRefresh($projectId, $key, $durationMs, $stats, $scope->market);
-		} finally {
-			$this->db->releaseLock($lock);
-		}
+		// Klucze rynkowe fraz GSC (wyliczane także w tle) — przed zbieraniem, potem klucz danych od nowa (inna liczba fraz bez klucza).
+		$this->backfill->fillProject($projectId);
+		$key = $this->dataKey($scope);
+		$mark = microtime(true);
+		$timings = ['key' => self::ms($started, $mark)];
+		$set = $this->collect($scope);
+		$selected = $this->resolveMarketKeywords($scope, $set->selected);
+		$timings['collect'] = self::ms($mark, $mark = microtime(true));
+		$facts = (new EvidenceBuilder($this->sources))->build($scope, $selected);
+		$timings['evidence'] = self::ms($mark, $mark = microtime(true));
+		$now = $this->clock->now()->format('Y-m-d H:i:s');
+		$report = $this->keywords->sync($projectId, $scope->market, $facts, $this->inactiveReasons($scope, $set, $facts), $now);
+		$timings['save'] = self::ms($mark, $mark = microtime(true));
+		$gsc = $this->gscState($scope);
+		// Tematy (faza C) — po zapisie kandydatów, pod tą samą blokadą.
+		$topics = $this->topics->refresh($scope, $gsc['complete']['query'] && $gsc['complete']['query_page'], $now);
+		$timings['topics'] = self::ms($mark, microtime(true));
+		$durationMs = self::ms($started, microtime(true));
+		$stats = $set->stats() + ['gsc' => $gsc, 'market' => $scope->market->label(), 'topics' => $topics, 'keywords' => $report, 'timings' => $timings];
+		$this->settings->recordRefresh($projectId, $key, $durationMs, $stats, $scope->market, $startedAt);
 
 		return ['skipped' => null, 'data_key' => $key, 'duration_ms' => $durationMs, 'stats' => $stats, 'topics' => $topics] + $report;
+	}
+
+	/**
+	 * Aktualny klucz danych projektu (hex) albo null (brak projektu, rynek nieobsługiwany) — bez zapisu.
+	 */
+	public function currentKey(int $projectId): ?string
+	{
+		$scope = $this->scope($projectId, true);
+
+		return $scope === null ? null : $this->dataKey($scope);
 	}
 
 	/** Przeliczenie projektu trwa właśnie w innym procesie (CLI albo krok w tle) — tylko odczyt blokady. */
@@ -218,6 +248,11 @@ final class StrategyRefresher
 	public static function lock(int $projectId): string
 	{
 		return 'strategy_refresh_' . $projectId;
+	}
+
+	private static function ms(float $from, float $to): int
+	{
+		return (int) round(($to - $from) * 1000);
 	}
 
 	/**
