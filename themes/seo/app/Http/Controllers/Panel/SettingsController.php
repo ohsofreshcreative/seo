@@ -53,6 +53,12 @@ final class SettingsController
 				'config' => osf_seo()->get(\OsfSeo\Serp\SerpTrackingService::class)->config()->effective(),
 				'pricing' => osf_seo()->get(\OsfSeo\Serp\SerpTrackingService::class)->pricing(),
 			],
+			// Analizy AI i pobieranie stron (STEP 17): stan konfiguracji serwera, budżet AI i kolejki — bez wartości sekretów; zmiana tylko w wp-config.php.
+			'ai' => osf_seo()->get(\OsfSeo\Ai\Workspace\AiWorkspaceService::class)->settings(),
+			'pages' => [
+				'config' => osf_seo()->get(\OsfSeo\PageIntelligence\PageIntelligenceConfig::class)->effective(),
+				'transport' => \OsfSeo\PageIntelligence\PageIntelligenceService::transportSupported(),
+			],
 		]);
 	}
 

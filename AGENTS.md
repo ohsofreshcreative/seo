@@ -205,9 +205,10 @@ Motyw powstał z marketingowego motywu `h2otwock` i wciąż zawiera jego kod: bl
   (stabilny klucz 120 s, brak oczekujących zadań GSC, maks. 60 min) — nie przeliczaj po każdym zapisie importu i nie dopuść do cyklu przeliczenie →
   unieważnienie → przeliczenie (przeliczenie nie zmienia klucza danych). Projekt w tle wyłącznie przez `ProjectGuard::authorizeSystem` z identyfikatora
   zapisanego w bazie. Panel: statusy z `panelState()['job']`, endpoint `GET /strategy/status`, klient bez kodu błędu i stanu kroku w tle.
-- Analizy AI (STEP 17, `src/Ai`, `docs/ARCHITECTURE.md` sekcja 22): **wywołanie modelu wyłącznie z `AiAnalysisService::run`** (jawnie: CLI,
-  w przyszłości akcja w panelu po potwierdzeniu) — nigdy przy renderowaniu panelu, przeliczeniu Strategii, synchronizacji GSC ani w kroku w tle
-  (krok w tle `AiAnalysisService::maintenance` tylko porządkuje historię). Dostawcy wyłącznie za `OsfSeo\Ai\Provider\AiProvider` (adapter = transport
+- Analizy AI (STEP 17, `src/Ai`, `docs/ARCHITECTURE.md` sekcja 22): **wywołanie modelu wyłącznie z `AiAnalysisService`** — jawnie z CLI
+  (`run`, `generate`) albo z kolejki zleceń zatwierdzonych w panelu (`queue` → krok w tle `runQueued`, faza D, sekcja 25.4) — nigdy przy
+  renderowaniu panelu, gotowości, podglądzie, otwarciu tematu, przeliczeniu Strategii ani synchronizacji GSC; tło nigdy samo nie zleca analiz
+  (bez automatycznego harmonogramu AI; `maintenance` tylko porządkuje historię). Dostawcy wyłącznie za `OsfSeo\Ai\Provider\AiProvider` (adapter = transport
   i format; `FakeProvider` koszt 0, `OpenAiProvider` — Responses API, `store: false`, `strict` JSON Schema, bez ponowień); nowe płatne API AI
   tylko z decyzją. Każda zmiana musi zachować: wyłącznik domyślnie wyłączony, **brak modelu i cen w kodzie** (tylko `OSF_SEO_AI_*`; bez cen →
   odmowa), budżet AI oddzielny od DataForSEO (limity DataForSEO bez zmian) z limitami domyślnie 0, rezerwację kosztu maksymalnego pod
@@ -222,9 +223,27 @@ Motyw powstał z marketingowego motywu `h2otwock` i wciąż zawiera jego kod: bl
   treści = nowa wersja); dowody i treści zewnętrzne w osobnych blokach JSON (escapowane `<`, `>`); odpowiedź zapisywana jako wynik wyłącznie po
   `OutputValidator` (odwołania tylko z `refs` kontekstu, `evidence` z odwołaniem, bez prognoz liczbowych i obietnic) — inaczej `invalid`.
   Historia (`ai_runs` + `ai_run_payloads`, M0015) nigdy nie zmienia Strategii ani statusu pracy; decyzja użytkownika osobno od wyniku.
+- Rekomendacje AI i briefy SEO (STEP 17 faza C, `src/Ai/Analysis`, `docs/ARCHITECTURE.md` sekcja 24): trzy typy (`page_optimization`,
+  `new_page_brief` — zawsze „Kandydat na nową stronę”, `content_gap`) na **tej samej ścieżce wykonania i budżecie** co analiza tematu
+  (`AiAnalysisService::generate` → wspólne `execute`; typ w `ai_runs.task`) — bez drugiego systemu budżetowego, drugiego silnika Strategii i nowego
+  fetchera. Każda zmiana musi zachować: zgodność z działaniem Strategii wyłącznie przez `ActionCompatibility` (`allowed` / `explicit` / `blocked`,
+  AI nigdy nie zmienia działania ani statusu pracy — niezgodność tylko jako ustalenie); gotowość (`ReadinessEvaluator`, czysta funkcja zapisanego
+  źródła) — INSUFFICIENT / BLOCKED bez żadnego wywołania, PARTIAL z obowiązkiem ujawnienia ograniczeń, brakujące dane tylko jako wskazówki komend
+  (nigdy automatyczne `pages:fetch`, SERP ani DataForSEO); kontekst v3 tylko dla tych typów (v2 analizy tematu bez zmian), bez diagnostyki parsera
+  i stosunku tekstu do HTML, etykiety interfejsu i sekcje bez treści (`thin_section`) poza porównaniami, kolejność redukcji typu (luka treści nigdy
+  bez stron konkurencji); instrukcje `AnalysisPrompts` wersjonowane per typ (zmiana treści = nowa wersja), język z projektu; wynik wyłącznie po
+  `RecommendationValidator` (kontrakt v2: odwołania tylko z kontekstu, `fact` nie z samych heurystyk, brak treści nigdy faktem, bez prognoz,
+  obietnic, „Google wymaga”, celów liczby słów, kopiowania treści konkurencji, keyword stuffingu, przekierowań / canonical / noindex / usuwania
+  bez kontroli ręcznej, Content Score) — inaczej `invalid`; płatne generowanie tylko z potwierdzeniem **i** zatwierdzonym odciskiem planu
+  (`AiPlan::fingerprint`, ponowna weryfikacja przy wykonaniu → `plan_changed`), blokada zlecenia projekt × temat × typ (`run_in_progress`),
+  duplikat planu → `already_generated` (chyba że `--repeat`), bez automatycznych ponowień i „naprawiania” JSON-a. Historia: M0017
+  (`plan_fingerprint`, `readiness`, `sources`), aktualność wyniku przez odcisk dowodów (wynik nieaktualny tylko oznaczany). Nie zmieniaj reguł
+  walidatora ani progów etykiet interfejsu bez kalibracji na prawdziwych wynikach. Testy bez prawdziwego klucza (`FakeProvider`, atrapa HTTP);
+  fixture'y w stylu realnego testu OhSoFresh tylko syntetyczne (`AiFakes::ohSoFreshHtml`) — nie pobieraj prawdziwej strony.
 - Page Intelligence (STEP 17 faza B, `src/PageIntelligence`, `docs/ARCHITECTURE.md` sekcja 23): **żądania do stron wyłącznie z
   `PageIntelligenceService::fetch`** (jawnie, `osf_seo_manage_page_intelligence` — tylko administratorzy; klient tylko odczytuje) — nigdy przy
-  renderowaniu, odczycie tematu, przeliczeniu Strategii, budowaniu kontekstu AI ani w kroku w tle (tło: tylko retencja, D101). Transport wyłącznie
+  renderowaniu, odczycie tematu, przeliczeniu Strategii ani budowaniu kontekstu AI; w kroku w tle wyłącznie retencja (D101) i pozycje jawnie
+  zleconych `page_jobs` (faza D, D112 — ten sam `fetch`, bez crawlera i bez pobrań po przeliczeniu Strategii). Transport wyłącznie
   `CurlPageFetcher`: każdy hop ręcznie — `UrlSafetyPolicy` (składnia, zakres, DNS i kontrola każdego IP), połączenie tylko z przypiętym IP
   (`CURLOPT_RESOLVE` + `CURLINFO_PRIMARY_IP`), TLS względem oryginalnej nazwy hosta, bez proxy i ciasteczek, limity czasu, rozmiaru (po dekompresji),
   typu i przekierowań; **nie używaj WordPress HTTP API do pobierania stron, nie wyłączaj TLS i nie dodawaj „trybu bez przypięcia”** — bez
@@ -237,6 +256,19 @@ Motyw powstał z marketingowego motywu `h2otwock` i wciąż zawiera jego kod: bl
   („W pobranym HTML nie wykryto…”). Reguły Strategii (`TargetPageResolver`, klasyfikator) nie korzystają ze snapshotów bez osobnej decyzji (D103).
   Treści stron w kontekście AI wyłącznie w bloku niezaufanym; budżet 32 KB bez zwiększania bez pomiaru. Testy transportu na lokalnych serwerach
   (`FixtureServers`, `FixtureNetwork` — 127.0.0.1 „publiczny”, 127.0.0.2 blokowany) — atrapa WP HTTP nie jest dowodem ochrony transportowej.
+- Panel AI i Page Intelligence (STEP 17 faza D, `src/Ai/Workspace`, `PageJobService`, kontrolery `AiController`, `PagesController`,
+  widoki `panel/ai`, `panel/pages`, `docs/ARCHITECTURE.md` sekcja 25): **odczyt i przygotowanie bez żadnych żądań** (`AiWorkspaceService` — sekcja
+  tematu z jednego źródła, plan fazy C, historia, raport); **wykonanie wyłącznie w kroku w tle po jawnym zleceniu**: analizy przez kolejkę
+  `ai_runs.status = queued` (`AiAnalysisService::queue` → `runQueued`, D111 — zawsze zatwierdzony odcisk planu, rezerwacja kosztu przy
+  zakolejkowaniu, plan przeliczany ponownie przed wywołaniem, inny odcisk → `plan_changed` bez wywołania, jedno wywołanie bez ponowień, niepewny
+  wynik nigdy ponawiany), strony przez `page_jobs` (M0018, `PageJobService`, D112 — wyłącznie `PageIntelligenceService::fetch`, maks. 5 adresów,
+  całe zlecenie odrzucane przy adresie spoza zakresu, odstęp hosta → termin kolejnej próby zamiast czekania). Nie dodawaj drugiej kolejki,
+  frameworka kolejek, harmonogramu AI ani pobrań po przeliczeniu Strategii. Kontroler nie przyjmuje kosztu z formularza (tylko odcisk planu).
+  Typ `explicit` — osobne potwierdzenie w formularzu i zapis w uruchomieniu; Strategia i status pracy bez zmian. Historia jednym zapytaniem
+  (tani wskaźnik `sources.strategy_hash` vs. `strategy_topics.evidence_hash`, D114) — nie odbudowuj kontekstu dla wierszy listy. Raport tylko
+  z wyniku zwalidowanego (`AiReport`, etykiety dowodów `EvidenceLabels`, eksport `AiReportText` — bez kosztów, modelu, kodów i JSON-a). Klient
+  (bez `osf_seo_manage_ai`): wyłącznie gotowe, nieodrzucone analizy tematów widocznych w Strategii, bez kosztów, dostawcy, modelu i błędów;
+  strony bez kodów błędów i historii pobrań (egzekwowane w usłudze). Etykiety UI bez kodów technicznych (`ReportLabels`, `App\Panel\PageLabels`).
 - `$wpdb` traktuje tabelę z kolumnami ascii i utf8mb4 bez kolumny binarnej jako ASCII i odrzuca zapytania z polskimi znakami
   („contains invalid data”) — w nowych tabelach z tekstem użytkownika daj co najmniej jedną kolumnę `*_bin` / binarną albo zapisuj
   tekst przez `insert()`/`update()`. Frazy liczbowe („2024”) jako klucze tablic PHP stają się int — rzutuj na `(string)`.
@@ -332,7 +364,8 @@ Fundament panelu powstał w STEP 4 (`docs/ARCHITECTURE.md`, sekcje 4.1–4.4). O
 3. Powtarzalne elementy → komponenty Blade `resources/views/components/panel/*` (`<x-panel.* />`:
    `button`, `card`, `page-header`, `field`, `badge`, `flash`, `empty-state`, `nav-link`, `nonce`, `delta`, `stat`,
    `score`, `confidence`, `opportunity-status`, `visibility`, `candidate-status`, `serp-rank`, `rank-change`, `gap-type`, `content-gap`,
-   `project-visibility`, `strategy-action`, `topic-status`, `target-state`, `serp-freshness`, `strategy-confidence`, `brand`),
+   `project-visibility`, `strategy-action`, `topic-status`, `target-state`, `serp-freshness`, `strategy-confidence`, `brand`,
+   `ai-status`, `readiness`, `basis`, `evidence-list`, `page-cache`),
    nie `@apply` ani własne klasy. Własny CSS tylko, gdy utilities nie wystarczają.
 4. Tokeny kolorów (`brand-*`) w bloku `@theme` w `resources/css/panel.css`; bez hexów w Blade;
    bez dark mode w MVP. `panel.css` skanuje tylko pliki panelu (`source(none)` + `@source`),
@@ -429,19 +462,26 @@ wp osf-seo ai:status [--format=json]                                  # konfigur
 wp osf-seo ai:context|validate-context --project=<id> --topic=…        # kontekst AI tematu (JSON) / walidacja: determinizm, rozmiar, braki danych (bez API)
 wp osf-seo ai:plan --project=<id> --topic=… [--provider=fake|openai] [--focus="…"]   # plan: tokeny, koszt maks., budżet, blokady — zero żądań
 wp osf-seo ai:run --project=<id> --topic=… [--provider=fake]           # domyślnie dostawca testowy (koszt 0); --provider=openai PŁATNE — tylko na polecenie użytkownika
-wp osf-seo ai:runs|show|decide|delete --project=<id> [--run=<id>] …    # historia, wynik i walidacja (--payload), decyzja użytkownika, usunięcie
+wp osf-seo ai:runs|show|decide|delete --project=<id> [--run=<id>] …    # historia, wynik i walidacja (--payload), decyzja użytkownika, usunięcie; ai:runs --check-stale — aktualność wyników
+wp osf-seo ai:analysis-types [--format=json]                          # typy analiz rekomendacji, wersje instrukcji, zgodność z działaniami Strategii
+wp osf-seo ai:readiness --project=<id> --topic=… --type=page-optimization|new-page-brief|content-gap [--explicit]   # gotowość z zapisanych danych — zero żądań
+wp osf-seo ai:plan --project=<id> --topic=… --type=… [--provider=…] [--explicit]   # plan analizy rekomendacji z odciskiem planu (zero żądań); ai:context --type=… — kontekst v3
+wp osf-seo ai:generate --project=<id> --topic=… --type=… [--provider=fake] [--explicit] [--plan=<odcisk>] [--yes] [--repeat]   # domyślnie dostawca testowy; płatny — tylko na polecenie użytkownika, z zatwierdzonym planem
 wp osf-seo ai:budget [--project=<id>]                                  # budżet AI (oddzielny od DataForSEO)
 wp osf-seo ai:purge                                                    # porządki bez wywołań AI: porzucone uruchomienia, retencja historii
+wp osf-seo ai:queue [--run] [--time-limit=<s>] [--format=json]        # kolejka analiz zleconych w panelu (stan); --run = krok w tle raz (dostawca z zatwierdzonego planu)
 wp osf-seo pages:status|list --project=<id> [--format=json]           # Page Intelligence: konfiguracja, transport, strony i stan pamięci (bez HTTP)
 wp osf-seo pages:plan --project=<id> (--page-url=… | --urls="a b" | --topic=… | --keyword=… --ranks=1,2) [--force]   # plan: zakres, pamięć, limity hosta — zero HTTP i DNS
 wp osf-seo pages:fetch --project=<id> (wybór jak wyżej) [--force] [--yes]   # JAWNE pobranie (zewnętrzne żądania HTTP) — tylko na polecenie użytkownika
 wp osf-seo pages:check-url --project=<id> --page-url=…                # diagnostyka SSRF: zakres, składnia, DNS i IP (bez HTTP); nie `--url` — globalny parametr WP-CLI
 wp osf-seo pages:show|snapshot|delete --project=<id> --page=…|--snapshot=…   # snapshot (JSON), usunięcie strony; pages:purge — retencja (bez HTTP)
+wp osf-seo pages:jobs [--run] [--time-limit=<s>] [--format=json]      # zlecenia pobrania z panelu (stan); --run = krok w tle raz (żądania HTTP tylko dla jawnie zleconych stron)
 composer test:performance:pages # benchmark ekstrakcji HTML (mały / średni / duży / JS / wiele linków) i kontekstu AI ze stronami (bez sieci i bazy)
 composer test:performance       # benchmark raportów + EXPLAIN na syntetycznych danych (OSOBNA baza testowa)
 composer test:performance:serp  # benchmark pozycji SERP (100 projektów × 500 fraz, TOP100, historia, 2500 fraz) + EXPLAIN (OSOBNA baza)
 composer test:performance:gap   # benchmark Luk SEO (40 zbiorów × 10 000 fraz, 20 projektów, import 10 000 fraz atrapą HTTP) + EXPLAIN (OSOBNA baza)
 composer test:performance:strategy  # benchmark Strategii (100 / 1 000 / 5 000 fraz + 10 projektów, przebiegi bez zmian, krok w tle) (OSOBNA baza)
+composer test:performance:ai    # benchmark analiz rekomendacji: kontekst, gotowość, walidacja (A–C bez bazy) + historia 10 000 analiz (D, OSOBNA baza); --no-db
 ```
 
 Testy integracyjne czyszczą i usuwają tabele — **nigdy nie wskazuj bazy strony**. Zmienne:

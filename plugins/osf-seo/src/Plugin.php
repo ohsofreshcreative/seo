@@ -14,6 +14,7 @@ use OsfSeo\Ai\Provider\AiProviderRegistry;
 use OsfSeo\Ai\Provider\FakeProvider;
 use OsfSeo\Ai\Provider\OpenAiProvider;
 use OsfSeo\Ai\Run\AiRunRepository;
+use OsfSeo\Ai\Workspace\AiWorkspaceService;
 use OsfSeo\Analytics\KeywordReport;
 use OsfSeo\PageIntelligence\Extract\HtmlExtractor;
 use OsfSeo\PageIntelligence\Fetch\CurlPageFetcher;
@@ -23,6 +24,8 @@ use OsfSeo\PageIntelligence\Fetch\UrlSafetyPolicy;
 use OsfSeo\PageIntelligence\PageIntelligenceConfig;
 use OsfSeo\PageIntelligence\PageIntelligenceRepository;
 use OsfSeo\PageIntelligence\PageIntelligenceService;
+use OsfSeo\PageIntelligence\PageJobRepository;
+use OsfSeo\PageIntelligence\PageJobService;
 use OsfSeo\PageIntelligence\Robots\RobotsPolicy;
 use OsfSeo\PageIntelligence\Robots\TransientRobotsCache;
 use OsfSeo\Analytics\OverviewReport;
@@ -181,7 +184,7 @@ use OsfSeo\Support\SystemSleeper;
 final class Plugin
 {
 	/** Musi być zgodna z nagłówkiem `Version` w osf-seo.php (pilnuje tego test). */
-	public const VERSION = '0.18.0';
+	public const VERSION = '0.20.0';
 
 	public const MIN_PHP = '8.2';
 
@@ -672,16 +675,36 @@ final class Plugin
 			);
 		});
 
+		// Pobieranie stron z panelu w tle (faza D): zlecenia wykonuje krok w tle wyłącznie przez PageIntelligenceService::fetch.
+		$container->singleton(PageJobRepository::class, static fn (Container $c): PageJobRepository => new PageJobRepository($c->get(Connection::class), $c->get(Clock::class)));
+		$container->singleton(PageJobService::class, static fn (Container $c): PageJobService => new PageJobService(
+			$c->get(PageIntelligenceService::class),
+			$c->get(PageJobRepository::class),
+			$c->get(PageIntelligenceConfig::class),
+			$c->get(StrategyService::class),
+			$c->get(ProjectGuard::class),
+			$c->get(Connection::class),
+			$c->get(Logger::class),
+		));
+
 		// Analizy AI (STEP 17, faza A): dostawcy za interfejsem AiProvider, budżet AI oddzielny od DataForSEO; wywołanie modelu wyłącznie
-		// z AiAnalysisService na jawne polecenie — nigdy przy renderowaniu panelu, przeliczeniu Strategii, synchronizacji ani w kroku w tle.
+		// z AiAnalysisService na jawne polecenie (CLI albo zlecenie zatwierdzone w panelu, wykonywane przez krok w tle) — nigdy przy renderowaniu
+		// panelu, przeliczeniu Strategii ani synchronizacji.
 		$container->singleton(AiConfig::class, static fn (Container $c): AiConfig => new AiConfig($c->get(Config::class)));
 		$container->singleton(AiProviderRegistry::class, static fn (Container $c): AiProviderRegistry => new AiProviderRegistry([
 			new FakeProvider(),
 			new OpenAiProvider($c->get(AiConfig::class), new WpHttpTransport($c->get(AiConfig::class)->timeout())),
 		]));
 		$container->singleton(AiRunRepository::class, static fn (Container $c): AiRunRepository => new AiRunRepository($c->get(Connection::class), $c->get(Clock::class)));
+		$container->singleton(AiTopicContextBuilder::class, static fn (Container $c): AiTopicContextBuilder => new AiTopicContextBuilder(
+			$c->get(StrategyService::class),
+			$c->get(Connection::class),
+			$c->get(ProjectPageIndex::class),
+			$c->get(PageIntelligenceService::class),
+			$c->get(Clock::class),
+		));
 		$container->singleton(AiAnalysisService::class, static fn (Container $c): AiAnalysisService => new AiAnalysisService(
-			new AiTopicContextBuilder($c->get(StrategyService::class), $c->get(Connection::class), $c->get(ProjectPageIndex::class), $c->get(PageIntelligenceService::class), $c->get(Clock::class)),
+			$c->get(AiTopicContextBuilder::class),
 			$c->get(AiProviderRegistry::class),
 			$c->get(AiConfig::class),
 			new AiPricing($c->get(AiConfig::class)),
@@ -690,6 +713,15 @@ final class Plugin
 			new OutputValidator(),
 			$c->get(Clock::class),
 			$c->get(Logger::class),
+			guard: $c->get(ProjectGuard::class),
+		));
+		// Przestrzeń robocza AI w panelu (faza D): wyłącznie odczyt i przygotowanie — wywołanie modelu tylko przez kolejkę AiAnalysisService.
+		$container->singleton(AiWorkspaceService::class, static fn (Container $c): AiWorkspaceService => new AiWorkspaceService(
+			$c->get(AiTopicContextBuilder::class),
+			$c->get(AiRunRepository::class),
+			$c->get(AiAnalysisService::class),
+			$c->get(StrategyService::class),
+			$c->get(PageJobService::class),
 		));
 
 		$container->singleton(KeywordReport::class, static fn (Container $c): KeywordReport => new KeywordReport(
@@ -754,12 +786,17 @@ final class Plugin
 			$scheduler->onAfterRun(static fn (): array => $c->get(GapService::class)->runBackground((float) $c->get(SyncConfig::class)->timeBudget()));
 			// Pozycje SERP: odbiór wyników (bezpłatny), pomiary z harmonogramu i wysyłka paczek — osobny krok, błąd nie dotyka GSC.
 			$scheduler->onAfterRun(static fn (): array => $c->get(SerpTrackingService::class)->runBackground((float) $c->get(SyncConfig::class)->timeBudget()));
+			// Zlecenia z panelu (faza D): analizy AI zatwierdzone przez administratora (plan zweryfikowany ponownie, rezerwacja z kolejki,
+			// jedno wywołanie bez ponowień) — nigdy automatycznie zlecane przez tło.
+			$scheduler->onAfterRun(static fn (): array => $c->get(AiAnalysisService::class)->runQueued($scheduler->remainingBudget()));
+			// Zlecenia z panelu (faza D): pobieranie stron (PageIntelligenceService::fetch) — tylko jawnie zlecone pozycje, w czasie kroku.
+			$scheduler->onAfterRun(static fn (): array => $c->get(PageJobService::class)->runBackground($scheduler->remainingBudget()));
 			// Strategia: lokalne przeliczenie zapisanych danych (zlecenia z panelu, wykryte zmiany modułów) — ostatni krok, w czasie
 			// pozostałym ze wspólnego limitu ticka (D63), bez żadnego żądania do API (D78).
 			$scheduler->onAfterRun(static fn (): array => $c->get(StrategyScheduler::class)->runBackground($scheduler->remainingBudget()));
 			// Analizy AI: wyłącznie porządki historii (porzucone uruchomienia, retencja raz na dobę) — żadnego wywołania modelu (D94).
 			$scheduler->onAfterRun(static fn (): array => $c->get(AiAnalysisService::class)->maintenance());
-			// Page Intelligence: wyłącznie retencja zapisanych treści raz na dobę — żadnego pobierania stron w tle (D101).
+			// Page Intelligence: wyłącznie retencja zapisanych treści raz na dobę — żadnego pobierania stron z inicjatywy tła (D101).
 			$scheduler->onAfterRun(static fn (): array => $c->get(PageIntelligenceService::class)->maintenance() ?? []);
 
 			return $scheduler;

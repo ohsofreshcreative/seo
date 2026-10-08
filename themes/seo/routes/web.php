@@ -9,6 +9,7 @@
  * Wymaga włączonych „ładnych” odnośników WordPressa (każda ścieżka trafia do index.php).
  */
 
+use App\Http\Controllers\Panel\AiController;
 use App\Http\Controllers\Panel\AuthController;
 use App\Http\Controllers\Panel\CompetitorsController;
 use App\Http\Controllers\Panel\DashboardController;
@@ -19,6 +20,7 @@ use App\Http\Controllers\Panel\GapsController;
 use App\Http\Controllers\Panel\KeywordsController;
 use App\Http\Controllers\Panel\MarketDataController;
 use App\Http\Controllers\Panel\OpportunitiesController;
+use App\Http\Controllers\Panel\PagesController;
 use App\Http\Controllers\Panel\PositionsController;
 use App\Http\Controllers\Panel\ProjectController;
 use App\Http\Controllers\Panel\ProjectSectionController;
@@ -148,6 +150,33 @@ Route::middleware([Authenticate::class, VerifyNonce::class])->group(function () 
 		Route::post('/projects/{project}/strategy/analysis', [StrategySerpController::class, 'start']);
 	});
 
+	// Analizy AI (STEP 17 D): przygotowanie (plan, gotowość i koszt maksymalny — zero żądań), zlecenie po potwierdzeniu odcisku planu,
+	// status, anulowanie i decyzja tylko z uprawnieniem, nonce i Origin. Kontroler nigdy nie wywołuje modelu ani nie przyjmuje kosztu
+	// z formularza — analizę wykonuje krok w tle (AiAnalysisService::runQueued) po ponownej weryfikacji planu.
+	Route::middleware(ResolveProject::class . ':osf_seo_manage_ai')->group(function () {
+		Route::get('/projects/{project}/strategy/topics/{topic}/ai', [AiController::class, 'prepare'])
+			->where('topic', '[0-9A-Za-z]{26}');
+		Route::post('/projects/{project}/strategy/topics/{topic}/ai', [AiController::class, 'queue'])
+			->where('topic', '[0-9A-Za-z]{26}');
+		Route::get('/projects/{project}/ai/runs/{run}/status', [AiController::class, 'status'])
+			->where('run', '[0-9A-Za-z]{26}');
+		Route::post('/projects/{project}/ai/runs/{run}/cancel', [AiController::class, 'cancel'])
+			->where('run', '[0-9A-Za-z]{26}');
+		Route::post('/projects/{project}/ai/runs/{run}/decision', [AiController::class, 'decide'])
+			->where('run', '[0-9A-Za-z]{26}');
+	});
+
+	// Page Intelligence (STEP 17 D): plan pobrania (zakres projektu, polityka adresów, pamięć — zero HTTP i DNS), zlecenie po potwierdzeniu
+	// (najwyżej 5 adresów) i status zlecenia tylko z uprawnieniem, nonce i Origin. Pobiera wyłącznie krok w tle przez PageIntelligenceService.
+	Route::middleware(ResolveProject::class . ':osf_seo_manage_page_intelligence')->group(function () {
+		Route::get('/projects/{project}/pages/fetch', [PagesController::class, 'plan']);
+		Route::post('/projects/{project}/pages/fetch', [PagesController::class, 'queue']);
+		Route::get('/projects/{project}/pages/jobs/{job}', [PagesController::class, 'job'])
+			->where('job', '[0-9A-Za-z]{26}');
+		Route::get('/projects/{project}/pages/jobs/{job}/status', [PagesController::class, 'jobStatus'])
+			->where('job', '[0-9A-Za-z]{26}');
+	});
+
 	Route::middleware(ResolveProject::class)->group(function () {
 		Route::get('/projects/{project}', [ProjectController::class, 'show']);
 		Route::get('/projects/{project}/gaps', [GapsController::class, 'index']);
@@ -191,6 +220,12 @@ Route::middleware([Authenticate::class, VerifyNonce::class])->group(function () 
 		Route::get('/projects/{project}/strategy/topics', [StrategyTopicsController::class, 'index']);
 		Route::get('/projects/{project}/strategy/topics/{topic}', [StrategyTopicsController::class, 'show'])
 			->where('topic', '[0-9A-Za-z]{26}');
+		Route::get('/projects/{project}/ai', [AiController::class, 'index']);
+		Route::get('/projects/{project}/ai/runs/{run}', [AiController::class, 'show'])
+			->where('run', '[0-9A-Za-z]{26}');
+		Route::get('/projects/{project}/pages', [PagesController::class, 'index']);
+		Route::get('/projects/{project}/pages/{page}', [PagesController::class, 'show'])
+			->where('page', '[0-9A-Za-z]{26}');
 		Route::get('/projects/{project}/strategy/serp', [StrategySerpController::class, 'index']);
 		Route::get('/projects/{project}/strategy/serp/{candidate}', [StrategySerpController::class, 'show'])
 			->where('candidate', '[0-9A-Za-z]{26}');

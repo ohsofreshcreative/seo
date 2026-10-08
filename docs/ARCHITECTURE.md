@@ -33,6 +33,7 @@ nigdy wartości sekretów.
 21. [Ryzyka i otwarte kwestie](#21-ryzyka-i-otwarte-kwestie)
 22. [Analizy AI (STEP 17)](#22-analizy-ai-step-17)
 23. [Page Intelligence (STEP 17, faza B)](#23-page-intelligence-step-17-faza-b)
+24. [Rekomendacje AI i briefy SEO (STEP 17, faza C)](#24-rekomendacje-ai-i-briefy-seo-step-17-faza-c)
 
 ---
 
@@ -159,10 +160,22 @@ API wymaga osobnej decyzji architektonicznej; integracje dostawców wyłącznie 
 | D98 | Zakres pobierania: rodzina domeny projektu; konkurent — domena aktywnego konkurenta projektu albo **dokładny** adres organicznego wyniku zapisanego pomiaru SERP projektu (wybór pozycji `--keyword` + `--ranks`, bez wyróżnionych fragmentów); inne adresy — `url_not_allowed`; najwyżej `OSF_SEO_PAGES_MAX_URLS` adresów na zlecenie; bez automatycznego pobierania SERP-u; osobny wyłącznik pobierania konkurencji | Brak „otwartego proxy” i masowego scrapowania; jawne, ograniczone działania. Sekcja 23.5 |
 | D99 | Uprzejmość: robots.txt (RFC 9309, token `whack-a-mole`; 4xx → dozwolone, 429/5xx/sieć → nic nie pobieramy; pamięć 24 h), `crawl-delay` do 60 s, jawny User-Agent `Whack-a-mole/<wersja>`, odstęp, limit dzienny i `Retry-After` na host — wspólne dla wszystkich projektów; pobrania po kolei (blokady strony i hosta), CLI czeka na odstęp łącznie do 120 s; bez ponowień, logowania, CAPTCHA i obchodzenia zabezpieczeń | Odpowiedzialne pobieranie cudzych i własnych stron. Sekcja 23.5 |
 | D100 | Dane stron M0016 (schemat 16, addytywnie): `page_targets`, `page_snapshots`, `page_fetches`, `page_serp_links` (+ `ai_runs.evidence_fingerprint`) — wyłącznie w obrębie projektu (ten sam adres w dwóch projektach = osobne pobrania i snapshoty); snapshot = wyekstrahowana treść z limitami (bez surowego HTML), nowy tylko przy zmianie odcisku treści (bez metadanych pobrania), ta sama treść → `last_seen_at`; nieudane pobranie nigdy nie nadpisuje ostatniego poprawnego snapshotu; TTL, 304/ETag, maks. snapshotów na stronę, retencja 90 dni | Idempotencja, brak sztucznych zmian, przewidywalny rozmiar bazy, brak wycieku treści między projektami. Sekcje 23.3, 23.7 |
-| D101 | Krok w tle Page Intelligence (`SyncScheduler::onAfterRun`) wyłącznie porządkuje dane raz na dobę (retencja) — żadnego pobierania stron w tle, przy renderowaniu, odczycie tematu, przeliczeniu Strategii ani budowaniu kontekstu AI; cykliczne odświeżanie — osobna decyzja | Zero niezamierzonych żądań zewnętrznych. Sekcja 23.8 |
+| D101 | Krok w tle Page Intelligence (`SyncScheduler::onAfterRun`) wyłącznie porządkuje dane raz na dobę (retencja) — żadnego pobierania stron z inicjatywy tła, przy renderowaniu, odczycie tematu, przeliczeniu Strategii ani budowaniu kontekstu AI; cykliczne odświeżanie — osobna decyzja. Od fazy D tło wykonuje wyłącznie pozycje jawnie zleconych `page_jobs` (D112) | Zero niezamierzonych żądań zewnętrznych. Sekcja 23.8 |
 | D102 | Ekstrakcja bez JavaScriptu (DOMDocument): kodowanie, meta, H1–H6 z kolejnością i strukturą, treść główna (`main` → `article` → `body` bez nawigacji, stopki, banerów), sekcje, linki, sygnały techniczne; indeksowalność wyłącznie z dyrektyw (`indexable_by_directives` / `blocked_by_directives` / `unknown`); jakość ekstrakcji (`good` / `partial` / `incomplete` / `empty`) z powodami — brak tekstu w pobranym HTML nie jest dowodem braku na stronie | Fakty z HTML odróżnione od faktów o Google i od heurystyk; strony JS jawnie oznaczone. Sekcja 23.6 |
 | D103 | Strategia bez zmian w fazie B: powiązania strony z tematem (`topic_id`) i z wynikiem SERP (fraza, pozycja, data pomiaru osobno od daty pobrania) tylko do odczytu; `TargetPageResolver`, klasyfikator działań, pewność, priorytet i grupowanie nie korzystają jeszcze ze snapshotów — wykorzystanie po kalibracji jako nowa wersja reguł | Brak pobrania / 403 / 404 nie może zmienić decyzji Strategii; reguły fazy C nie są zmieniane na ślepo. Sekcja 23.11 |
 | D104 | Kontekst AI wersja 2 (rozszerzony `TopicContextAssembler`, źródło `PageEvidenceSource` — tylko zapisane snapshoty): `target_page.page_content` (`page:<snapshot>`) i `evidence.competitor_pages` (`cpage:<snapshot>`) z proweniencją, jakością i datami (pobranie ≠ pomiar SERP); tytuły, opisy, nagłówki i fragmenty wyłącznie w bloku niezaufanym; nowe braki danych; budżet 32 KB bez zmian (pomiar) z deterministyczną redukcją (fragmenty → strony konkurencji → sekcje i nagłówki strony projektu); `evidence_fingerprint` bez stanu pracy obok pełnego odcisku; instrukcje `topic-analysis.v2` | Model widzi rzeczywistą treść stron z jawnymi ograniczeniami, bez możliwości wymyślenia zawartości; zmiana statusu pracy nie jest zmianą dowodów. Sekcja 23.12 |
+| D105 | Zgodność typu analizy z działaniem Strategii (`ActionCompatibility`): `allowed` / `explicit` (tylko świadomy wybór `--explicit`) / `blocked`; ograniczenia typu (`existing_page`, `recovery_focus`, `candidate_page`, `conflict_review`, `maintenance_focus`, `verify_first`) w kontekście, instrukcjach i walidatorze; AI nigdy nie zmienia działania, typu ani statusu tematu — niezgodność z dowodami tylko jako ustalenie | Brak równoległego silnika Strategii; rekomendacje spójne z decyzją, a jej zakwestionowanie jawne. Sekcja 24.4 |
+| D106 | Gotowość analizy READY / PARTIAL / INSUFFICIENT / BLOCKED jako czysta funkcja zapisanego źródła (`ReadinessEvaluator`), liczona przy podglądzie i ponownie przy wykonaniu; INSUFFICIENT i BLOCKED → odmowa bez żadnego wywołania (także dostawcy testowego); PARTIAL → ograniczenia w kontekście i obowiązek ich ujawnienia w wyniku; brakujące dane tylko jako wskazówki komend (`pages:fetch`), nigdy pobierane automatycznie | Zero płatnych operacji z samego sprawdzenia gotowości; brak analiz „na pustych danych”. Sekcja 24.5 |
+| D107 | Kontrakt v2 analiz rekomendacji (`RecommendationContract`, wspólna koperta + sekcje typowane, limity elementów i długości, wyliczenia) i walidacja PHP (`RecommendationValidator`, wspólna baza z `OutputValidator`): odwołania tylko z kontekstu, podstawa `fact` / `inference` / `hypothesis` (fakt nie z samych heurystyk, brak treści nigdy faktem), sekcje wymagane i zabronione dla typu, reguły jakości (bez prognoz, obietnic, „Google wymaga”, celów liczby słów, diagnostyki parsera, przeskoków nagłówków jako czynnika rankingowego, etykiet interfejsu jako tematów, kopiowania treści konkurencji, keyword stuffingu, działań nieodwracalnych bez kontroli ręcznej, ukrywania ograniczeń, Content Score); jakikolwiek błąd → `invalid` bez częściowego wyniku | Hipoteza nie staje się faktem, bo tak napisał model; wynik zawsze z dowodami i jawnymi ograniczeniami. Sekcje 24.9–24.10 |
+| D108 | Odcisk planu (`AiPlan::fingerprint`: typ, dostawca, model, wersje, język, odcisk kontekstu, cel, tokeny, koszt maks., ceny) zatwierdzany przed płatnym wywołaniem (interaktywnie albo `--yes --plan`); plan liczony ponownie w chwili wykonania — inny odcisk → `plan_changed`; `GET_LOCK` zlecenia (projekt × temat × typ) bez czekania + uruchomienie w toku → `run_in_progress`; udany identyczny plan → `already_generated` (chyba że `--repeat`); bez automatycznych ponowień i „naprawiania” JSON-a | Nigdy droższa ani inna analiza niż zatwierdzona; brak przypadkowych równoległych i powtórnych wywołań. Sekcja 24.11 |
+| D109 | Historia analiz rekomendacji w istniejących `ai_runs` / `ai_run_payloads` (typ w `task`) + M0017 (schemat 17, addytywnie): `plan_fingerprint`, `readiness`, `sources` (JSON bez treści: snapshoty strony i konkurencji z datami, pomiar SERP, gotowość, język, wybór jawny) i indeks (`project_id`, `plan_fingerprint`); aktualność wyniku przez porównanie odcisku dowodów z bieżącym kontekstem (bez żądań) — wynik nieaktualny tylko oznaczany; status AI osobno od statusu pracy tematu | Audytowalność (co, z jakich danych, jaką wersją, za ile) i wykrywanie wyników nieaktualnych bez przepisywania historii. Sekcja 24.13 |
+| D110 | Kontekst AI wersja 3 wyłącznie dla analiz rekomendacji (rozszerzony `TopicContextAssembler`; v2 bez zmian): sekcja `analysis` (typ, język projektu, działanie, ograniczenia, gotowość), `site.pages` (inne tematy projektu ze stronami — heurystyka, nie pełna lista stron), status meta (`present` / `not_detected` / `not_detected_unconfirmed`), obserwacje struktury nagłówków, linki wewnętrzne, etykiety interfejsu i sekcje bez treści poza porównaniami (`thin_section`), bez diagnostyki parsera i stosunku tekstu do HTML; profile limitów i kolejność redukcji typu (dowody kluczowe dla typu tnięte na końcu; luka treści nigdy bez stron konkurencji); budżet 32 KB bez zmian | Brak fałszywych alarmów z realnego testu (brak meta w niepełnym snapshocie, błędy parsowania, przeskoki nagłówków, CTA i karty realizacji) i zachowanie dowodów kluczowych dla typu. Sekcja 24.7 |
+| D111 | Analizy AI z panelu przez kolejkę na istniejących `ai_runs` (status `queued`, bez nowej tabeli i bez frameworka kolejek): zlecenie po potwierdzeniu = te same kontrole co `generate` (gotowość, blokady, **zawsze** zatwierdzony odcisk planu, potwierdzenie płatnego wywołania, blokada zlecenia, brak uruchomienia w toku i duplikatu) + rezerwacja kosztu maksymalnego pod `GET_LOCK ai_budget` przy zakolejkowaniu; wykonanie wyłącznie krok w tle `AiAnalysisService::runQueued` (`SyncScheduler::onAfterRun`, maks. 2 na krok) — plan przeliczany ponownie, inny odcisk → `plan_changed` bez wywołania (rezerwacja zwolniona), jedno wywołanie bez ponowień; zlecenie nieodebrane 6 h → `queue_expired`; anulowanie tylko przed wysłaniem | Żadnego wywołania modelu w żądaniu WWW, przy renderowaniu ani po odświeżeniu strony; budżet respektowany przy wielu krokach w tle (rezerwacja przed kolejką); nigdy droższa analiza niż zatwierdzona. Sekcja 25.4 |
+| D112 | Pobieranie stron z panelu: zlecenia `page_jobs` (M0018, schemat 18, addytywnie — jak tabele przebiegów STEP 13–15): jawne zlecenie (`osf_seo_manage_page_intelligence`), najwyżej 5 adresów, cały wybór odrzucany przy jednym adresie spoza zakresu; pozycje w JSON (wybór, stan, wynik); wykonanie wyłącznie krok w tle `PageJobService::runBackground` przez `PageIntelligenceService::fetch` (ten sam transport, polityka adresów, robots.txt, limity i pamięć co CLI); odstęp hosta / zajęty host → termin kolejnej próby (`run_after`, maks. 5 prób pozycji) zamiast czekania w procesie; `Retry-After`, limit dzienny, robots.txt i błędy strony to wynik pozycji (bez ponowień); ten sam wybór w toku → to samo zlecenie; maks. 3 aktywne zlecenia projektu; przerwany przebieg (5 min bez znaku życia) wraca do kolejki | Brak drugiego fetchera i drugiej infrastruktury kolejek, brak żądań do witryn podczas renderowania, uprzejmość wobec hostów bez blokowania kroku w tle. Sekcja 25.5 |
+| D113 | Przestrzeń robocza AI (`AiWorkspaceService`) — wyłącznie odczyt i przygotowanie: jedno źródło danych tematu dla gotowości trzech typów (`ReadinessEvaluator`) i dokładnej aktualności ostatnich analiz (kontekst składany z tego samego źródła, zero żądań); typ zalecany według działania Strategii (optimize / recover / consolidate / monitor → optymalizacja strony, create → brief kandydata, investigate → tylko świadomy wybór); typ `explicit` wymaga osobnego potwierdzenia w formularzu i jest zapisywany w uruchomieniu (`sources.explicit`, `compatibility`, zlecający) — Strategia i status pracy bez zmian | Logika analiz pozostaje w usługach fazy C; kontrolery cienkie; brak obejścia zgodności z działaniem przez panel. Sekcja 25.3 |
+| D114 | Historia analiz w panelu: jedno zapytanie na stronę (filtry i stronicowanie w SQL) z tanim wskaźnikiem zmian Strategii — odcisk dowodów tematu zapisany przez Strategię w chwili analizy (`sources.strategy_hash`) vs. bieżący `strategy_topics.evidence_hash`; dokładna aktualność (także treść stron) tylko w raporcie i sekcji tematu | Brak kosztownego „check-stale” przy każdym renderze (faza C: 20 analiz = 782 zapytania). Sekcja 25.6 |
+| D115 | Raport AI wyłącznie z wyniku zwalidowanego (`AiReport` — czysta funkcja): rekomendacje według priorytetu i pilności, podstawa (fakt / wniosek / hipoteza), pewność, dowody jako czytelne etykiety z zapisanego kontekstu analizy (`EvidenceLabels`, adresy tylko http(s)), sekcje typowane tylko z treścią; eksport tekstowy (`AiReportText`: podsumowanie, rekomendacje, brief) i druk z widoku — bez silnika PDF, wysyłki e-mail, surowej odpowiedzi, kosztów, dostawcy, modelu i kodów technicznych | Raport użyteczny dla copywritera, bez wycieku danych technicznych i bez nowych zależności. Sekcja 25.7 |
+| D116 | Widoczność dla klienta (bez `osf_seo_manage_ai`): tylko analizy gotowe, zwalidowane, nieodrzucone, tematów widocznych w Strategii (bez odrzuconych) — bez kosztów, dostawcy, modelu, błędów, diagnostyki i statusu kolejki (egzekwowane w usłudze, nie w widoku); Page Intelligence — odczyt kopii stron bez kodów błędów prób i historii pobrań; pobieranie i analizy wyłącznie administrator | Klient widzi wynik pracy agencji, nie jej narzędzia i koszty; ochrona przed IDOR przez `ProjectContext` w każdym odczycie. Sekcja 25.8 |
 
 ## 3. Repozytorium i środowiska
 
@@ -617,6 +630,11 @@ modułów, dowody). Od schematu 11 (`M0011SerpIntelligence`, sekcja 15.12): `osf
 wartości `analysis` / `strategy` w enumach tabel SERP. Od schematu 12 (`M0012StrategyTopics`, sekcja 15.13): `osf_strategy_topics` (tematy:
 strona docelowa, działanie, pewność, priorytet, status pracy, analiza), `osf_strategy_topic_events` (istotne zmiany) i kolumny przynależności,
 przypięcia i strony docelowej frazy w `osf_strategy_keywords`. Tabele Strategii nie należą do `GscDataStore::DATA_TABLES`.
+
+**Analizy AI i Page Intelligence** (STEP 17): `osf_ai_runs` i `osf_ai_run_payloads` (schemat 15, `M0015`, sekcja 22.2), tabele stron
+`osf_page_*` i `ai_runs.evidence_fingerprint` (schemat 16, `M0016`, sekcja 23.3), kolumny analiz rekomendacji `ai_runs.plan_fingerprint`,
+`readiness`, `sources` i indeks `project_plan` (schemat 17, `M0017AiRecommendations`, sekcja 24.13), zlecenia pobrania stron z panelu
+`osf_page_jobs` (schemat 18, `M0018PageJobs`, sekcja 25.5) — wyłącznie addytywnie.
 
 **Wersja schematu**: opcja `osf_seo_db_version` (autoload), podbijana po każdej udanej migracji.
 
@@ -2916,7 +2934,9 @@ odpytywanie statusu co 5 s działa tylko przy otwartej stronie; zadania nie maj�
 - **Analizy AI** (STEP 17): wyłącznie z `osf_seo_manage_ai` (kontrola w `AiAnalysisService`); temat i analiza tylko w obrębie `ProjectContext`
   (obce ID → nie znaleziono); klucz API tylko w `wp-config.php`/env, czytany w chwili żądania, maskowany w logach (`sk-…`, `x-api-key`); do dostawcy
   wyłącznie dane tematu projektu (bez notatek, użytkowników i innych projektów), dane zewnętrzne w blokach niezaufanych, wynik zapisywany tylko
-  po walidacji; płatne wywołania domyślnie wyłączone, z limitami i potwierdzeniem; sekcja 22.
+  po walidacji; płatne wywołania domyślnie wyłączone, z limitami i potwierdzeniem; sekcja 22. Analizy rekomendacji (faza C): to samo uprawnienie
+  i izolacja, gotowość i plan bez żadnych żądań, płatne generowanie tylko z zatwierdzonym odciskiem planu, blokada równoległych zleceń, wynik
+  wyłącznie jako sugestia (bez zmian Strategii i bez publikowania w WordPressie); sekcja 24.16.
 - **Page Intelligence** (STEP 17 faza B): pobieranie wyłącznie jawnie i z `osf_seo_manage_page_intelligence`; zakres — domena projektu, konkurenci
   projektu, dokładne adresy organicznych wyników zapisanego SERP-u; transport ext-curl z przypięciem zweryfikowanego IP (DNS rebinding), kontrolą
   każdego przekierowania, TLS względem oryginalnej nazwy hosta, bez proxy i ciasteczek, z limitami; robots.txt i limity hosta; treści stron w obrębie
@@ -3055,13 +3075,13 @@ Warianty docelowe:
 | 19 | Pozycje SERP i konkurenci: monitorowane frazy, pomiary Google Organic (Standard, TOP100) z planem, rezerwacją kosztu i harmonogramem, pełne TOP N w historii, zmiany, konkurenci monitorowani i organiczni | ✅ STEP 14 (sekcja 13) |
 | 20 | Luki SEO: wspólne zbiory fraz domen konkurentów (Labs Ranked Keywords) z planem, limitami i importem w tle, punkt odniesienia projektu, widoczność SERP → GSC → Labs, typ i priorytet luki, filtry marki, grupy fraz, luka treści (heurystyka), strony konkurencji, historia zbiorów | ✅ STEP 15 (sekcja 14) |
 | 21 | Strategia i SERP Intelligence: kandydaci z modułów z dowodami, analiza zapisanych SERP-ów, strona docelowa, działania, priorytet i pewność, tematy, backlog z workflow | ⏳ STEP 16 (sekcja 15): fazy A (fundament), B (SERP Intelligence), C (rdzeń), D (panel) i E (tło i wydajność) zrobione; faza F według planu |
-| 22 | Analizy AI: dostawcy za interfejsem (testowy i OpenAI), deterministyczny kontekst tematu z proweniencją, wersjonowane instrukcje, kontrakt odpowiedzi z walidacją PHP, budżet AI z rezerwacją, historia, CLI; Page Intelligence: bezpieczne pobieranie stron projektu i wyników SERP, ekstrakcja, snapshoty, kontekst AI v2 | ⏳ STEP 17 (sekcje 22–23): faza A (fundament) i B (Page Intelligence) zrobione; fazy C–E do akceptacji |
+| 22 | Analizy AI: dostawcy za interfejsem (testowy i OpenAI), deterministyczny kontekst tematu z proweniencją, wersjonowane instrukcje, kontrakt odpowiedzi z walidacją PHP, budżet AI z rezerwacją, historia, CLI; Page Intelligence: bezpieczne pobieranie stron projektu i wyników SERP, ekstrakcja, snapshoty, kontekst AI v2 | ⏳ STEP 17 (sekcje 22–25): faza A (fundament), B (Page Intelligence), C (rekomendacje AI i briefy SEO — CLI) i D (panel: przestrzeń robocza AI, raport, historia, Strony, pobieranie i analizy w tle) zrobione; faza E do akceptacji |
 
 **MVP 2**: ~~Opportunity Score~~ (STEP 11), Pages/landing pages, zaawansowane filtry, automatyczna synchronizacja, raporty.
 **MVP 3**: własny crawler, audyt techniczny, połączenie crawler + GSC.
 **MVP 4**: panel klienta, raporty, rekomendacje AI.
 **Kolejne etapy** (kolejność orientacyjna): ~~odkrywanie nowych fraz~~ (STEP 13), ~~monitoring konkurencji i ranking SERP~~ (STEP 14),
-~~luka fraz/treści~~ (STEP 15), strategia i backlog SEO (STEP 16), AI (STEP 17 — faza A: fundament, faza B: Page Intelligence), retencja/rollupy historii SERP po pomiarze wzrostu.
+~~luka fraz/treści~~ (STEP 15), strategia i backlog SEO (STEP 16), AI (STEP 17 — faza A: fundament, faza B: Page Intelligence, faza C: rekomendacje i briefy SEO, faza D: panel), retencja/rollupy historii SERP po pomiarze wzrostu.
 
 ## 20. Porządki w motywie (C1–C5)
 
@@ -3102,6 +3122,9 @@ Każdy etap to osobny commit z testem (build, `php -l`, smoke test WordPress). K
 - **Analizy AI (STEP 17)**: rzeczywiste API OpenAI nie było wywołane (atrapa HTTP w testach) — pierwsze użycie według `docs/AI-SETUP.md`
   z niskimi limitami i porównaniem kosztu z panelem dostawcy; ceny i modele zmieniają się (konfiguracja, nie kod); jakość analiz i heurystyki
   walidatora (prognozy, obietnice) do kalibracji na prawdziwych tematach; do dostawcy trafiają dane tematu projektu — decyzja administratora.
+- **Rekomendacje AI (STEP 17 faza C)**: zgodność modelu z kontraktem v2 i jakość rekomendacji niesprawdzone na prawdziwym modelu; reguły
+  walidatora i wykrywanie etykiet interfejsu to heurystyki PL/EN (możliwe fałszywe odrzucenia i przeoczenia) — kalibracja na pierwszych
+  wynikach; sekcja 24.20.
 - **OAuth Testing**: tokeny ważne 7 dni — publikacja aplikacji przed produkcją.
 - **Skala `query_page_daily`** — decyzja po pomiarze (sekcja 6.4).
 - **Wydajność raportów przy bardzo dużych property** — czasy rosną liniowo z liczbą wierszy fraz w okresie
@@ -3126,8 +3149,9 @@ wskazuje odwołanie do dowodu z kontekstu, a odpowiedź niezgodna z kontraktem j
 
 ### 22.1 Zasady
 
-- **Jedno miejsce wywołania modelu**: `OsfSeo\Ai\AiAnalysisService::run` — wyłącznie jawnie (CLI; w przyszłości akcja w panelu po potwierdzeniu).
-  Nigdy przy wejściu na dashboard, otwarciu Strategii, przeliczeniu Strategii, synchronizacji GSC ani w kroku w tle (D94).
+- **Jedno miejsce wywołania modelu**: `OsfSeo\Ai\AiAnalysisService` — wyłącznie jawnie (CLI; od fazy D także zlecenie zatwierdzone w panelu,
+  wykonywane przez krok w tle `runQueued` — D111, sekcja 25.4). Nigdy przy wejściu na dashboard, otwarciu Strategii, przeliczeniu Strategii,
+  synchronizacji GSC; tło nigdy samo nie zleca analiz (D94).
 - **Bezpieczne domyślnie**: rzeczywiste wywołania wyłączone (`OSF_SEO_AI_ENABLED`), brak modelu i cen w kodzie, limity AI domyślnie 0 USD —
   po wdrożeniu nic nie może wygenerować kosztu (D88, D89). Dostawca testowy `fake` (koszt 0, bez sieci) działa zawsze.
 - **Kontekst tylko z istniejących odczytów Strategii w obrębie projektu** (`StrategyService::topicView`, `panelState`) — bez równoległej
@@ -3341,9 +3365,9 @@ Instrukcja krok po kroku (placeholdery): [`docs/AI-SETUP.md`](AI-SETUP.md). Sta�
 | Faza | Zakres |
 |---|---|
 | B | ✅ Page Intelligence — sekcja 23 (bez `ProjectPageIndex` z mapy witryny — przeniesione do fazy D, 23.16) |
-| C | Panel: analiza AI w szczegółach tematu — plan z kosztem → potwierdzenie → uruchomienie; wynik z odwołaniami do dowodów, braki danych, decyzja użytkownika, historia; ustawienia i budżet AI dla administratora |
-| D | Kolejne zadania na tym samym fundamencie (np. brief strony, porównanie z konkurencją) — nowe wersje instrukcji i kontraktu; drugi dostawca (Anthropic) jako adapter |
-| E | Ewentualne zadania w tle — wyłącznie przez `SyncScheduler` (bez drugiej kolejki), po jawnym włączeniu i w budżecie AI; kalibracja jakości na prawdziwych tematach |
+| C | ✅ Rekomendacje AI i briefy SEO (optymalizacja strony, brief kandydata na nową stronę, luki treści) — sekcja 24 (CLI; plan dalszych faz — 24.21) |
+| D | Interfejs panelu analiz AI (plan z kosztem → zatwierdzenie → generowanie; wynik z odwołaniami, ograniczeniami, aktualnością i decyzją) — zakres do akceptacji |
+| E | Do ustalenia (np. kalibracja jakości na prawdziwych tematach, ewentualne zadania w tle wyłącznie przez `SyncScheduler` i w budżecie AI, drugi dostawca jako adapter) |
 
 ### 22.15 Ograniczenia
 
@@ -3654,6 +3678,553 @@ użycie z `SyncScheduler` (usługa bez stanu globalnego, blokady, limity hosta),
 
 | Faza | Zakres |
 |---|---|
-| C | Panel: analiza AI w szczegółach tematu (plan z kosztem → potwierdzenie → uruchomienie), dane stron w szczegółach tematu (snapshot, jakość, data, „W pobranym HTML nie wykryto…”), jawny przycisk pobrania z planem (bez czekania na host — `retry_in`) |
-| D | Snapshoty jako dowody Strategii po kalibracji (np. potwierdzenie strony docelowej 200 + canonical, sygnał konfliktu canonical) — nowa wersja reguł; uzupełnienie `ProjectPageIndex` (mapa witryny / REST WordPressa projektu); porównanie struktury nagłówków ze stronami konkurencji jako zadanie AI |
-| E | Ewentualne odświeżanie snapshotów stron docelowych w tle — wyłącznie przez `SyncScheduler`, po jawnym włączeniu, w limitach hosta i bez crawlingu; ewentualne renderowanie JS jako osobna decyzja (koszt, bezpieczeństwo) |
+| C | ✅ Snapshoty stron w analizach rekomendacji (sekcja 24.15): strona projektu i strony konkurencji z jakością i datami, bez pobierania przy analizie |
+| D | Panel: dane stron w szczegółach tematu (snapshot, jakość, data, „W pobranym HTML nie wykryto…”), jawny przycisk pobrania z planem (bez czekania na host — `retry_in`), analizy AI w panelu |
+| E | Snapshoty jako dowody Strategii po kalibracji (np. potwierdzenie strony docelowej 200 + canonical, sygnał konfliktu canonical) — nowa wersja reguł; uzupełnienie `ProjectPageIndex` (mapa witryny / REST WordPressa projektu) |
+| później | Ewentualne odświeżanie snapshotów stron docelowych w tle — wyłącznie przez `SyncScheduler`, po jawnym włączeniu, w limitach hosta i bez crawlingu; ewentualne renderowanie JS jako osobna decyzja (koszt, bezpieczeństwo) |
+
+## 24. Rekomendacje AI i briefy SEO (STEP 17, faza C)
+
+Faza C: trzy analizy rekomendacji nad istniejącym fundamentem AI (sekcja 22) i Page Intelligence (sekcja 23) — **optymalizacja istniejącej
+strony**, **brief kandydata na nową stronę** i **analiza luk treści względem konkurencji**. Każda analiza korzysta wyłącznie z zapisanych danych
+projektu (Strategia STEP 16, GSC, dane rynkowe, SERP Intelligence, snapshoty stron), ma jawną gotowość, wersjonowane instrukcje, kontrakt
+odpowiedzi v2 z walidacją po stronie PHP, odcisk planu zatwierdzany przed płatnym wywołaniem i historię z wykrywaniem nieaktualnych wyników.
+**Bez** interfejsu panelu (faza D), zadań w tle, generatora artykułów, automatycznego publikowania i automatycznego pobierania stron, SERP-u czy
+danych DataForSEO. Wynik to **sugestia AI** — nigdy automatyczna zmiana Strategii, statusu pracy tematu ani witryny.
+
+### 24.1 Zasady
+
+- **Bez drugiego silnika i bez dublowania mechanizmów**: typ analizy zapisywany w istniejącej kolumnie `ai_runs.task`; ta sama ścieżka wykonania
+  co analiza tematu (`AiAnalysisService::execute`: rezerwacja pod `GET_LOCK ai_budget` → `running` → jedno wywołanie → walidacja → rozliczenie
+  → historia), ten sam budżet AI (D89), ci sami dostawcy (`FakeProvider`, `OpenAiProvider`), to samo źródło treści stron (`PageEvidenceSource`).
+- **Analiza tematu z fazy A bez zmian**: `topic_analysis`, instrukcje `topic-analysis.v2`, kontrakt v1, kontekst v2. Kontekst v3 powstaje wyłącznie
+  dla analiz rekomendacji (`TopicContextAssembler` rozszerzony, nie nowy).
+- **Decyzja Strategii jest wejściem, nie wynikiem**: AI nie zmienia działania tematu; niezgodność z dowodami opisuje jako ustalenie (D105).
+- **Zero żądań poza jawnym generowaniem**: gotowość, kontekst i plan są bezpłatne i nie pobierają stron, SERP-u ani danych rynkowych — brakujące
+  dane wskazują jawne komendy do rozważenia (`hints`), nigdy wykonywane automatycznie (D106).
+- **Dowody i proweniencja**: odwołania tylko z kontekstu uruchomienia; podstawa `fact` / `inference` / `hypothesis` sprawdzana w PHP; brak treści
+  w snapshocie nigdy nie jest faktem (D107).
+- **Jedno zatwierdzenie = jeden plan**: płatne wywołanie tylko z odciskiem planu zatwierdzonym przez użytkownika; zmiana kontekstu, modelu, cen,
+  limitu tokenów albo kosztu → odmowa `plan_changed`; równoległe zlecenia i przypadkowe powtórzenia odrzucane (D108).
+
+### 24.2 Architektura i przepływ (16 kroków)
+
+| # | Krok | Gdzie |
+|---|---|---|
+| 1 | Autoryzacja: `ProjectContext` (ProjectGuard) + `osf_seo_manage_ai` | `AiAnalysisService` (każda metoda) |
+| 2 | Typ analizy (`page-optimization`, `new-page-brief`, `content-gap`) | `AnalysisType::fromInput` → `analysis_type_unknown` |
+| 3 | Zgodność z działaniem Strategii | `ActionCompatibility` (D105) |
+| 4 | Odczyt zapisanych danych (Strategia, rynek, SERP, snapshoty stron, inne tematy) | `AiTopicContextBuilder::source` / `analysis` |
+| 5 | Gotowość READY / PARTIAL / INSUFFICIENT / BLOCKED | `ReadinessEvaluator` (czysta funkcja źródła, D106) |
+| 6 | Deterministyczny kontekst v3 (32 KB, odcisk) | `TopicContextAssembler` (D110) |
+| 7 | Instrukcje typu i model | `AnalysisPrompts` (wersje `*.v1`), dostawca z rejestru |
+| 8 | Szacunek kosztu (górna granica) | `AiPricing` (bez zmian) |
+| 9 | Rezerwacja budżetu | `AiBudget::reserve` pod `GET_LOCK ai_budget` (bez zmian) |
+| 10 | Jawne potwierdzenie (płatne: odcisk planu) | CLI `ai:generate` → `generate(approvedPlan, confirmed)` (D108) |
+| 11 | Jedno wywołanie dostawcy (bez ponowień) | `AiProvider::generate` |
+| 12 | Walidacja odpowiedzi (struktura, typy, limity, sekcje typu, jakość) | `RecommendationValidator` (D107) |
+| 13 | Walidacja odwołań do dowodów | `JsonContractValidator::refs` + reguły podstawy |
+| 14 | Historia (metadane, źródła, gotowość, odcisk planu; wejście i wynik) | `AiRunRepository` (`ai_runs` + `ai_run_payloads`, M0017) |
+| 15 | Rozliczenie kosztu (zużycie / rezerwacja / bez kosztu) | `AiAnalysisService::completed` / `failed` (bez zmian, D91) |
+| 16 | Zwrot zweryfikowanego wyniku (tylko `succeeded`) i aktualność | `show()` + `freshness()` (D109) |
+
+```
+ai:readiness | ai:plan --type (zero żądań)
+ai:generate → plan (ponownie, w chwili wykonania) → gotowość insufficient/blocked → odmowa (bez żądania)
+  → blokady planu (dostawca, klucz, ceny, limity, rozmiar) → [płatny: potwierdzenie + odcisk planu = zatwierdzony]
+  → GET_LOCK zlecenia (projekt × temat × typ, bez czekania) → brak uruchomienia w toku → brak udanego identycznego planu (chyba że --repeat)
+  → rezerwacja → running → jedno wywołanie → RecommendationValidator → succeeded | invalid (failed | uncertain) → rozliczenie → historia
+```
+
+Nowe klasy: `Ai\Analysis\{AnalysisType, ActionCompatibility, Readiness, ReadinessEvaluator}`, `Ai\Prompt\AnalysisPrompts`,
+`Ai\Contract\{JsonContractValidator, RecommendationContract, RecommendationValidator}`. Rozszerzone: `TopicContextAssembler` (v3), `AiContext`,
+`AiTopicContextBuilder` (`analysis`, `readiness`, `source`), `AiAnalysisService` (`analysisTypes`, `readiness`, `analysisContext`, `planAnalysis`,
+`generate`, `freshness`), `AiPlan` (typ, wersje, język, gotowość, `fingerprint()`), `AiRun` / `AiRunRepository` (M0017, blokada zlecenia),
+`FakeProvider::recommendations`, `OutputValidator` (wspólna baza `JsonContractValidator`, zachowanie bez zmian).
+
+### 24.3 Typy analiz
+
+| Typ (`task`) | Instrukcje | Cel | Sekcje wyniku |
+|---|---|---|---|
+| `page_optimization` — Optymalizacja istniejącej strony | `page-optimization.v1` | Dopasowanie treści do intencji, title i meta description, H1 i struktura H2–H6, brakujące lub słabe podtematy (hipotezy przy niepełnym snapshocie), nowe i rozbudowane sekcje, linkowanie wewnętrzne, FAQ tylko z uzasadnieniem, priorytety wdrożenia, kontrole ręczne | rekomendacje (wymagane), opcjonalnie propozycje title / meta, konspekt zmienianych sekcji, linki wewnętrzne; bez tematów luk, pytań, CTA i danych od klienta |
+| `new_page_brief` — Brief nowej strony (**„Kandydat na nową stronę”**) | `new-page-brief.v1` | Cel i intencja strony, rola w serwisie, fraza główna i wspierające, title, meta, H1, konspekt H2/H3 z zakresem sekcji, pytania użytkowników, CTA, linki wewnętrzne, tematy do odróżnienia od istniejących stron, ryzyka kanibalizacji, dane potrzebne od klienta | konspekt (H1 + 2–12 sekcji) i propozycje title / meta wymagane; ostrzeżenie „brak znanej strony ≠ brak strony” i kontrola istniejących stron w instrukcjach |
+| `content_gap` — Analiza luk treści względem konkurencji | `content-gap-analysis.v1` | Porównanie strony projektu z zapisanymi snapshotami konkurencji: tematy obecne, wspólne u konkurencji, potencjalnie brakujące, płytkie, niewarte dodania; różnice struktury i intencji; propozycje rozbudowy; ograniczenia porównania | tematy (`content_topics`, wymagane, maks. 12); bez propozycji title / meta, pytań, CTA i danych od klienta |
+
+Luka treści to nie „błąd SEO”: obecność tematu u konkurenta nie dowodzi, dlaczego konkurent jest wysoko, a brak tematu w snapshocie projektu
+to najwyżej hipoteza o niskiej pewności (chyba że ekstrakcja strony projektu jest pełna — `good`). Brief nigdy nie twierdzi, że witryna nie ma
+strony o temacie — indeks stron projektu jest niepełny (GSC).
+
+### 24.4 Zgodność z działaniem Strategii (D105)
+
+Tryby: `allowed` — typ zgodny z działaniem; `explicit` — tylko po świadomym wyborze (CLI `--explicit`, nie zmienia decyzji Strategii);
+`blocked` — typ sprzeczny z działaniem (odmowa `readiness_blocked`).
+
+| Działanie | Optymalizacja strony | Brief nowej strony | Luka treści |
+|---|---|---|---|
+| `optimize` | allowed — `existing_page` | blocked | allowed — `existing_page` |
+| `recover` | allowed — `existing_page`, `recovery_focus` | blocked | allowed — `existing_page`, `recovery_focus` |
+| `create` | blocked | allowed — `candidate_page` | explicit — `candidate_page` |
+| `consolidate` | allowed — `conflict_review` | blocked | explicit — `conflict_review` |
+| `monitor` | allowed — `existing_page`, `maintenance_focus` | blocked | explicit — `existing_page`, `maintenance_focus` |
+| `investigate` | explicit — `verify_first` | explicit — `candidate_page`, `verify_first` | explicit — `verify_first` |
+
+Wymagane dane: optymalizacja — strona docelowa i jej snapshot; brief — frazy tematu; luka treści — snapshot strony projektu i co najmniej jeden
+przydatny snapshot konkurencji. Ograniczenia trafiają do kontekstu (`analysis.constraints` z opisem) i instrukcji, a część egzekwuje walidator:
+
+- `existing_page` — analiza istniejącej strony (bez proponowania nowej podstrony zamiast niej),
+- `recovery_focus` — najpierw przyczyny spadku (GSC, SERP), potem rozbudowa,
+- `candidate_page` — wynik oznaczony jako „Kandydat na nową stronę”,
+- `conflict_review` — konsolidacja: wyłącznie kroki do ręcznej weryfikacji; przekierowania, canonical, noindex, scalanie i usuwanie stron tylko
+  jako `consolidation_check` / `technical_check` z kontrolą ręczną i podstawą `inference` / `hypothesis` (walidator: `destructive_without_check`),
+- `maintenance_focus` — monitorowanie: utrzymanie i drobne usprawnienia (walidator: bez wpływu `high`, bez pilnych nowych sekcji — `maintenance_overreach`),
+- `verify_first` — decyzja niejednoznaczna: najpierw weryfikacja (walidator: bez pewności `high` — `overconfident`).
+
+AI może zakwestionować decyzję Strategii, ale tylko jako ustalenie (`risk` / `observation`) z odwołaniem do dowodów — nigdy przez zmianę typu,
+działania ani statusu tematu.
+
+### 24.5 Gotowość (D106)
+
+`ReadinessEvaluator::evaluate(source, type, explicit)` — czysta funkcja zapisanego źródła (zero żądań), wywoływana przez `ai:readiness`, plan
+i generowanie (ponownie w chwili wykonania).
+
+| Stan | Znaczenie | Skutek |
+|---|---|---|
+| `ready` | dane wystarczające | generowanie możliwe |
+| `partial` | dane wystarczające z ograniczeniami (`limitations`) | generowanie możliwe; wynik musi ujawnić ograniczenia (`warnings` / `missing_information`, walidator: `limitations_not_disclosed`) |
+| `insufficient` | brak danych wymaganych przez typ (`reasons`) | odmowa `readiness_insufficient` bez żadnego wywołania (także dostawcy testowego) + jawne komendy do rozważenia |
+| `blocked` | niezgodność z decyzją Strategii albo brak decyzji / temat nieaktywny | odmowa `readiness_blocked` |
+
+Kody (z opisem w `Readiness::MEANINGS`, w kontekście i w CLI):
+
+- blokady: `no_strategy_decision`, `topic_inactive`, `action_not_supported`, `explicit_choice_required`,
+- brak danych: `target_page_unknown`, `page_not_fetched`, `page_fetch_failed`, `page_content_empty`, `no_keywords`, `no_competitor_snapshots`,
+- ograniczenia: `page_content_incomplete`, `page_content_partial`, `page_snapshot_stale`, `page_last_fetch_failed`, `intent_unknown`, `no_market_data`,
+  `serp_stale`, `serp_expired`, `competitor_serp_stale`, `competitor_serp_expired`, `serp_and_page_dates_differ`, `single_competitor`,
+  `competitor_content_incomplete`, `known_page_may_cover_topic`,
+- informacje: `page_index_incomplete`, `no_gsc_data`, `no_serp_measurement`, `no_competitor_pages`, `candidate_page`, `missing_page_confirmed_manually`.
+
+Przydatny snapshot konkurencji: jakość `good` albo `partial` i HTTP 200. Wskazówki (`hints`) to wyłącznie tekst, np.
+`wp osf-seo pages:fetch --project=<project> --topic=<id>` — nic nie jest pobierane automatycznie.
+
+### 24.6 Świeżość i proweniencja
+
+| Źródło | Reguła |
+|---|---|
+| GSC | „Średnia pozycja (GSC)” — średnia z okna, nigdy pozycja SERP; świeżość danych jak w kontekście v2 |
+| Pomiar SERP | ≤ 30 dni — pełna interpretacja; 31–90 dni — ograniczona (bez wniosków o Pozycji SERP projektu; ograniczenie w briefie, informacja w pozostałych); > 90 dni — bez wniosków rankingowych (`SerpFreshness`) |
+| Snapshot strony | domyślnie świeży 24 h (`OSF_SEO_PAGES_TTL_HOURS`); starszy → `page_snapshot_stale`; nieudane ostatnie pobranie przy starszym snapshocie → `page_last_fetch_failed` (to nie jest bieżące potwierdzenie) |
+| Strony konkurencji | świeżość pomiaru SERP każdej strony osobno (`serp_freshness`); pomiar i pobranie dalej niż 7 dni → `serp_and_page_dates_differ` — ranking i treść nie były obserwowane razem |
+| Treść bez JS | `content_quality` `incomplete` / `partial` / `empty` → brak elementu w snapshocie nie dowodzi jego braku; brak meta description: `not_detected` (pełna ekstrakcja — nadal do ręcznej weryfikacji) albo `not_detected_unconfirmed` (brak niepotwierdzony, nigdy `fact`) |
+| robots.txt, 403, 404, timeout | nigdy dowód, że podstrona nie istnieje |
+
+### 24.7 Kontekst — wersja 3 (D110)
+
+Rozszerzony `TopicContextAssembler` (ten sam pakiet STEP 16, te same odczyty), tylko gdy źródło zawiera sekcję analizy:
+
+- `analysis`: typ i etykieta, język odpowiedzi (z języka projektu: `pl`, `en`; inny → `pl`), działanie Strategii, tryb zgodności, ograniczenia
+  z opisem, gotowość, ograniczenia i informacje (`{code, meaning}`), `page_label` „Kandydat na nową stronę” dla briefu,
+- `site.pages` (`site:N`): do 15 innych aktywnych tematów projektu (bez odrzuconych) z działaniem i stroną docelową — najpierw ze stroną, w kolejności
+  priorytetu; heurystyka do linkowania i ryzyka kanibalizacji, **nie** pełna lista stron witryny,
+- strona projektu: `meta` (status i długość title / description, dyrektywy robots, uwaga o statusach), `heading_structure` (brak H1, wiele H1,
+  przeskoki poziomów — tylko obserwacje, z uwagą, że to nie są potwierdzone czynniki rankingowe), `internal_links` (adresy + kotwice w bloku
+  niezaufanym), `ui_labels_excluded`, nagłówki z flagą `thin_section`,
+- **poza kontekstem**: diagnostyka parsera (`parse_errors`) i stosunek tekstu do HTML — to nie są błędy SEO,
+- etykiety interfejsu (krótkie wezwania do działania PL/EN, napisy wersalikami 2–4 słowa) usuwane z nagłówków treści; sekcje z < 8 słowami
+  (karty realizacji, kafle kategorii, przyciski) i sekcje pod etykietami interfejsu poza sekcjami treści (`limits.omitted.thin_sections`,
+  `ui_sections`); nagłówki kart oznaczone `thin_section: true`,
+- strony konkurencji: `usable`, `serp_freshness`, `headings_total`; nagłówki i fragment tylko ze snapshotów przydatnych, bez etykiet interfejsu,
+- profile limitów typu (`PROFILES`) i **kolejność redukcji typu** (`ANALYSIS_REDUCTIONS`): dowody kluczowe dla typu tnięte na końcu — treść strony
+  projektu w optymalizacji, strony konkurencji w luce treści (nigdy mniej niż jedna), frazy i inne tematy w briefie; budżet 32 KB bez zmian,
+- nowe pola zewnętrzne w `untrusted` (`internal_links[].url`, `site.pages[].label`, `site.pages[].url`); kotwice i etykiety interfejsu w bloku
+  niezaufanym (`page_anchor`, `ui_label`).
+
+Odcisk kontekstu i odcisk dowodów jak w v2 (bez czasu budowania; odcisk dowodów bez stanu pracy tematu). Kontekst v2 (analiza tematu) bez zmian
+— test regresji w `RecommendationContextTest`.
+
+### 24.8 Instrukcje (prompty)
+
+`OsfSeo\Ai\Prompt\AnalysisPrompts` — wspólne reguły (11 punktów: tylko dowody; odwołania tylko z `refs`, `txt:N` to nie odwołania; podstawa
+`fact` / `inference` / `hypothesis`; metryki rozdzielone; snapshoty bez JS, statusy meta, struktura nagłówków jako obserwacja, bez diagnostyki
+parsera, etykiety interfejsu i karty to nie tematy; świeżość; decyzja Strategii jako wejście; zakazy jakościowe; ujawnianie ograniczeń;
+bezpieczeństwo danych zewnętrznych; format i limity) + część typu. Wersje: `page-optimization.v1`, `new-page-brief.v1`,
+`content-gap-analysis.v1` — zmiana treści = nowa wersja (zapisywana jako `prompt_version`). Język odpowiedzi jest częścią instrukcji i odcisku
+wejścia (`AnalysisPrompts::inputHash`). Warstwy wejścia jak w analizie tematu (D90): `<task id prompt_version contract_version>`,
+`<user_focus_json>` (cel użytkownika, maks. 300 znaków, niezaufany), `<evidence_json>`, `<untrusted_external_texts_json>` — dane jako JSON
+z escapowanymi `<`, `>`, `&`, cudzysłowami. Instrukcje nie są w kontrolerach ani widokach; treści konkurencji nigdy nie trafiają do instrukcji.
+
+### 24.9 Kontrakt odpowiedzi — wersja 2 (D107)
+
+`RecommendationContract` (`whack_a_mole_recommendations_v2`, `strict` JSON Schema — same typy i wyliczenia): wspólna koperta + sekcje typowane,
+wszystkie pola obecne w każdym typie (sekcje nieużywane puste).
+
+| Pole | Zawartość |
+|---|---|
+| `contract_version`, `analysis_type` | 2; typ zgodny z żądaniem |
+| `summary` | podsumowanie (maks. 1 200 znaków) |
+| `search_intent` | `primary` (informational, commercial, transactional, navigational, local, mixed, unknown), wyjaśnienie, odwołania, podstawa, pewność |
+| `findings[]` | `id` F1…, `kind` (problem, opportunity, strength, risk, observation), tytuł, wyjaśnienie, odwołania, podstawa, pewność |
+| `recommendations[]` | `id` R1…, `type` (title, meta_description, h1, heading_structure, new_section, expand_section, internal_linking, faq, intent_alignment, content_scope, page_role, consolidation_check, technical_check, other), tytuł, opis, uzasadnienie, `target`, `finding_ids`, priorytet 1–5, pilność (now, next, optional), wpływ jakościowy (high, medium, low, unknown) z uzasadnieniem bez liczb, odwołania, podstawa, pewność, `requires_manual_check`, `verification` |
+| `content_outline` | `h1` + sekcje (`level` 2/3, nagłówek, zakres, odwołania, podstawa) |
+| `title_suggestions[]`, `meta_description_suggestions[]` | tekst (title 15–70, meta 70–170 znaków), uzasadnienie, odwołania, podstawa |
+| `internal_links[]` | `from_url`, `to_url` (wyłącznie adresy z kontekstu; pusty = analizowana / nowa strona), kotwica, uzasadnienie, odwołania, podstawa |
+| `content_topics[]` | etykieta, status (present_on_project_page, common_among_competitors, potentially_missing, shallow_on_project_page, not_recommended), odwołania, podstawa, pewność, uwaga |
+| `user_questions[]`, `cta_suggestions[]`, `client_data_needed[]` | krótkie teksty |
+| `cannibalization_risks[]` | opis, odwołania, podstawa |
+| `missing_information[]`, `warnings[]`, `manual_checks[]` | braki danych, ostrzeżenia (ograniczenia), kontrole ręczne z odwołaniami |
+
+Limity: listy maks. 8 elementów (tematy i sekcje konspektu 12, propozycje title / meta i CTA 3, ryzyka kanibalizacji 5), maks. 12 odwołań na
+element, limity długości każdego tekstu (`RecommendationContract::LIMITS`), nadmiar → odrzucenie (bez ucinania).
+
+### 24.10 Walidacja (D107)
+
+`RecommendationValidator` (wspólna baza `JsonContractValidator` z `OutputValidator`) — jakikolwiek błąd odrzuca **całą** odpowiedź (`invalid`,
+wynik niezapisany jako wynik, raport walidacji zapisany):
+
+- struktura: `invalid_json`, `not_object` (także `[]`), `missing_field`, `unexpected_field`, `wrong_type`, `invalid_enum`, `too_long`, `empty`,
+  `too_many_items`, `too_many_refs`, `invalid_id`, `duplicate_id`, `unknown_finding`, `contract_version`, `analysis_type`,
+- dowody: `unknown_ref` (odwołanie spoza kontekstu, także `txt:N`), `fact_without_refs`, `inference_without_refs`, `fact_from_heuristic` (fakt
+  wyłącznie z heurystyk aplikacji), `absence_as_fact`, `absence_unconfirmed` (brak tematu przy niepełnej ekstrakcji z pewnością > low),
+  `unknown_url`, `link_without_url`,
+- sekcje typu: `section_not_allowed`, `section_required`, `outline_required`,
+- jakość: `numeric_forecast`, `ranking_forecast`, `promise`, `google_requirement_claim`, `word_count_target`, `parser_diagnostic_as_issue`,
+  `heading_levels_overstated`, `destructive_without_check`, `manual_check_required` / `meta_absence_unconfirmed` (meta description nie wykryta),
+  `faq_unjustified`, `duplicate_recommendation`, `copied_competitor_text` (≥ 8 kolejnych słów z treści konkurencji), `ui_label_as_topic`
+  (etykieta interfejsu albo nagłówek karty jako temat luki), `absence_claim` („serwis nie ma strony…”), `keyword_stuffing` (to samo słowo
+  ≥ 3 razy w title / meta), `too_short` / `too_long` propozycji,
+- zgodność ze Strategią: `maintenance_overreach`, `overconfident`; ujawnienie ograniczeń: `limitations_not_disclosed`.
+
+Hipoteza nie staje się faktem, bo tak zadeklarował model: `fact` wymaga odwołania do danych mierzonych (`gsc`, `serp`, `page`, `cpage`, `kw`) albo
+danych dostawcy (`market`, `gap`). Bez „Content Score” — kontrakt nie ma pola wyniku liczbowego (`unexpected_field`).
+
+### 24.11 Odcisk planu, potwierdzenie i równoległość (D108)
+
+- **Odcisk planu** (`AiPlan::fingerprint`, SHA-256): typ, dostawca, model, płatność, wersje instrukcji i kontraktu, język, odcisk kontekstu, cel
+  użytkownika, szacunek tokenów wejścia, `max_output_tokens`, koszt maksymalny i ceny z konfiguracji (bez stanu budżetu — limity sprawdza
+  rezerwacja pod blokadą). Pokazywany przez `ai:plan` i zapisywany w `ai_runs.plan_fingerprint`.
+- **Płatne generowanie** wymaga potwierdzenia **i** zatwierdzonego odcisku: interaktywnie (CLI pokazuje plan i zatwierdza dokładnie ten odcisk)
+  albo `--yes --plan=<odcisk z ai:plan>`. W chwili wykonania plan jest liczony ponownie — inny odcisk → `plan_changed` (nigdy droższa ani inna
+  analiza niż zatwierdzona); brak odcisku → `plan_approval_required`; brak potwierdzenia → `confirmation_required`. Uprawnienia sprawdzane
+  ponownie przy wykonaniu, limity budżetu — w rezerwacji.
+- **Równoległość**: `GET_LOCK` zlecenia (projekt × temat × typ) bez czekania → `run_in_progress`; dodatkowo uruchomienie `reserved` / `running`
+  tego samego tematu i typu w historii → `run_in_progress` (do odzyskania porzuconych uruchomień — D91). Inny typ tego samego tematu nie jest blokowany.
+- **Przypadkowe powtórzenie**: udane uruchomienie z tym samym odciskiem planu → `already_generated` (indeks `project_plan`); świadome powtórzenie
+  — `--repeat`.
+
+### 24.12 Koszty i budżet
+
+Bez drugiego systemu budżetowego: rezerwacja kosztu maksymalnego pod `GET_LOCK ai_budget`, rozliczenie z `usage`, wynik niepewny = cała
+rezerwacja, budżet AI oddzielny od DataForSEO (sekcja 22.7). Gotowość, kontekst i plan są bezpłatne. Bez automatycznego płatnego ponowienia
+przy wyniku niepewnym i bez dodatkowych wywołań „naprawiających” JSON — odpowiedź niezgodna z kontraktem kończy uruchomienie (`invalid`,
+koszt rozliczony ze zgłoszonego zużycia).
+
+### 24.13 Historia, odciski i aktualność wyników (D109)
+
+- M0017 (schemat 17, addytywnie): `ai_runs.plan_fingerprint` BINARY(32) NULL, `ai_runs.readiness` VARCHAR(16) NULL (stan gotowości w chwili
+  generowania), `ai_runs.sources` TEXT NULL (JSON bez treści: język, działanie Strategii, tryb zgodności, wybór jawny, gotowość z kodami,
+  adres docelowy, snapshot strony projektu — `page:<id>`, data pobrania, świeżość i jakość, snapshoty konkurencji — odwołanie, przydatność,
+  data pomiaru SERP i data pobrania osobno, pomiar SERP tematu — data i świeżość, liczba innych tematów); indeks (`project_id`, `plan_fingerprint`).
+  Stare uruchomienia — NULL (historia STEP 16 i faz A/B bez zmian).
+- Uruchomienie łączy: projekt, temat, typ (`task`), dostawcę, model, wersje instrukcji / kontraktu / kontekstu, odcisk kontekstu, odcisk
+  dowodów, odcisk planu, `evidence_hash` Strategii, gotowość, źródła, tokeny i koszt, status, wynik walidacji, datę.
+- **Aktualność** (`show()` zawsze, `ai:runs --check-stale`): odbudowa bieżącego kontekstu tego samego typu (bez żądań, raz na temat × typ)
+  i porównanie odcisku dowodów → `stale: false` / `true` (`evidence_changed`, `context_version_changed`, `topic_not_found`) / `null`
+  (`not_recorded` — stare uruchomienia bez odcisku dowodów). Wynik nieaktualny nie jest usuwany ani zmieniany — tylko oznaczany. Zmiana
+  statusu pracy tematu nie jest zmianą dowodów.
+- Status AI (`status`, `decision`) jest osobny od statusu pracy tematu Strategii — generowanie i decyzja o wyniku nigdy go nie zmieniają.
+
+### 24.14 Błędy
+
+| Sytuacja | Zachowanie |
+|---|---|
+| Brak snapshotu strony / pobranie nieudane / pusta treść | `insufficient` (`page_not_fetched`, `page_fetch_failed`, `page_content_empty`) — bez wywołania, wskazówka `pages:fetch` |
+| Niepełna treść (JS, przycięcie, brak `main`) | `partial` z ograniczeniem; walidator wymaga ujawnienia ograniczeń i niskiej pewności braków |
+| Brak konkurencji (luka treści) | `insufficient` (`no_competitor_snapshots`) |
+| Nieaktualny SERP | ograniczenie / informacja (24.6) |
+| Timeout, sieć, 5xx | `uncertain`, cała rezerwacja, bez ponowienia (D91) |
+| Niezgodny schemat, brak pól, złe typy, uszkodzony JSON, wymyślone odwołania | `invalid` (`contract_invalid`), raport walidacji, koszt rozliczony, wynik nieopublikowany |
+| Budżet wyczerpany, brak modelu / cen / klucza, wyłącznik | odmowa przed żądaniem (`budget_*`, `run_cost_limit`, `model_not_configured`, `missing_prices`, `missing_api_key`, `ai_disabled`) |
+| Plan zmieniony po zatwierdzeniu | `plan_changed` |
+| To samo zlecenie w toku / identyczny plan już wygenerowany | `run_in_progress` / `already_generated` |
+
+### 24.15 Integracja z Page Intelligence
+
+Wyłącznie istniejący `PageEvidenceSource` (zapisane snapshoty strony docelowej i stron konkurencji powiązanych z organicznymi wynikami zapisanego
+pomiaru SERP fraz tematu) — bez nowego fetchera i bez pobierania przy gotowości, planie ani generowaniu. Strony konkurencji: snapshot, data
+i jakość, konkretny pomiar SERP (fraza, pozycja, data pomiaru) osobno od daty pobrania; fragment treści konkurencji tylko jeden, krótki
+(maks. 300 znaków) i w bloku niezaufanym; przepisanie ≥ 8 kolejnych słów do wyniku odrzuca walidator.
+
+### 24.16 Bezpieczeństwo i uprawnienia
+
+- `ProjectGuard` → `ProjectContext` w każdej metodzie; temat i uruchomienie wyłącznie w obrębie projektu (obce → nie znaleziono, test IDOR);
+  inne tematy w kontekście tylko z tego samego projektu; aktualność liczona tylko dla uruchomień projektu.
+- Capability `osf_seo_manage_ai` (bez nowej) dla gotowości, kontekstu, planu, generowania (także bezpłatnego), historii — klient projektu nie
+  uruchamia żadnej analizy.
+- Do modelu: wyłącznie dane tematu projektu — bez kluczy, tokenów OAuth, haseł, notatek, identyfikatorów użytkowników i danych innych projektów;
+  wszystkie dane zewnętrzne (frazy, adresy, tytuły, nagłówki, fragmenty, kotwice, etykiety) jako dane niezaufane; cel użytkownika niezaufany.
+- Klucz API tylko w nagłówku żądania (bez zmian, sekcja 22.11); historia i logi bez sekretów.
+- Bez automatycznego publikowania zmian w WordPressie — wynik to tekst rekomendacji w historii.
+
+### 24.17 CLI
+
+```bash
+wp osf-seo ai:analysis-types [--format=json]                               # typy, wersje instrukcji, tabela zgodności z działaniami Strategii
+wp osf-seo ai:readiness --project=<id> --topic=… --type=page-optimization|new-page-brief|content-gap [--explicit] [--format=json]   # zero żądań
+wp osf-seo ai:context --project=<id> --topic=… [--type=…] [--explicit]     # kontekst v3 (z --type) albo v2 (analiza tematu)
+wp osf-seo ai:plan --project=<id> --topic=… --type=… [--provider=…] [--focus="…"] [--explicit] [--format=json]   # gotowość, koszt, blokady, odcisk planu
+wp osf-seo ai:generate --project=<id> --topic=… --type=… [--provider=fake] [--focus="…"] [--explicit] [--plan=<odcisk>] [--yes] [--repeat]
+wp osf-seo ai:show --project=<id> --run=<id> [--payload]                   # wynik, walidacja, źródła, aktualność (freshness)
+wp osf-seo ai:runs --project=<id> [--topic=…] [--check-stale]              # historia z typem i gotowością; opcjonalnie aktualność
+```
+
+Domyślny dostawca `fake` (koszt 0, bez sieci). Płatny (`--provider=openai`) — tylko po świadomej konfiguracji (sekcja 22.13), z potwierdzeniem
+planu: interaktywnie albo `--yes --plan=<odcisk>`. Bez parametru `--url` (globalny parametr WP-CLI); `--explicit` nie zmienia decyzji Strategii.
+Wyjście po angielsku; `--format=json` — tylko JSON, bez sekretów.
+
+### 24.18 Przykładowe wyniki dostawcy testowego
+
+Poniższe dane pochodzą z `FakeProvider::recommendations` (dostawca testowy, koszt 0) na syntetycznym kontekście testów — **to nie są analizy SEO**:
+każdy tekst jest oznaczony `[TEST]`, a atrapa sprawdza wyłącznie strukturę, odwołania i walidację. Fragmenty (pominięto powtarzalne pola):
+
+```json
+{
+  "contract_version": 2,
+  "analysis_type": "page_optimization",
+  "summary": "[TEST] Atrapa analizy „Optymalizacja istniejącej strony” (dostawca testowy, koszt 0) — struktura zgodna z kontraktem, bez wniosków merytorycznych.",
+  "findings": [
+    {"id": "F1", "kind": "observation", "title": "[TEST] Działanie Strategii: optimize", "evidence_refs": ["decision"], "basis": "inference", "confidence": "low"},
+    {"id": "F2", "kind": "observation", "title": "[TEST] Zapisany snapshot strony projektu", "evidence_refs": ["page:01M4BRH0000000000000000001"], "basis": "fact", "confidence": "low"}
+  ],
+  "recommendations": [
+    {"id": "R1", "type": "expand_section", "title": "[TEST] Sprawdź zakres sekcji strony wskazanej w dowodach", "priority": 2, "urgency": "next",
+     "expected_impact": "unknown", "evidence_refs": ["page:01M4BRH0000000000000000001"], "basis": "inference", "confidence": "low", "requires_manual_check": true},
+    {"id": "R2", "type": "internal_linking", "title": "[TEST] Przejrzyj linkowanie wewnętrzne do strony", "evidence_refs": ["site:1", "site:2"], "basis": "inference"}
+  ],
+  "content_topics": [], "user_questions": [], "cta_suggestions": [], "client_data_needed": [],
+  "warnings": ["[TEST] Odpowiedź dostawcy testowego — nie przedstawiaj jej jako analizy SEO."]
+}
+```
+
+```json
+{
+  "contract_version": 2,
+  "analysis_type": "new_page_brief",
+  "recommendations": [{"id": "R1", "type": "page_role", "title": "[TEST] Ustal rolę kandydata na nową stronę w serwisie", "priority": 1, "evidence_refs": ["kw:01M4BRGWN100CHWX4QWFNJ5YJM", "kw:01M4BRGWN13MY8X6AJ73HS9455"], "basis": "inference"}],
+  "content_outline": {"h1": "[TEST] Nagłówek H1 kandydata na nową stronę", "sections": [
+    {"level": 2, "heading": "[TEST] Sekcja główna tematu", "scope": "[TEST] Zakres do ustalenia na podstawie fraz tematu.", "basis": "inference"},
+    {"level": 2, "heading": "[TEST] Sekcja uzupełniająca", "scope": "[TEST] Zakres do potwierdzenia z klientem.", "evidence_refs": [], "basis": "hypothesis"}]},
+  "title_suggestions": [{"text": "[TEST] Propozycja tytułu kandydata", "basis": "inference"}],
+  "meta_description_suggestions": [{"text": "[TEST] Propozycja opisu meta dla kandydata na nową stronę — atrapa dostawcy testowego bez analizy.", "basis": "inference"}],
+  "user_questions": ["[TEST] Pytanie użytkownika do potwierdzenia w danych?"],
+  "cta_suggestions": ["[TEST] Wezwanie do działania do ustalenia z klientem"],
+  "client_data_needed": ["[TEST] Szczegóły oferty i przykłady realizacji od klienta"],
+  "cannibalization_risks": [{"description": "[TEST] Sprawdź, czy inny temat projektu nie obejmuje tych samych fraz.", "evidence_refs": ["site:1", "site:2"], "basis": "hypothesis"}],
+  "warnings": ["[TEST] Kandydat na nową stronę: brak znanej strony w dostępnych źródłach nie oznacza, że takiej strony nie ma w witrynie.", "[TEST] Odpowiedź dostawcy testowego — nie przedstawiaj jej jako analizy SEO."]
+}
+```
+
+```json
+{
+  "contract_version": 2,
+  "analysis_type": "content_gap",
+  "recommendations": [{"id": "R1", "type": "expand_section", "title": "[TEST] Rozważ rozbudowę sekcji po porównaniu z konkurencją",
+    "evidence_refs": ["page:01M4BRH0000000000000000001", "cpage:01M4BRH2000000000000000001", "cpage:01M4BRH2000000000000000002"], "basis": "inference"}],
+  "content_topics": [
+    {"label": "[TEST] Temat obecny na stronie projektu", "status": "present_on_project_page", "evidence_refs": ["page:01M4BRH0000000000000000001"], "basis": "fact", "confidence": "low"},
+    {"label": "[TEST] Temat do sprawdzenia u konkurencji", "status": "potentially_missing", "evidence_refs": ["cpage:01M4BRH2000000000000000001", "cpage:01M4BRH2000000000000000002"], "basis": "hypothesis", "confidence": "low",
+     "note": "[TEST] Brak w snapshocie projektu nie dowodzi braku na stronie."}],
+  "title_suggestions": [], "meta_description_suggestions": [],
+  "warnings": ["[TEST] Snapshoty konkurencji i pomiar SERP to różne chwile; obecność tematu u konkurenta nie wyjaśnia jego pozycji.", "[TEST] Odpowiedź dostawcy testowego — nie przedstawiaj jej jako analizy SEO."]
+}
+```
+
+### 24.19 Testy i benchmark
+
+- Jednostkowe (bez WordPressa): `RecommendationContextTest` (gotowość i kontekst v3: pełne dane, brak i niepełny snapshot, brief kandydata,
+  konkurencja, nieaktualny SERP, różne daty, zgodność z działaniem, strona w stylu realnego testu OhSoFresh — brak meta description, ok. 180
+  błędów parsowania, przeskoczone poziomy nagłówków, CTA, kategoria wersalikami, karty realizacji — bez fałszywych alarmów, treść stron wyłącznie
+  w bloku niezaufanym, budżet 32 KB z zachowaniem dowodów kluczowych), `RecommendationValidatorTest` (atrapy trzech typów, odwołania, podstawa,
+  title / meta, prognozy, liczba słów, parser, nagłówki, etykiety interfejsu i karty, działania nieodwracalne, kopiowanie treści, sekcje typu,
+  ograniczenia Strategii, ujawnianie ograniczeń, uszkodzony JSON, zła struktura), `AnalysisPromptsTest`.
+- Integracyjne (prawdziwy WordPress i baza, atrapy transportu stron i HTTP): `AiRecommendationFlowTest` — pełny przepływ z dostawcą testowym,
+  historia i ponowny odczyt, brak / niepełny snapshot, brief (wybór jawny), luka treści z konkurencją, bez niej i z nieaktualnym SERP-em, izolacja
+  projektów, uprawnienia klienta, płatny dostawca bez klucza / wyłączony / ponad limit / bez potwierdzenia / bez odcisku planu, równoległe
+  zlecenia (blokada trzymana przez drugie połączenie, uruchomienie w toku), duplikat planu i `--repeat`, zmiana cen / modelu / kontekstu / celu
+  po podglądzie, timeout, uszkodzony JSON, zła struktura, wymyślone odwołania, wynik nieaktualny po nowym snapshocie, Strategia i status pracy
+  bez zmian, zero żądań HTTP. `MigratorTest` — zgodność ze specyfikacją i aktualizacja 16 → 17 z zachowaniem historii.
+- Benchmark `composer test:performance:ai` (bez płatnych wywołań i sieci): A — mały temat, 1 strona; B — średni temat, 3 konkurentów; C — duży
+  temat (redukcja do 32 KB, wszystkie typy); D — duży projekt z 5 000 zapisanych analiz (+ 10 projektów po 500) na osobnej bazie testowej. Wyniki
+  pomiaru (PHP 8.3, MariaDB 10.11, środowisko agenta): kontekst 0,4–0,6 ms (A, B) i 6–18 ms (C, kilka kroków redukcji), 18–32 KB; walidacja
+  0,15–0,2 ms (odpowiedź testowa) i ≤ 1,3 ms (odpowiedź maksymalna, ok. 40 KB); D: gotowość ~14 ms / 40 zapytań, plan ~12 ms / 41 zapytań,
+  generowanie z zapisem historii ~20 ms / 52 zapytania (5 zapisujących), wynik z aktualnością ~10 ms, lista historii < 1 ms (indeks
+  `project_created`), duplikat planu < 1 ms (indeks `project_plan`), aktualność 20 wyników ~140 ms / 782 zapytania (odbudowa kontekstu na temat
+  × typ — tylko na życzenie, `--check-stale`).
+
+### 24.20 Ograniczenia
+
+- Rzeczywiste wywołanie modelu (OpenAI) nie było wykonane — jakość rekomendacji, zgodność modelu z kontraktem v2 i odsetek odpowiedzi `invalid`
+  do sprawdzenia na prawdziwych tematach po świadomej konfiguracji (sekcja 22.15); reguły walidatora (wzorce prognoz, obietnic, liczby słów,
+  kopiowania, etykiet interfejsu) to heurystyki PL/EN — nie zastępują przeglądu wyniku przez człowieka i mogą wymagać kalibracji (fałszywe
+  odrzucenia albo przeoczenia).
+- Wykrywanie etykiet interfejsu i kart (CTA, wersaliki, sekcje < 8 słów) to heurystyka — krótkie, ale merytoryczne sekcje są pomijane w porównaniach.
+- `ProjectPageIndex` nadal tylko z GSC — brief zawsze ma ograniczenie „indeks niepełny”; strony konkurencji tylko z jawnie pobranych snapshotów.
+- Aktualność listy (`--check-stale`) odbudowuje kontekst dla każdego tematu × typu — koszt rośnie z liczbą różnych tematów na liście.
+- Odcisk planu obejmuje szacunek tokenów — każda zmiana kontekstu (np. nowy snapshot, przeliczenie Strategii) wymaga ponownego zatwierdzenia planu.
+- Interfejs panelu — faza D (sekcja 25).
+
+### 24.21 Roadmapa (do osobnej akceptacji)
+
+| Faza | Zakres |
+|---|---|
+| D | ✅ Interfejs panelu (sekcja 25): gotowość i plan z kosztem → zatwierdzenie odcisku planu → zlecenie w tle; raport z dowodami, ograniczeniami, aktualnością i decyzją użytkownika; Strony i pobieranie z panelu |
+| E | Zakres do ustalenia z właścicielem (np. kalibracja walidatora na prawdziwych wynikach, ewentualne zadania w tle wyłącznie przez `SyncScheduler` i w budżecie AI) |
+
+## 25. Przestrzeń robocza AI i Page Intelligence w panelu (STEP 17, faza D)
+
+Cały przepływ z panelu, bez SSH i WP-CLI: **Strategia → szczegóły tematu → sprawdzenie dostępności danych → pobranie brakujących stron →
+wybór rodzaju analizy → plan i koszt → jawne potwierdzenie → analiza w tle → raport z rekomendacjami → historia analiz**. Faza D nie tworzy
+drugiego silnika analiz, drugiego fetchera ani drugiego budżetu — wykorzystuje usługi faz B i C; nie zmienia zasad Strategii.
+
+### 25.1 Zasady
+
+- **Logika w pluginie, kontrolery cienkie**: odczyt i przygotowanie w `OsfSeo\Ai\Workspace\AiWorkspaceService` (D113), raport w `AiReport`
+  i `AiReportText` (D115), lista i szczegóły stron w `PageIntelligenceService::list()` / `pageView()`, zlecenia pobrania w `PageJobService`
+  (D112), kolejka analiz w `AiAnalysisService::queue()` / `runQueued()` (D111). Bez SQL w kontrolerach i Blade, bez SPA i nowych zależności.
+- **Zero wywołań przy odczycie**: renderowanie tematu, gotowość, podgląd planu, historia, raport i lista stron nie wywołują modelu, nie pobierają
+  stron, nie mierzą SERP-u i nie wołają DataForSEO. Model wywołuje wyłącznie krok w tle po jawnym zleceniu; strony pobiera wyłącznie krok w tle po
+  jawnym zleceniu. Przeliczenie Strategii nie zleca pobrań ani analiz; bez automatycznego harmonogramu AI i crawlera.
+- **Koszt nigdy z formularza**: formularz przesyła tylko odcisk planu (`AiPlan::fingerprint` — typ, dostawca, model, wersje, kontekst, tokeny,
+  koszt maksymalny, ceny). Usługa przelicza plan teraz i porównuje odcisk; inny → `plan_changed` (D108). Krok w tle porównuje ponownie (D111).
+- **Klient czyta, nie uruchamia** (D116); wszystkie odczyty i mutacje przez `ProjectGuard` → `ProjectContext`, nonce, Origin, 404 dla
+  identyfikatorów spoza projektu.
+- **Bez kodów technicznych w UI**: stany gotowości, powody, statusy, błędy i pola raportu przez `ReportLabels` (plugin) i `App\Panel\PageLabels`
+  (motyw); nieznany kod → opis ogólny.
+
+### 25.2 Trasy i nawigacja
+
+Nawigacja projektu: „Strategia” (przegląd, backlog, SERP Intelligence), „Analizy AI” (historia), „Strony” (Page Intelligence; wcześniej
+zaślepka sekcji). Główna ścieżka: Strategia → temat → sekcja „Analiza AI”. Brak widoków łączących projekty.
+
+| Trasa | Uprawnienie | Kontroler | Opis |
+|---|---|---|---|
+| `GET /projects/{p}/strategy/topics/{topic}` | dostęp do projektu | `StrategyTopicsController::show` | szczegóły tematu + sekcja „Analiza AI” |
+| `GET /projects/{p}/strategy/topics/{topic}/ai` | `osf_seo_manage_ai` | `AiController::prepare` | przygotowanie: typ, gotowość, dane, plan, koszt |
+| `POST /projects/{p}/strategy/topics/{topic}/ai` | `osf_seo_manage_ai` | `AiController::queue` | zlecenie po potwierdzeniu (odcisk planu) |
+| `GET /projects/{p}/ai` | dostęp do projektu | `AiController::index` | historia (filtry, stronicowanie SQL) |
+| `GET /projects/{p}/ai/runs/{run}` | dostęp do projektu | `AiController::show` | raport (klient: tylko gotowe) |
+| `GET /projects/{p}/ai/runs/{run}/status` | `osf_seo_manage_ai` | `AiController::status` | status JSON (odpytywanie co 5 s) |
+| `POST /projects/{p}/ai/runs/{run}/cancel` | `osf_seo_manage_ai` | `AiController::cancel` | anulowanie przed wysłaniem (bez kosztu) |
+| `POST /projects/{p}/ai/runs/{run}/decision` | `osf_seo_manage_ai` | `AiController::decide` | przyjęta / odrzucona / cofnięcie |
+| `GET /projects/{p}/pages` | dostęp do projektu | `PagesController::index` | lista stron (filtry, stronicowanie SQL) |
+| `GET /projects/{p}/pages/{page}[?snapshot=]` | dostęp do projektu | `PagesController::show` | szczegóły kopii; snapshot tylko tej strony |
+| `GET /projects/{p}/pages/fetch` | `osf_seo_manage_page_intelligence` | `PagesController::plan` | plan pobrania (zero HTTP i DNS) |
+| `POST /projects/{p}/pages/fetch` | `osf_seo_manage_page_intelligence` | `PagesController::queue` | zlecenie po potwierdzeniu |
+| `GET /projects/{p}/pages/jobs/{job}[/status]` | `osf_seo_manage_page_intelligence` | `PagesController::job` / `jobStatus` | status zlecenia |
+| `GET /settings` (karta „Analizy AI i pobieranie stron”) | `osf_seo_manage_settings` | `SettingsController::index` | stan konfiguracji, budżet, kolejki |
+
+Uprawnienia sprawdzane w trasie (middleware `ResolveProject` z capability), w kontrolerze (wyjątki → 403/404) i ponownie w usłudze.
+
+### 25.3 Sekcja „Analiza AI” i przygotowanie analizy (D113)
+
+- Sekcja tematu (`topicSection`): jedno źródło (`AiTopicContextBuilder::source`) → gotowość trzech typów (czysta funkcja), typ zalecany według
+  działania Strategii, zgodność, stan dowodów (kopia strony docelowej, strony konkurencji z SERP, pomiar SERP, GSC, frazy, indeks stron), ostatnia
+  analiza każdego typu z **dokładną** aktualnością (kontekst składany z tego samego źródła), ostatnie analizy tematu i zlecenia pobrania,
+  przyciski pobrania brakujących stron (strona docelowa, wybrane wyniki SERP — TOP 10 bez strony projektu). Klient: tylko gotowe analizy.
+- Przygotowanie (`prepare`): plan fazy C (`planAnalysis` — zero żądań): gotowość z powodami (`INSUFFICIENT`, `BLOCKED` — brak przycisku zlecenia),
+  ograniczenia (`PARTIAL` — jawnie, trafiają do raportu), podgląd danych wejściowych (strona, konkurencja, SERP, GSC, frazy, braki danych),
+  dostawca (testowy zawsze; płatny tylko po włączeniu i wybraniu w konfiguracji serwera), model, tokeny, koszt maksymalny, budżet AI, blokady,
+  analiza w toku (zamiast formularza) i duplikat planu (ponowne wygenerowanie tylko z osobnym zaznaczeniem).
+- Typ `explicit` (np. „Do sprawdzenia”): najpierw ostrzeżenie i świadomy wybór (`?explicit=1`, inny plan), potem osobne pole potwierdzenia
+  w formularzu (`explicit_confirmed`, inaczej odmowa `explicit_confirmation_required`); decyzja zapisywana w uruchomieniu (`sources.explicit`,
+  `sources.compatibility`, `requested_by`). Typ `blocked` — niedostępny.
+
+### 25.4 Analizy w tle (D111)
+
+```
+panel: prepare (plan, odcisk) → POST queue (odcisk, potwierdzenia)
+  → AiAnalysisService::queue: plan teraz, gotowość, blokady, odcisk = zatwierdzony, potwierdzenie płatnego, blokada zlecenia,
+    brak w toku / duplikatu → rezerwacja kosztu maks. (GET_LOCK ai_budget) → ai_runs.status = queued
+SyncScheduler::onAfterRun → AiAnalysisService::runQueued (system, maks. 2 na krok, w limicie czasu kroku)
+  → blokada zlecenia (projekt × temat × typ) → ponowny odczyt (queued?) → ProjectGuard::authorizeSystem
+  → plan teraz (ten sam fokus i wybór jawny) → odcisk ≠ zapisany → failed plan_changed (rezerwacja zwolniona, bez wywołania)
+  → gotowość / blokady (bez ponownego liczenia limitów budżetu objętych rezerwacją) → running → jedno wywołanie → walidacja → rozliczenie
+```
+
+- Statusy w panelu: „W kolejce”, „W trakcie”, „Gotowa”, „Nieudana”, „Wynik niepewny”, „Odrzucona przez kontrolę jakości”, „Odrzucona przez
+  użytkownika”. Wynik niepewny (timeout, przerwany proces po wysłaniu) jest widoczny, liczony pełną rezerwacją i **nigdy** nie ponawiany.
+- Podwójne kliknięcie: blokada zlecenia + „analiza w toku” (status `queued` liczy się jako aktywny) → jedno zlecenie; równoległe kroki w tle:
+  blokada zlecenia i warunkowe przejście `queued → running` → jedno płatne wywołanie.
+- Odzyskiwanie: zlecenie nieodebrane 6 h → `failed` `queue_expired` (bez kosztu); `running` porzucone → `uncertain` (jak w fazie C).
+- CLI: `wp osf-seo ai:queue [--run] [--time-limit=<s>] [--format=json]` — stan kolejki; `--run` = krok w tle raz.
+
+### 25.5 Pobieranie stron z panelu (D112)
+
+- Tryby wyboru: strona docelowa tematu, wybrane pozycje zapisanego pomiaru SERP (fraza odniesienia tematu), ręczne adresy (domena projektu,
+  domeny konkurentów projektu, dokładne adresy zapisanych wyników SERP — inne odrzucane w planie), ponowne pobranie strony (`mode=page`, adres
+  strony projektu po identyfikatorze w obrębie projektu). Formularz nie przyjmuje adresu bez sprawdzenia zakresu: plan
+  (`PageIntelligenceService::plan` — składnia, zakres, rodzaj, pamięć, limity hosta, bez DNS) odrzuca **całe** zlecenie przy jednym adresie
+  niedozwolonym albo > 5 adresach. DNS i kontrola każdego IP (SSRF) — przy pobraniu, w transporcie z przypięciem IP (bez zmian z fazy B).
+- Przepływ: plan → potwierdzenie → `page_jobs` (`queued`) → krok w tle `PageJobService::runBackground` (system, przed krokiem Strategii):
+  przejęcie warunkowym UPDATE, pozycje po kolei przez `PageIntelligenceService::fetch` (bez czekania), postęp po każdej pozycji.
+- Wyniki pozycji: pobrano (pierwsza kopia / zmiana / bez zmian), z pamięci (aktualna kopia — bez HTTP), odmowa (zakres, polityka adresów,
+  robots.txt, `Retry-After`, limit dzienny), błąd HTTP / sieci. Odstęp hosta, zajęty host, strona w trakcie pobierania → pozycja czeka
+  (`run_after`, najwyżej 5 prób). Nieudane pobranie nie usuwa poprawnej kopii.
+- `page_jobs` (M0018): `public_id`, `project_id`, `topic_id`, `status` (`queued` / `running` / `completed` / `failed` / `cancelled`),
+  `force_fetch`, `items` (JSON), `items_total`, `items_done`, `request_key` (deduplikacja), `requested_by`, `created_at`, `run_after`,
+  `started_at`, `heartbeat_at`, `finished_at`, `attempts`, `error_code`; indeksy `status_run`, `project_created`, `project_key`. Retencja zgodna
+  z Page Intelligence (raz na dobę, zlecenia zakończone).
+- CLI: `wp osf-seo pages:jobs [--run] [--time-limit=<s>] [--format=json]`.
+
+### 25.6 Historia (D114)
+
+Jedno zapytanie na stronę (`AiRunRepository::history`: filtry typu, statusu i tematu, `COUNT(*) OVER ()`, LIMIT/OFFSET) — liczba zapytań nie
+zależy od liczby wierszy. Kolumny: temat, rodzaj, data, status, „Strategia od analizy” (tani wskaźnik — bez zmian / zmieniła się / nieznane),
+dla administratora dostawca, model i koszt. Dokładna aktualność (także nowa treść stron) — w raporcie i sekcji tematu. Klient: wyłącznie
+gotowe, nieodrzucone analizy tematów widocznych w Strategii.
+
+### 25.7 Raport i eksport (D115)
+
+- Kolejność: podsumowanie i intencja → **najważniejsza rekomendacja** → co zrobić teraz → pozostałe rekomendacje → tytuł i opis meta (z długością)
+  → konspekt H1–H3 → tematy treści względem konkurencji → linkowanie wewnętrzne → pytania użytkowników (FAQ tylko gdy pasuje) → ustalenia
+  (uzasadnienie) → ograniczenia i zastrzeżenia → kontrole ręczne → CTA, dane od klienta, ryzyko kanibalizacji, brakujące informacje. Puste sekcje
+  ukryte; każda rekomendacja: priorytet, pilność, wpływ (jakościowo), podstawa (fakt / wniosek / hipoteza), pewność, co zrobić, gdzie, dlaczego,
+  jak sprawdzić, dowody.
+- Ostrzeżenia: wynik przykładowy (dostawca testowy), wynik nieaktualny, „Kandydat na nową stronę”, analiza nieudana / niepewna / odrzucona przez
+  kontrolę jakości (bez udawania raportu).
+- Eksport: „Kopiuj podsumowanie”, „Kopiuj rekomendacje”, „Kopiuj brief” (tekst przygotowany w usłudze, schowek przeglądarki) i druk (style
+  `print:` — bez menu i przycisków). Bez PDF i e-maili. Eksport zawiera zastrzeżenia, nie zawiera kosztów, dostawcy, modelu, odcisków i kodów.
+- Dane zewnętrzne (tytuły, nagłówki, anchory, adresy, teksty modelu) wyłącznie przez `{{ }}`; odnośniki tylko http(s) z
+  `rel="noopener noreferrer"`; bez surowego HTML stron, iframe i skryptów; bez surowego JSON-a i surowej odpowiedzi modelu.
+
+### 25.8 Uprawnienia i widoczność (D116)
+
+| Działanie | Administrator (`manage_ai`, `manage_page_intelligence`) | Klient projektu |
+|---|---|---|
+| Sekcja AI tematu, historia, raport | wszystko, z kosztami i szczegółami | tylko gotowe, nieodrzucone; bez kosztów, dostawcy, modelu, błędów |
+| Przygotowanie, zlecenie, anulowanie, decyzja, status | tak | 403 |
+| Lista stron, kopia strony, historia kopii | tak, z powodami błędów i historią pobrań (bez diagnostyki sieci) | tak, bez kodów błędów i historii pobrań |
+| Plan, zlecenie i status pobrania | tak | 403 |
+| Ustawienia AI | `osf_seo_manage_settings` — stan, bez wartości kluczy | — |
+
+### 25.9 Ustawienia AI
+
+Karta w Ustawieniach: wyłącznik płatnych analiz, dostawcy (wybrany, model, obecność klucza — tak/nie, braki), ceny, budżet AI (dziś / miesiąc /
+projekt / jedna analiza), kolejka analiz i pobrań, konfiguracja pobierania stron. Bez formularza zmian — konfiguracja wyłącznie w `wp-config.php`
+(sekcja 22.15); panel nie zapisuje sekretów i nie pozwala włączyć płatnego AI bez konfiguracji serwera. Limity DataForSEO bez zmian.
+
+### 25.10 Testy
+
+- Integracyjne: `AiWorkspaceTest` (1–15, 22, 24–27, 29–33, 35: sekcja tematu, typ zgodny, świadomy wybór, blokady, gotowość częściowa, podgląd bez
+  wywołań, zmiana odcisku i kosztu po zatwierdzeniu, podwójne kliknięcie, równoległe kroki w tle, wynik niepewny, rezerwacja budżetu, brak
+  klucza, wyłączony dostawca, klient, IDOR, historia bez N+1, raport i eksport), `PageJobTest` (16, 17, 19–21, 23, 28: zlecenie i krok w tle,
+  zakres i limit 5, robots.txt, `Retry-After`, odstęp hosta, pamięć, kopia nieaktualna, klient, IDOR, przerwany przebieg, lista stron),
+  `PageRealTransportTest` (18: SSRF na prawdziwym transporcie dla zleceń z panelu), `MigratorTest` (17 → 18). Jednostkowe: `AiReportTest`.
+- Smoke w przeglądarce (lokalny WordPress, dostawca testowy, lokalny serwer fixture zamiast internetu): ścieżka administratora, klient i dostęp
+  przez HTTP (403/404, nonce, Origin), 390 px bez poziomego przewijania.
+
+### 25.11 Ograniczenia
+
+- Płatna analiza z panelu nie była wykonana na prawdziwym modelu (tylko dostawca testowy i atrapa HTTP w testach).
+- Kolejki działają w kroku w tle (WP-Cron co minutę albo `wp osf-seo sync:run`) — bez crona systemowego zlecenia czekają na ruch na stronie.
+- Tani wskaźnik w historii obejmuje dowody Strategii, nie treść stron (dokładna aktualność w raporcie).
+- Eksport to tekst do schowka i druk przeglądarki; brak PDF i udostępniania raportu poza panelem.
+- Wybór stron konkurencji z panelu — wyniki pomiaru SERP frazy odniesienia tematu (TOP 10); inne frazy — ręczne adresy z zapisanych wyników SERP.

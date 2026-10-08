@@ -8,6 +8,7 @@ use App\Panel\Format;
 use App\Panel\PanelResponse;
 use App\Panel\PanelUrl;
 use Illuminate\Http\Request;
+use OsfSeo\Ai\Workspace\AiWorkspaceService;
 use OsfSeo\Auth\AccessDenied;
 use OsfSeo\Auth\ProjectContext;
 use OsfSeo\Opportunities\Text;
@@ -208,11 +209,14 @@ final class StrategyTopicsController
 
 		try {
 			$data = $service->topicView($context, $publicId);
+			// Sekcja „Analiza AI”: wyłącznie odczyt zapisanych danych (bez pobierania stron i bez wywołań modelu).
+			$ai = osf_seo()->get(AiWorkspaceService::class)->topicSection($context, $data['topic']->publicId);
 		} catch (StrategyNotFound) {
 			return PanelResponse::notFound();
 		}
 
 		return response()->view('panel.strategy.topic', $data + [
+			'ai' => $ai,
 			'project' => $context->project(),
 			'state' => $service->panelState($context),
 			'canManage' => $context->can('osf_seo_manage_strategy'),

@@ -7,6 +7,8 @@ namespace OsfSeo\Cli;
 use OsfSeo\Auth\AccessDenied;
 use OsfSeo\Auth\Capabilities;
 use OsfSeo\PageIntelligence\PageIntelligenceService;
+use OsfSeo\PageIntelligence\PageJobRepository;
+use OsfSeo\PageIntelligence\PageJobService;
 use OsfSeo\PageIntelligence\PageNotFound;
 use OsfSeo\PageIntelligence\PageRefused;
 use OsfSeo\PageIntelligence\PageSelection;
@@ -70,6 +72,14 @@ final class PagesCommand
 		WP_CLI::add_command('osf-seo pages:delete', [$command, 'delete'], [
 			'shortdesc' => 'Delete a page with its snapshots and fetch history.',
 			'synopsis' => [$project, ['type' => 'assoc', 'name' => 'page', 'description' => 'Page ID (ULID).', 'optional' => false], ['type' => 'flag', 'name' => 'yes', 'description' => 'Do not ask for confirmation.', 'optional' => true]],
+		]);
+		WP_CLI::add_command('osf-seo pages:jobs', [$command, 'jobs'], [
+			'shortdesc' => 'Page fetch jobs queued from the panel: status counts; --run executes the background step once (explicitly queued URLs only, same policy and limits as pages:fetch).',
+			'synopsis' => [
+				['type' => 'flag', 'name' => 'run', 'description' => 'Run the background step once now.', 'optional' => true],
+				['type' => 'assoc', 'name' => 'time-limit', 'description' => 'Time limit of --run in seconds (default 60).', 'optional' => true],
+				$format,
+			],
 		]);
 		WP_CLI::add_command('osf-seo pages:purge', [$command, 'purge'], [
 			'shortdesc' => 'Retention: delete snapshots and fetch records older than OSF_SEO_PAGES_RETENTION_DAYS (no HTTP).',
@@ -296,6 +306,35 @@ final class PagesCommand
 		}
 
 		WP_CLI::success(sprintf('Removed %d snapshot(s) and %d fetch record(s).', $result['snapshots'], $result['fetches']));
+	}
+
+	/**
+	 * @param list<string> $args
+	 * @param array<string, string> $assocArgs
+	 */
+	public function jobs(array $args, array $assocArgs): void
+	{
+		$userId = get_current_user_id();
+
+		if ($userId > 0 && ! user_can($userId, Capabilities::MANAGE_PAGE_INTELLIGENCE)) {
+			WP_CLI::error('Access denied.');
+		}
+
+		$jobs = $this->plugin->get(PageJobService::class);
+		$result = isset($assocArgs['run']) ? $jobs->runBackground((float) max(1, (int) ($assocArgs['time-limit'] ?? 60))) : null;
+		$data = ['counts' => $this->plugin->get(PageJobRepository::class)->statusCounts(), 'run' => $result];
+
+		if (($assocArgs['format'] ?? 'table') === 'json') {
+			self::json($data);
+
+			return;
+		}
+
+		WP_CLI::log('Page jobs: ' . ($data['counts'] === [] ? 'none' : implode(', ', array_map(static fn (string $key, int $count): string => $key . ' ' . $count, array_keys($data['counts']), $data['counts']))) . '.');
+
+		if ($result !== null) {
+			WP_CLI::success(sprintf('Background step: %d job(s), %d URL(s) processed, %d interrupted job(s) recovered.', $result['jobs'], $result['items'], $result['recovered']));
+		}
 	}
 
 	/**

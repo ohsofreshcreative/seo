@@ -8,7 +8,7 @@
     <div x-cloak x-show="sidebarOpen" x-transition.opacity class="fixed inset-0 z-30 bg-slate-900/40 lg:hidden" @click="sidebarOpen = false"></div>
 
     <aside :class="sidebarOpen ? 'translate-x-0' : '-translate-x-full'"
-      class="fixed inset-y-0 left-0 z-40 flex w-64 -translate-x-full flex-col bg-brand-900 text-slate-200 transition-transform lg:translate-x-0">
+      class="fixed inset-y-0 left-0 z-40 flex w-64 -translate-x-full flex-col bg-brand-900 text-slate-200 transition-transform lg:translate-x-0 print:hidden">
       <div class="flex h-20 shrink-0 items-center overflow-hidden px-6">
         <a href="{{ \App\Panel\PanelUrl::to() }}" class="flex min-w-0 items-center">
           <x-panel.brand :logo="$brandLogo" />
@@ -30,6 +30,7 @@
             <div class="space-y-1">
               <x-panel.nav-link :href="\App\Panel\PanelUrl::project($currentProject->publicId)" :active="$active === 'overview'">Przegląd</x-panel.nav-link>
               <x-panel.nav-link :href="\App\Panel\PanelUrl::project($currentProject->publicId, 'strategy')" :active="$active === 'strategy'">Strategia</x-panel.nav-link>
+              <x-panel.nav-link :href="\App\Panel\PanelUrl::project($currentProject->publicId, 'ai')" :active="$active === 'ai'">Analizy AI</x-panel.nav-link>
               <x-panel.nav-link :href="\App\Panel\PanelUrl::project($currentProject->publicId, 'keywords')" :active="$active === 'keywords'">Frazy</x-panel.nav-link>
               <x-panel.nav-link :href="\App\Panel\PanelUrl::project($currentProject->publicId, 'positions')" :active="$active === 'positions'">Pozycje</x-panel.nav-link>
               <x-panel.nav-link :href="\App\Panel\PanelUrl::project($currentProject->publicId, 'competitors')" :active="$active === 'competitors'">Konkurenci</x-panel.nav-link>
@@ -46,9 +47,9 @@
       </nav>
     </aside>
 
-    <div class="lg:pl-64">
+    <div class="lg:pl-64 print:pl-0">
       {{-- Topbar --}}
-      <header class="sticky top-0 z-20 flex h-16 items-center gap-4 border-b border-slate-200 bg-white px-4 sm:px-6">
+      <header class="sticky top-0 z-20 flex h-16 items-center gap-4 border-b border-slate-200 bg-white px-4 sm:px-6 print:hidden">
         <button type="button" class="rounded-md p-2 text-slate-500 hover:bg-slate-100 lg:hidden" @click="sidebarOpen = true">
           <span class="sr-only">Otwórz menu</span>
           <svg class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true">
@@ -86,7 +87,7 @@
         </div>
       </header>
 
-      <main class="px-4 py-8 sm:px-6 lg:px-8">
+      <main class="px-4 py-8 sm:px-6 lg:px-8 print:p-0">
         <x-panel.flash :messages="$flashMessages" />
 
         @yield('content')

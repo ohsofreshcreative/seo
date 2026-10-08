@@ -35,6 +35,7 @@
     "test:performance:serp": "php tests/Performance/serp-benchmark.php",
     "test:performance:gap": "php tests/Performance/gap-benchmark.php",
     "test:performance:strategy": "php tests/Performance/strategy-benchmark.php",
-    "test:performance:pages": "php tests/Performance/page-extract-benchmark.php"
+    "test:performance:pages": "php tests/Performance/page-extract-benchmark.php",
+    "test:performance:ai": "php tests/Performance/ai-analysis-benchmark.php"
   }
 }

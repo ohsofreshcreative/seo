@@ -30,6 +30,16 @@ final class AiPricing
 		return $this->config->priceInput() !== null && $this->config->priceOutput() !== null;
 	}
 
+	/**
+	 * Ceny z konfiguracji (USD za 1 mln tokenów) — część odcisku planu (zmiana cen = nowy plan do zatwierdzenia).
+	 *
+	 * @return array{input: ?float, cached_input: ?float, output: ?float}
+	 */
+	public function prices(): array
+	{
+		return ['input' => $this->config->priceInput(), 'cached_input' => $this->config->priceCachedInput(), 'output' => $this->config->priceOutput()];
+	}
+
 	public static function estimateInputTokens(string ...$parts): int
 	{
 		$bytes = array_sum(array_map('strlen', $parts));

@@ -19,7 +19,7 @@ final class AiRunRepository
 	/** Surowa odpowiedź modelu w historii — najwyżej tyle bajtów (dłuższa jest ucinana na granicy znaku i oznaczana). */
 	public const OUTPUT_RAW_MAX_BYTES = 65536;
 
-	private const BINARY = ['context_fingerprint', 'evidence_fingerprint', 'evidence_hash'];
+	private const BINARY = ['context_fingerprint', 'evidence_fingerprint', 'evidence_hash', 'plan_fingerprint'];
 
 	public function __construct(
 		private readonly Connection $db,
@@ -37,10 +37,10 @@ final class AiRunRepository
 	 *
 	 * @param array<string, int|float|string|null> $data kolumny `ai_runs` (odciski jako hex)
 	 */
-	public function create(array $data, string $input, string $inputHash): AiRun
+	public function create(array $data, string $input, string $inputHash, string $status = AiRun::STATUS_RESERVED): AiRun
 	{
 		$publicId = Ulid::generate($this->clock->now());
-		$row = ['public_id' => $publicId, 'status' => AiRun::STATUS_RESERVED, 'created_at' => $this->now()] + $data;
+		$row = ['public_id' => $publicId, 'status' => $status, 'created_at' => $this->now()] + $data;
 		$this->insertRow($this->table(), $row);
 		$run = $this->findById((int) $row['project_id'], $publicId) ?? throw new RuntimeException('AI run was not stored.');
 		$this->insertRow($this->payloads(), [
@@ -53,13 +53,45 @@ final class AiRunRepository
 		return $run;
 	}
 
-	/** `reserved` → `running` (warunkowo — zapobiega podwójnemu wysłaniu tego samego uruchomienia). */
-	public function markRunning(AiRun $run): bool
+	/** `reserved` / `queued` → `running` (warunkowo — zapobiega podwójnemu wysłaniu tego samego uruchomienia). */
+	public function markRunning(AiRun $run, string $from = AiRun::STATUS_RESERVED): bool
 	{
 		return $this->db->execute(
 			"UPDATE `{$this->table()}` SET status = %s, started_at = %s WHERE id = %d AND status = %s",
-			[AiRun::STATUS_RUNNING, $this->now(), $run->id, AiRun::STATUS_RESERVED],
+			[AiRun::STATUS_RUNNING, $this->now(), $run->id, $from],
 		) === 1;
+	}
+
+	/**
+	 * Zlecenia z panelu czekające na krok w tle (wszystkie projekty) — najstarsze pierwsze.
+	 *
+	 * @return list<AiRun>
+	 */
+	public function queued(int $limit): array
+	{
+		return array_map(AiRun::fromRow(...), $this->db->fetchAll(
+			"{$this->select()} WHERE r.status = %s ORDER BY r.created_at, r.id LIMIT %d",
+			[AiRun::STATUS_QUEUED, max(1, $limit)],
+		));
+	}
+
+	/**
+	 * Zlecenia w kolejce starsze niż chwila (nieodebrane przez krok w tle).
+	 *
+	 * @return list<AiRun>
+	 */
+	public function staleQueued(string $before): array
+	{
+		return array_map(AiRun::fromRow(...), $this->db->fetchAll(
+			"{$this->select()} WHERE r.status = %s AND r.created_at < %s ORDER BY r.id LIMIT 100",
+			[AiRun::STATUS_QUEUED, $before],
+		));
+	}
+
+	/** Uruchomienie po identyfikatorze wewnętrznym (krok w tle, ponowny odczyt stanu). */
+	public function reload(AiRun $run): ?AiRun
+	{
+		return $this->findById($run->projectId, $run->publicId);
 	}
 
 	/**
@@ -92,6 +124,41 @@ final class AiRunRepository
 			'result' => $result === null ? null : (string) json_encode($result, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
 			'validation' => (string) json_encode($validation, JSON_UNESCAPED_SLASHES),
 		], ['run_id' => $run->id]);
+	}
+
+	/**
+	 * Blokada generowania tego samego zlecenia (projekt × temat × typ) — bez czekania: drugi równoległy proces dostaje odmowę.
+	 */
+	public function acquireGenerationLock(int $projectId, int $topicId, string $task): bool
+	{
+		return $this->db->acquireLock(self::generationLock($projectId, $topicId, $task), 0);
+	}
+
+	public function releaseGenerationLock(int $projectId, int $topicId, string $task): void
+	{
+		$this->db->releaseLock(self::generationLock($projectId, $topicId, $task));
+	}
+
+	/** Uruchomienie w toku (rezerwacja albo żądanie) tego samego tematu i typu analizy. */
+	public function activeFor(int $projectId, int $topicId, string $task): ?AiRun
+	{
+		$row = $this->db->fetchRow(
+			"{$this->select()} WHERE r.project_id = %d AND r.topic_id = %d AND r.task = %s AND r.status IN (%s, %s, %s) ORDER BY r.id DESC LIMIT 1",
+			[$projectId, $topicId, $task, ...AiRun::ACTIVE],
+		);
+
+		return $row === null ? null : AiRun::fromRow($row);
+	}
+
+	/** Udane uruchomienie z tym samym odciskiem planu (ten sam kontekst, model, wersje i koszt) — ochrona przed przypadkowym powtórzeniem. */
+	public function succeededWithPlan(int $projectId, string $planFingerprint): ?AiRun
+	{
+		$row = $this->db->fetchRow(
+			"{$this->select()} WHERE r.project_id = %d AND r.plan_fingerprint = UNHEX(%s) AND r.status = %s ORDER BY r.id DESC LIMIT 1",
+			[$projectId, $planFingerprint, AiRun::STATUS_SUCCEEDED],
+		);
+
+		return $row === null ? null : AiRun::fromRow($row);
 	}
 
 	/** Uruchomienie projektu po identyfikatorze publicznym (inny projekt → null). */
@@ -152,6 +219,72 @@ final class AiRunRepository
 			"{$this->select()} WHERE {$where} ORDER BY r.created_at DESC, r.id DESC LIMIT %d OFFSET %d",
 			$params,
 		));
+	}
+
+	/**
+	 * Historia analiz w panelu (faza D): jedno zapytanie na stronę (filtry i stronicowanie w SQL) z tanim wskaźnikiem zmian Strategii —
+	 * bieżący odcisk dowodów tematu (`strategy_topics.evidence_hash`) obok zapisanego w uruchomieniu (bez odbudowy kontekstu).
+	 * `$restricted` (bez uprawnienia AI): wyłącznie gotowe analizy (zwalidowane), nieodrzucone, tematów aktywnych w widoku klienta.
+	 *
+	 * @param array{type?: ?string, status?: ?string, topic_id?: ?int} $filters
+	 * @return array{rows: list<array{run: AiRun, topic_status: ?string, topic_evidence_hash: ?string}>, total: int}
+	 */
+	public function history(int $projectId, array $filters, bool $restricted, int $limit, int $offset): array
+	{
+		$where = ['r.project_id = %d'];
+		$params = [$projectId];
+
+		if (is_string($filters['type'] ?? null) && $filters['type'] !== '') {
+			$where[] = 'r.task = %s';
+			$params[] = $filters['type'];
+		}
+
+		if (is_int($filters['topic_id'] ?? null)) {
+			$where[] = 'r.topic_id = %d';
+			$params[] = $filters['topic_id'];
+		}
+
+		$statuses = match ($filters['status'] ?? null) {
+			'ready' => [AiRun::STATUS_SUCCEEDED],
+			'active' => AiRun::ACTIVE,
+			'problem' => [AiRun::STATUS_FAILED, AiRun::STATUS_INVALID, AiRun::STATUS_UNCERTAIN],
+			default => [],
+		};
+
+		if ($restricted) {
+			$statuses = array_values(array_intersect($statuses === [] ? [AiRun::STATUS_SUCCEEDED] : $statuses, [AiRun::STATUS_SUCCEEDED]));
+			$where[] = "(r.decision IS NULL OR r.decision <> 'rejected') AND t.id IS NOT NULL AND t.status <> 'dismissed'";
+		}
+
+		if ($restricted && $statuses === []) {
+			return ['rows' => [], 'total' => 0];
+		}
+
+		if ($statuses !== []) {
+			$where[] = 'r.status IN (' . Connection::placeholders($statuses) . ')';
+			array_push($params, ...$statuses);
+		}
+
+		$params[] = max(1, min(100, $limit));
+		$params[] = max(0, $offset);
+		$rows = $this->db->fetchAll(
+			"SELECT r.*, t.public_id AS topic_public_id, t.label AS topic_label, t.status AS topic_status, LOWER(HEX(t.evidence_hash)) AS topic_evidence_hash,
+				p.public_id AS project_public_id, COUNT(*) OVER () AS total_rows
+			FROM `{$this->table()}` r
+			LEFT JOIN `{$this->db->table('strategy_topics')}` t ON t.id = r.topic_id AND t.project_id = r.project_id
+			LEFT JOIN `{$this->db->table('projects')}` p ON p.id = r.project_id
+			WHERE " . implode(' AND ', $where) . ' ORDER BY r.created_at DESC, r.id DESC LIMIT %d OFFSET %d',
+			$params,
+		);
+
+		return [
+			'rows' => array_map(static fn (array $row): array => [
+				'run' => AiRun::fromRow($row),
+				'topic_status' => $row['topic_status'],
+				'topic_evidence_hash' => $row['topic_evidence_hash'],
+			], $rows),
+			'total' => $rows === [] ? 0 : (int) $rows[0]['total_rows'],
+		];
 	}
 
 	/**
@@ -220,8 +353,8 @@ final class AiRunRepository
 
 		do {
 			$ids = array_map('intval', array_column($this->db->fetchAll(
-				"SELECT id FROM `{$this->table()}` WHERE created_at < %s AND status NOT IN (%s, %s) ORDER BY id LIMIT %d",
-				[$before, AiRun::STATUS_RESERVED, AiRun::STATUS_RUNNING, $batch],
+				"SELECT id FROM `{$this->table()}` WHERE created_at < %s AND status NOT IN (%s, %s, %s) ORDER BY id LIMIT %d",
+				[$before, ...AiRun::ACTIVE, $batch],
 			), 'id'));
 
 			if ($ids === []) {
@@ -259,6 +392,11 @@ final class AiRunRepository
 		return $counts;
 	}
 
+	private static function generationLock(int $projectId, int $topicId, string $task): string
+	{
+		return 'ai_gen_' . substr(hash('sha256', $projectId . '|' . $topicId . '|' . $task), 0, 16);
+	}
+
 	private function findById(int $projectId, string $publicId): ?AiRun
 	{
 		$row = $this->db->fetchRow("{$this->select()} WHERE r.project_id = %d AND r.public_id = %s", [$projectId, $publicId]);
@@ -268,8 +406,9 @@ final class AiRunRepository
 
 	private function select(): string
 	{
-		return "SELECT r.*, t.public_id AS topic_public_id FROM `{$this->table()}` r
-			LEFT JOIN `{$this->db->table('strategy_topics')}` t ON t.id = r.topic_id AND t.project_id = r.project_id";
+		return "SELECT r.*, t.public_id AS topic_public_id, t.label AS topic_label, p.public_id AS project_public_id FROM `{$this->table()}` r
+			LEFT JOIN `{$this->db->table('strategy_topics')}` t ON t.id = r.topic_id AND t.project_id = r.project_id
+			LEFT JOIN `{$this->db->table('projects')}` p ON p.id = r.project_id";
 	}
 
 	/**

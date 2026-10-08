@@ -84,6 +84,47 @@ const runProgress = (url, initial) => ({
 Alpine.data('discoveryProgress', runProgress);
 Alpine.data('runProgress', runProgress);
 
+// Kopiowanie raportu AI do schowka (eksport bez zależności): tekst przygotowany po stronie serwera w ukrytym polu (`x-ref`).
+const fallbackCopy = (text) => {
+  const area = document.createElement('textarea');
+  area.value = text;
+  area.setAttribute('readonly', '');
+  area.style.position = 'fixed';
+  area.style.opacity = '0';
+  document.body.appendChild(area);
+  area.select();
+  const copied = document.execCommand('copy');
+  area.remove();
+
+  return copied;
+};
+
+Alpine.data('copyText', () => ({
+  copied: null,
+  failed: false,
+
+  async copy(name) {
+    const text = this.$refs[name]?.value ?? '';
+    this.failed = false;
+
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch {
+      // Schowek niedostępny (np. połączenie bez HTTPS) — zaznaczenie tymczasowego pola.
+      this.failed = !fallbackCopy(text);
+    }
+
+    if (!this.failed) {
+      this.copied = name;
+      setTimeout(() => {
+        if (this.copied === name) {
+          this.copied = null;
+        }
+      }, 2500);
+    }
+  },
+}));
+
 // Historia Pozycji SERP — Chart.js ładowany osobnym plikiem tylko na stronie frazy.
 Alpine.data('rankChart', () => ({
   chart: null,
