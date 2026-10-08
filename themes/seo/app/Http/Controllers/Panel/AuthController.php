@@ -59,7 +59,7 @@ final class AuthController
 		if (! user_can($user, 'osf_seo_access')) {
 			wp_logout();
 
-			return $this->form($request, ['error' => 'To konto nie ma dostępu do OSF SEO.'], 403);
+			return $this->form($request, ['error' => 'To konto nie ma dostępu do Whack-a-mole.'], 403);
 		}
 
 		$throttle->clear($login, $ip);

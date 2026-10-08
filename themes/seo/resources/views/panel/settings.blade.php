@@ -22,6 +22,66 @@
     </dl>
   </x-panel.card>
 
+  <x-panel.card id="wyglad" class="mt-6 max-w-3xl scroll-mt-20">
+    <h2 class="text-base font-semibold text-slate-900">Wygląd aplikacji</h2>
+    <p class="mt-1 text-xs text-slate-500">
+      Logo w lewym menu i na ekranie logowania — obraz z biblioteki mediów WordPressa (PNG, JPG albo WebP, do {{ \App\Panel\Format::number($logoMaxBytes / 1048576) }} MB;
+      proporcje zachowane, w menu najwyżej 40 px wysokości). Bez logo panel pokazuje napis „Whack-a-mole”.
+    </p>
+
+    <div class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
+      <div>
+        <p class="text-xs font-medium text-slate-500">Podgląd w menu</p>
+        <div class="mt-2 flex h-16 w-64 max-w-full items-center overflow-hidden rounded-md bg-brand-900 px-6" data-logo-preview>
+          <x-panel.brand :logo="$logo" />
+        </div>
+      </div>
+      <div>
+        <p class="text-xs font-medium text-slate-500">Bieżące logo</p>
+        <p class="mt-2 break-all text-sm text-slate-900">{{ $logo ? $logo->title : 'Brak — napis „Whack-a-mole”' }}</p>
+        @if ($logo)
+          <p class="text-xs text-slate-500">Tekst alternatywny: {{ $logo->alt }}</p>
+          <form method="post" action="{{ \App\Panel\PanelUrl::to('settings/logo/remove') }}" class="mt-3">
+            <x-panel.nonce />
+            <x-panel.button type="submit" variant="danger">Usuń logo</x-panel.button>
+          </form>
+        @endif
+      </div>
+    </div>
+
+    <form method="post" action="{{ \App\Panel\PanelUrl::to('settings/logo') }}" enctype="multipart/form-data" class="mt-6 border-t border-slate-100 pt-4">
+      <x-panel.nonce />
+      <label for="logo-file" class="block text-sm font-medium text-slate-700">Prześlij nowy obraz</label>
+      <div class="mt-2 flex flex-wrap items-center gap-3">
+        <input id="logo-file" type="file" name="logo" accept="image/png,image/jpeg,image/webp" required
+          class="block w-full max-w-sm text-sm text-slate-700 file:mr-3 file:rounded-md file:border-0 file:bg-slate-100 file:px-3 file:py-2 file:text-sm file:font-semibold file:text-slate-700 hover:file:bg-slate-200">
+        <x-panel.button type="submit">Prześlij i ustaw</x-panel.button>
+      </div>
+      <p class="mt-1 text-xs text-slate-500">Obraz trafi do biblioteki mediów; SVG i inne formaty są odrzucane.</p>
+    </form>
+
+    <form method="post" action="{{ \App\Panel\PanelUrl::to('settings/logo/select') }}" class="mt-6 border-t border-slate-100 pt-4">
+      <x-panel.nonce />
+      <fieldset>
+        <legend class="text-sm font-medium text-slate-700">Wybierz z biblioteki mediów</legend>
+        @if ($logoLibrary === [])
+          <p class="mt-2 text-sm text-slate-500">Biblioteka mediów nie zawiera jeszcze obrazów PNG, JPG ani WebP.</p>
+        @else
+          <div class="mt-2 grid grid-cols-3 gap-3 sm:grid-cols-6">
+            @foreach ($logoLibrary as $image)
+              <label class="group relative flex cursor-pointer flex-col items-center gap-1 rounded-md border border-slate-200 p-2 text-center hover:border-brand-500 has-[:checked]:border-brand-600 has-[:checked]:ring-2 has-[:checked]:ring-brand-500 has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-brand-700">
+                <input type="radio" name="attachment_id" value="{{ $image->id }}" @checked($logo && $logo->id === $image->id) class="sr-only" required>
+                <img src="{{ $image->thumbnailUrl }}" alt="" class="h-12 w-full object-contain" loading="lazy" decoding="async">
+                <span class="w-full truncate text-xs text-slate-600">{{ $image->title }}</span>
+              </label>
+            @endforeach
+          </div>
+          <x-panel.button type="submit" variant="secondary" class="mt-3">Ustaw wybrany obraz</x-panel.button>
+        @endif
+      </fieldset>
+    </form>
+  </x-panel.card>
+
   <x-panel.card class="mt-6 max-w-3xl">
     <h2 class="text-base font-semibold text-slate-900">Google Search Console (OAuth)</h2>
     <dl class="mt-2 divide-y divide-slate-100 text-sm">

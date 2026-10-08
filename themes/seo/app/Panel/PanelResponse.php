@@ -21,7 +21,7 @@ final class PanelResponse
 
 	public static function unavailable(): Response
 	{
-		return self::error(503, 'Aplikacja niedostępna', 'Plugin OSF SEO nie jest aktywny. Skontaktuj się z administratorem.');
+		return self::error(503, 'Aplikacja niedostępna', 'Whack-a-mole jest chwilowo niedostępny (plugin aplikacji nie jest aktywny). Skontaktuj się z administratorem.');
 	}
 
 	private static function error(int $status, string $title, string $message): Response
