@@ -75,6 +75,10 @@
     </div>
   </div>
 
+  @if ($strategyTopic !== null)
+    <div class="-mt-4 mb-6">@include('panel.strategy.partials.topic-link', ['topic' => $strategyTopic, 'projectId' => $project->publicId])</div>
+  @endif
+
   <div class="grid gap-6 lg:grid-cols-3">
     <x-panel.card>
       <h2 class="text-base font-semibold text-slate-900">Dane rynkowe</h2>

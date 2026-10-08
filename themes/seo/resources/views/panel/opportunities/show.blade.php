@@ -38,6 +38,18 @@
     </x-slot:actions>
   </x-panel.page-header>
 
+  @php($opportunityTopics = collect($strategyTopics)->map(static fn (array $topic, string $keyword): array => $topic + ['phrase' => $keyword])->groupBy('topic'))
+  @if ($opportunityTopics->isNotEmpty())
+    <div class="-mt-4 mb-6">
+      <p class="text-xs font-medium text-slate-600">Frazy tej szansy w Strategii (powiązanie z dowodów query × page):</p>
+      <div class="mt-1 flex flex-wrap gap-2">
+        @foreach ($opportunityTopics->take(10) as $group)
+          @include('panel.strategy.partials.topic-link', ['topic' => $group->first(), 'projectId' => $project->publicId])
+        @endforeach
+      </div>
+    </div>
+  @endif
+
   @if ($opportunity->state !== \OsfSeo\Opportunities\OpportunityState::Active)
     <div class="mb-6 rounded-md border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
       {{ $opportunity->state->label() }}@if ($opportunity->inactiveSince) (od {{ Format::datetime($opportunity->inactiveSince) }})@endif.

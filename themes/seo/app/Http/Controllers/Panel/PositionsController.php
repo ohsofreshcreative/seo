@@ -20,6 +20,7 @@ use OsfSeo\Serp\SerpNotFound;
 use OsfSeo\Serp\SerpStartResult;
 use OsfSeo\Serp\SerpTrackingService;
 use OsfSeo\Support\ValidationException;
+use OsfSeo\Strategy\StrategyService;
 use Symfony\Component\HttpFoundation\Response;
 
 /**
@@ -71,6 +72,7 @@ final class PositionsController
 
 		return response()->view('panel.positions.show', $data + [
 			'project' => $context->project(),
+			'strategyTopic' => osf_seo()->get(StrategyService::class)->topicsForMarketKeywords($context, [$data['row']->marketKeywordId])[$data['row']->marketKeywordId] ?? null,
 			'chart' => self::chart($data, $context->project()->domain),
 			'canManage' => $context->can('osf_seo_manage_serp_tracking'),
 		]);

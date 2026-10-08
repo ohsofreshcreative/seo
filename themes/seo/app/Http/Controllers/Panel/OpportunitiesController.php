@@ -15,6 +15,7 @@ use OsfSeo\Opportunities\OpportunityFilters;
 use OsfSeo\Opportunities\OpportunityNotFound;
 use OsfSeo\Opportunities\OpportunityService;
 use OsfSeo\Support\ValidationException;
+use OsfSeo\Strategy\StrategyService;
 use Symfony\Component\HttpFoundation\Response;
 
 /**
@@ -109,6 +110,12 @@ final class OpportunitiesController
 			'after' => $service->afterImplementation($context, $opportunity),
 			// Dane rynkowe fraz z dowodów (DataForSEO) — wyłącznie kontekst; szansa nie zależy od nich.
 			'marketMetrics' => $service->marketMetrics($context, $opportunity),
+			// Tematy Strategii fraz szansy — tylko powiązania potwierdzone dowodem Strategii (query × page), bez samego `opportunities.keyword`.
+			'strategyTopics' => osf_seo()->get(StrategyService::class)->topicsForOpportunity(
+				$context,
+				$opportunity->publicId,
+				array_values(array_filter(array_map(static fn (mixed $item): ?string => is_array($item) && is_string($item['keyword'] ?? null) ? $item['keyword'] : null, (array) ($opportunity->evidence['keywords'] ?? [])))),
+			),
 			'canManage' => $context->can('osf_seo_manage_opportunities'),
 			'errors' => $errors,
 			'old' => $old,

@@ -34,6 +34,10 @@
     </x-slot:actions>
   </x-panel.page-header>
 
+  @if ($strategyTopic !== null)
+    <div class="-mt-4 mb-6">@include('panel.strategy.partials.topic-link', ['topic' => $strategyTopic, 'projectId' => $project->publicId])</div>
+  @endif
+
   @if ($candidate->excluded)
     <div class="mb-6 rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">Fraza pasuje do wykluczonych słów projektu — jest ukryta na liście.</div>
   @endif

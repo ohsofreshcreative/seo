@@ -27,6 +27,7 @@
             <p class="px-3 pb-2 text-xs font-semibold uppercase tracking-wider text-slate-400">{{ $currentProject->name }}</p>
             <div class="space-y-1">
               <x-panel.nav-link :href="\App\Panel\PanelUrl::project($currentProject->publicId)" :active="$active === 'overview'">Przegląd</x-panel.nav-link>
+              <x-panel.nav-link :href="\App\Panel\PanelUrl::project($currentProject->publicId, 'strategy')" :active="$active === 'strategy'">Strategia</x-panel.nav-link>
               <x-panel.nav-link :href="\App\Panel\PanelUrl::project($currentProject->publicId, 'keywords')" :active="$active === 'keywords'">Frazy</x-panel.nav-link>
               <x-panel.nav-link :href="\App\Panel\PanelUrl::project($currentProject->publicId, 'positions')" :active="$active === 'positions'">Pozycje</x-panel.nav-link>
               <x-panel.nav-link :href="\App\Panel\PanelUrl::project($currentProject->publicId, 'competitors')" :active="$active === 'competitors'">Konkurenci</x-panel.nav-link>
