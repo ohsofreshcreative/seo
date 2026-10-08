@@ -91,7 +91,14 @@ final class RobotsTxt
 		$best = null;
 
 		foreach ($this->rules as [$allow, $pattern]) {
-			if (! self::matches($pattern, $path)) {
+			$match = self::matches($pattern, $path);
+
+			// Błąd dopasowania (np. limit backtrackingu na wrogim wzorcu) — bez zgadywania: brak zgody na pobranie.
+			if ($match === null) {
+				return false;
+			}
+
+			if (! $match) {
 				continue;
 			}
 
@@ -105,13 +112,15 @@ final class RobotsTxt
 		return $best === null || $best[1];
 	}
 
-	private static function matches(string $pattern, string $path): bool
+	/** Dopasowanie wzorca (`*`, `$`); null — błąd dopasowania (traktowany jako zakaz). */
+	private static function matches(string $pattern, string $path): ?bool
 	{
 		$anchored = str_ends_with($pattern, '$');
-		$pattern = $anchored ? substr($pattern, 0, -1) : $pattern;
+		$pattern = (string) preg_replace('/\*+/', '*', $anchored ? substr($pattern, 0, -1) : $pattern);
 		$regex = '#^' . implode('.*', array_map(static fn (string $part): string => preg_quote(self::decode($part), '#'), explode('*', $pattern))) . ($anchored ? '$' : '') . '#';
+		$result = preg_match($regex, self::decode($path));
 
-		return preg_match($regex, self::decode($path)) === 1;
+		return $result === false ? null : $result === 1;
 	}
 
 	/** Porównanie po zdekodowaniu znaków niezarezerwowanych (`%7E` = `~`), bez zmiany zarezerwowanych. */

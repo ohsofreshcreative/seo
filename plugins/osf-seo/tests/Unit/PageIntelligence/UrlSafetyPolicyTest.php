@@ -55,6 +55,13 @@ final class UrlSafetyPolicyTest extends TestCase
 		yield 'ipv4 mapped ipv6' => ['https://example.pl/', 'ip_loopback', ['::ffff:127.0.0.1']];
 		yield 'ipv4 compatible ipv6' => ['https://example.pl/', 'ip_private', ['::10.0.0.1']];
 		yield 'nat64' => ['https://example.pl/', 'ip_embedded', ['64:ff9b::7f00:1']];
+		// Faza E (audyt): ::ffff:0.0.0.0 i ::ffff:0.0.0.1 — Linux kieruje połączenie na loopback; IPv4-translated (::ffff:0:a.b.c.d).
+		yield 'ipv4 mapped unspecified' => ['https://example.pl/', 'ip_unspecified', ['::ffff:0.0.0.0']];
+		yield 'ipv4 mapped zero one' => ['https://example.pl/', 'ip_unspecified', ['::ffff:0.0.0.1']];
+		yield 'ipv4 translated loopback' => ['https://example.pl/', 'ip_embedded', ['::ffff:0:7f00:1']];
+		yield 'ipv4 mapped public' => ['https://example.pl/', 'ip_embedded', ['::ffff:93.184.216.34']];
+		yield 'mixed notation ip' => ['http://127.0x1/', 'ip_literal_not_allowed', []];
+		yield 'hex label inside' => ['http://x.0x7f/', 'ip_literal_not_allowed', []];
 		yield 'ipv6 loopback' => ['https://example.pl/', 'ip_loopback', ['::1']];
 		yield 'ipv6 unique local' => ['https://example.pl/', 'ip_private', ['fd00::1']];
 		yield 'ipv6 link local' => ['https://example.pl/', 'ip_link_local', ['fe80::1']];
