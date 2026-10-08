@@ -26,13 +26,13 @@
     <h2 class="text-base font-semibold text-slate-900">Wygląd aplikacji</h2>
     <p class="mt-1 text-xs text-slate-500">
       Logo w lewym menu i na ekranie logowania — obraz z biblioteki mediów WordPressa (PNG, JPG albo WebP, do {{ \App\Panel\Format::number($logoMaxBytes / 1048576) }} MB;
-      proporcje zachowane, w menu najwyżej 40 px wysokości). Bez logo panel pokazuje napis „Whack-a-mole”.
+      proporcje zachowane, w menu najwyżej 80 px wysokości). Bez logo panel pokazuje napis „Whack-a-mole”.
     </p>
 
     <div class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
       <div>
         <p class="text-xs font-medium text-slate-500">Podgląd w menu</p>
-        <div class="mt-2 flex h-16 w-64 max-w-full items-center overflow-hidden rounded-md bg-brand-900 px-6" data-logo-preview>
+        <div class="mt-2 flex h-20 w-64 max-w-full items-center overflow-hidden rounded-md bg-brand-900 px-6" data-logo-preview>
           <x-panel.brand :logo="$logo" />
         </div>
       </div>

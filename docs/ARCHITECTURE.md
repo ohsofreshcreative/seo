@@ -375,7 +375,7 @@ themes/seo/
   (`wp_check_filetype_and_ext` + `wp_getimagesize`), rozmiaru (2 MB) i wymiarów (4000 px); zapis przez `media_handle_sideload` przy
   `upload_mimes` ograniczonym do PNG/JPG/WebP (także gdy inna wtyczka dopuszcza SVG); tytuł z nazwy pliku, domyślny tekst alternatywny
   „Whack-a-mole”. Wyświetlanie: composer `App\View\Composers\Panel\Branding` (układy `app` i `guest`) → komponent `x-panel.brand`
-  (rozmiar `medium` + `srcset`, proporcje zachowane, w sidebarze maks. 40 × 176 px, na logowaniu maks. 64 × 240 px). Brak opcji,
+  (rozmiar `medium` + `srcset`, proporcje zachowane, w sidebarze maks. 80 × 176 px, na logowaniu maks. 64 × 240 px). Brak opcji,
   usunięty załącznik albo brak pliku → napis „Whack-a-mole”. Klient widzi logo, nie widzi Ustawień (403 na stronie i akcjach).
 
 ## 5. Uprawnienia
