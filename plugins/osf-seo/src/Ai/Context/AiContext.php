@@ -70,6 +70,128 @@ final class AiContext
 		return array_values(array_filter(array_map(static fn (mixed $gap): mixed => is_array($gap) ? ($gap['code'] ?? null) : null, (array) ($this->body['data_gaps'] ?? [])), 'is_string'));
 	}
 
+	/** Rodzaj dowodu odwołania (faza C): `fact` (dane mierzone), `third_party_estimate` (dane dostawcy) albo `heuristic` (reguły aplikacji). */
+	public static function refKind(string $ref): string
+	{
+		$prefix = explode(':', $ref, 2)[0];
+
+		return match ($prefix) {
+			'gsc', 'serp', 'page', 'cpage', 'kw' => 'fact',
+			'market', 'gap' => 'third_party_estimate',
+			default => 'heuristic',
+		};
+	}
+
+	/** Typ analizy rekomendacji (kontekst v3) albo null. */
+	public function analysisType(): ?string
+	{
+		$type = $this->body['analysis']['type'] ?? null;
+
+		return is_string($type) ? $type : null;
+	}
+
+	/**
+	 * Ograniczenia zgodności z działaniem Strategii (kontekst v3).
+	 *
+	 * @return list<string>
+	 */
+	public function constraints(): array
+	{
+		return array_values(array_filter(array_map(static fn (mixed $item): mixed => is_array($item) ? ($item['code'] ?? null) : null, (array) ($this->body['analysis']['constraints'] ?? [])), 'is_string'));
+	}
+
+	/**
+	 * Adresy obecne w kontekście (jedyne dozwolone w propozycjach linkowania).
+	 *
+	 * @return list<string>
+	 */
+	public function knownUrls(): array
+	{
+		$content = (array) ($this->body['target_page']['page_content'] ?? []);
+		$urls = [$this->body['target_page']['url'] ?? null, $content['url'] ?? null, $content['final_url'] ?? null];
+
+		foreach ((array) ($content['internal_links'] ?? []) as $link) {
+			$urls[] = is_array($link) ? ($link['url'] ?? null) : null;
+		}
+
+		foreach ((array) ($this->body['site']['pages'] ?? []) as $page) {
+			$urls[] = is_array($page) ? ($page['url'] ?? null) : null;
+		}
+
+		foreach ((array) ($this->body['keywords'] ?? []) as $keyword) {
+			$urls[] = is_array($keyword) ? ($keyword['target']['url'] ?? null) : null;
+		}
+
+		return array_values(array_unique(array_filter($urls, static fn (mixed $url): bool => is_string($url) && $url !== '')));
+	}
+
+	/**
+	 * Teksty zewnętrzne danego źródła (np. `ui_label`, `competitor_excerpt`).
+	 *
+	 * @param list<string> $sources
+	 * @return list<string>
+	 */
+	public function externalTexts(array $sources): array
+	{
+		$texts = [];
+
+		foreach ((array) ($this->body['external_texts'] ?? []) as $item) {
+			if (is_array($item) && in_array($item['source'] ?? null, $sources, true) && is_string($item['text'] ?? null)) {
+				$texts[] = $item['text'];
+			}
+		}
+
+		return $texts;
+	}
+
+	/**
+	 * Teksty nagłówków sekcji prawie bez treści (`thin_section`: karty realizacji, kafle kategorii) ze strony projektu i stron konkurencji.
+	 *
+	 * @return list<string>
+	 */
+	public function cardHeadings(): array
+	{
+		$texts = [];
+
+		foreach ((array) ($this->body['external_texts'] ?? []) as $item) {
+			if (is_array($item) && is_string($item['id'] ?? null) && is_string($item['text'] ?? null)) {
+				$texts[$item['id']] = $item['text'];
+			}
+		}
+
+		$headings = (array) ($this->body['target_page']['page_content']['headings'] ?? []);
+
+		foreach ((array) ($this->body['evidence']['competitor_pages']['items'] ?? []) as $page) {
+			array_push($headings, ...array_values((array) (is_array($page) ? ($page['headings'] ?? []) : [])));
+		}
+
+		$cards = [];
+
+		foreach ($headings as $heading) {
+			if (is_array($heading) && ($heading['thin_section'] ?? false) === true && isset($texts[(string) ($heading['text_ref'] ?? '')])) {
+				$cards[] = $texts[(string) $heading['text_ref']];
+			}
+		}
+
+		return array_values(array_unique($cards));
+	}
+
+	/** Jakość ekstrakcji strony docelowej (null — brak snapshotu). */
+	public function pageQuality(): ?string
+	{
+		$quality = $this->body['target_page']['page_content']['content_quality'] ?? null;
+
+		return is_string($quality) ? $quality : null;
+	}
+
+	/** Status meta description strony docelowej (`present`, `not_detected`, `not_detected_unconfirmed`) albo null. */
+	public function descriptionStatus(): ?string
+	{
+		$status = $this->body['target_page']['page_content']['meta']['description_status'] ?? null;
+
+		return is_string($status) ? $status : null;
+	}
+
 	public function withinBudget(): bool
 	{
 		return ($this->body['limits']['within_budget'] ?? false) === true;
