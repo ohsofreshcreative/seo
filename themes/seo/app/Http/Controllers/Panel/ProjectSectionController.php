@@ -12,7 +12,6 @@ use Symfony\Component\HttpFoundation\Response;
 final class ProjectSectionController
 {
 	public const SECTIONS = [
-		'pages' => ['title' => 'Strony', 'description' => 'Landing pages z Google Search Console i frazy dla każdego adresu (MVP 2).'],
 		'audit' => ['title' => 'Audyt', 'description' => 'Techniczny audyt SEO z własnego crawlera (MVP 3).'],
 	];
 

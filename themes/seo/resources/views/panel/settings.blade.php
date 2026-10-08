@@ -103,7 +103,7 @@
       </div>
       <div class="flex justify-between gap-4 py-3">
         <dt class="text-slate-500">Zakresy (scopes)</dt>
-        <dd class="text-right font-mono text-xs text-slate-900">{{ implode(' ', $googleScopes) }}</dd>
+        <dd class="min-w-0 break-all text-right font-mono text-xs text-slate-900">{{ implode(' ', $googleScopes) }}</dd>
       </div>
       <div class="flex justify-between gap-4 py-3">
         <dt class="text-slate-500">Połączenia</dt>
@@ -172,6 +172,66 @@
             szacowany maks. koszt frazy (kolejka Standard):
             {{ implode(', ', array_map(fn ($depth, $price) => 'TOP' . $depth . ' ' . \App\Panel\Format::usd($price, 5), array_keys($serp['pricing']), $serp['pricing'])) }};
             maks. {{ $serp['config']['max_posts_per_run'] }} zleceń (po 100 zadań) na przebieg tła, wyniki nieodebrane po {{ $serp['config']['expire_hours'] }} h wygasają; koszty wliczane do tych samych limitów
+          </span>
+        </dd>
+      </div>
+    </dl>
+  </x-panel.card>
+
+  <x-panel.card id="ai" class="mt-6 max-w-3xl scroll-mt-20">
+    <h2 class="text-base font-semibold text-slate-900">Analizy AI i pobieranie stron</h2>
+    <p class="mt-1 text-xs text-slate-500">
+      Konfiguracja wyłącznie w wp-config.php (stałe OSF_SEO_AI_*, OSF_SEO_OPENAI_API_KEY, OSF_SEO_PAGES_*) — panel pokazuje tylko stan, nigdy wartości kluczy.
+      Płatne analizy działają dopiero po jawnym włączeniu i podaniu modelu, cen i limitów. Budżet AI jest oddzielny od DataForSEO.
+    </p>
+    @php($aiConfig = $ai['config'])
+    <dl class="mt-2 divide-y divide-slate-100 text-sm">
+      <div class="flex justify-between gap-4 py-3">
+        <dt class="text-slate-500">Płatne analizy AI</dt>
+        <dd class="text-right font-medium {{ $aiConfig['enabled'] ? 'text-emerald-700' : 'text-slate-700' }}">{{ $aiConfig['enabled'] ? 'Włączone' : 'Wyłączone (dostępny tylko dostawca testowy, bez kosztów)' }}</dd>
+      </div>
+      @foreach ($ai['providers'] as $aiProvider)
+        <div class="flex justify-between gap-4 py-3">
+          <dt class="text-slate-500">{{ $aiProvider['label'] }}</dt>
+          <dd class="text-right font-medium text-slate-900">
+            @if (! $aiProvider['paid'])
+              zawsze dostępny (wynik przykładowy)
+            @else
+              {{ $aiProvider['configured'] ? 'wybrany w konfiguracji' : 'nie wybrany' }}; model: {{ $aiProvider['model'] ?? 'brak' }}; klucz API: {{ $aiProvider['api_key'] ? 'ustawiony' : 'brak' }}
+              @foreach ($aiProvider['problems'] as $problem)
+                <span class="block text-xs font-normal text-amber-700">{{ $problem }}</span>
+              @endforeach
+            @endif
+          </dd>
+        </div>
+      @endforeach
+      <div class="flex justify-between gap-4 py-3">
+        <dt class="text-slate-500">Ceny modelu</dt>
+        <dd class="text-right font-medium text-slate-900">{{ $ai['prices_configured'] ? 'ustawione' : 'brak — płatna analiza zostanie odrzucona' }}</dd>
+      </div>
+      <div class="flex justify-between gap-4 py-3">
+        <dt class="text-slate-500">Budżet AI (dziś / miesiąc)</dt>
+        <dd class="text-right font-medium tabular-nums text-slate-900">
+          {{ \App\Panel\Format::usd($ai['budget']['spent']['today'], 4) }} / {{ \App\Panel\Format::usd($ai['budget']['limits']['daily']) }},
+          {{ \App\Panel\Format::usd($ai['budget']['spent']['month'], 4) }} / {{ \App\Panel\Format::usd($ai['budget']['limits']['monthly']) }}
+          <span class="block text-xs font-normal text-slate-500">limit projektu w miesiącu {{ \App\Panel\Format::usd($ai['budget']['limits']['project_monthly']) }}; maks. koszt jednej analizy {{ \App\Panel\Format::usd($ai['budget']['limits']['max_run_cost']) }}</span>
+        </dd>
+      </div>
+      <div class="flex justify-between gap-4 py-3">
+        <dt class="text-slate-500">Kolejka analiz AI</dt>
+        <dd class="text-right font-medium text-slate-900">
+          w kolejce: {{ $ai['runs']['queued'] ?? 0 }}, w trakcie: {{ ($ai['runs']['running'] ?? 0) + ($ai['runs']['reserved'] ?? 0) }}, niepewne: {{ $ai['runs']['uncertain'] ?? 0 }}
+          <span class="block text-xs font-normal text-slate-500">wykonuje przetwarzanie w tle (WP-Cron albo wp osf-seo sync:run); bez automatycznego harmonogramu analiz i bez ponowień</span>
+        </dd>
+      </div>
+      <div class="flex justify-between gap-4 py-3">
+        <dt class="text-slate-500">Pobieranie stron</dt>
+        <dd class="text-right font-medium text-slate-900">
+          {{ $pages['transport'] ? 'bezpieczny transport dostępny' : 'niedostępne na tym serwerze (brak rozszerzenia cURL z przypinaniem adresu)' }};
+          strony projektu {{ $pages['config']['project_enabled'] ? 'tak' : 'nie' }}, konkurencji {{ $pages['config']['competitors_enabled'] ? 'tak' : 'nie' }}
+          <span class="block text-xs font-normal text-slate-500">
+            kopia aktualna {{ $pages['config']['ttl_hours'] }} h; odstęp między żądaniami do witryny {{ $pages['config']['domain_interval'] }} s, limit {{ $pages['config']['domain_daily_limit'] }} na dobę;
+            zlecenia z panelu: maks. {{ min(5, $pages['config']['max_urls']) }} adresów; w kolejce {{ $ai['page_jobs']['queued'] ?? 0 }}, w trakcie {{ $ai['page_jobs']['running'] ?? 0 }}
           </span>
         </dd>
       </div>

@@ -204,6 +204,10 @@
     </div>
   @endif
 
+  @if ($ai !== null)
+    @include('panel.ai.partials.topic-section', ['ai' => $ai])
+  @endif
+
   <div class="grid grid-cols-1 gap-6 lg:grid-cols-3">
     {{-- Priorytet z rozbiciem. --}}
     <x-panel.card>
