@@ -34,6 +34,8 @@ nigdy wartości sekretów.
 22. [Analizy AI (STEP 17)](#22-analizy-ai-step-17)
 23. [Page Intelligence (STEP 17, faza B)](#23-page-intelligence-step-17-faza-b)
 24. [Rekomendacje AI i briefy SEO (STEP 17, faza C)](#24-rekomendacje-ai-i-briefy-seo-step-17-faza-c)
+25. [Przestrzeń robocza AI i Page Intelligence w panelu (STEP 17, faza D)](#25-przestrzeń-robocza-ai-i-page-intelligence-w-panelu-step-17-faza-d)
+26. [Jakość, niezawodność i gotowość produkcyjna AI (STEP 17, faza E)](#26-jakość-niezawodność-i-gotowość-produkcyjna-ai-step-17-faza-e)
 
 ---
 
@@ -176,6 +178,15 @@ API wymaga osobnej decyzji architektonicznej; integracje dostawców wyłącznie 
 | D114 | Historia analiz w panelu: jedno zapytanie na stronę (filtry i stronicowanie w SQL) z tanim wskaźnikiem zmian Strategii — odcisk dowodów tematu zapisany przez Strategię w chwili analizy (`sources.strategy_hash`) vs. bieżący `strategy_topics.evidence_hash`; dokładna aktualność (także treść stron) tylko w raporcie i sekcji tematu | Brak kosztownego „check-stale” przy każdym renderze (faza C: 20 analiz = 782 zapytania). Sekcja 25.6 |
 | D115 | Raport AI wyłącznie z wyniku zwalidowanego (`AiReport` — czysta funkcja): rekomendacje według priorytetu i pilności, podstawa (fakt / wniosek / hipoteza), pewność, dowody jako czytelne etykiety z zapisanego kontekstu analizy (`EvidenceLabels`, adresy tylko http(s)), sekcje typowane tylko z treścią; eksport tekstowy (`AiReportText`: podsumowanie, rekomendacje, brief) i druk z widoku — bez silnika PDF, wysyłki e-mail, surowej odpowiedzi, kosztów, dostawcy, modelu i kodów technicznych | Raport użyteczny dla copywritera, bez wycieku danych technicznych i bez nowych zależności. Sekcja 25.7 |
 | D116 | Widoczność dla klienta (bez `osf_seo_manage_ai`): tylko analizy gotowe, zwalidowane, nieodrzucone, tematów widocznych w Strategii (bez odrzuconych) — bez kosztów, dostawcy, modelu, błędów, diagnostyki i statusu kolejki (egzekwowane w usłudze, nie w widoku); Page Intelligence — odczyt kopii stron bez kodów błędów prób i historii pobrań; pobieranie i analizy wyłącznie administrator | Klient widzi wynik pracy agencji, nie jej narzędzia i koszty; ochrona przed IDOR przez `ProjectContext` w każdym odczycie. Sekcja 25.8 |
+| D117 | Adapter OpenAI zweryfikowany z oficjalną specyfikacją OpenAPI Responses API (faza E): `service_tier: default` w każdym żądaniu (ceny z konfiguracji = przetwarzanie standardowe; inny poziom w odpowiedzi → ostrzeżenie w logu), `reasoning.effort` wyłącznie z `OSF_SEO_AI_REASONING_EFFORT` (lista wartości ze specyfikacji, poza listą → blokada płatnego wywołania), z wyjścia tylko wiadomości `final_answer` (gdy model oznacza fazy), `usage.input_tokens_details.cache_write_tokens` z opcjonalną ceną `OSF_SEO_AI_PRICE_CACHE_WRITE_PER_MTOK` (rezerwacja = górna granica), odmowa przed wysłaniem przy błędzie kodowania; przerwanie na limicie tokenów jako czytelny kod (`incomplete_max_output_tokens`). Nowe pola w odcisku planu tylko, gdy ustawione | Brak niejawnych kosztów (poziom przetwarzania z ustawień projektu u dostawcy), brak „sklejania” komentarzy modelu z JSON-em, odcisk planów bez zmian dla istniejącej konfiguracji. Sekcja 26.2 |
+| D118 | Tryb kontrolowanego testu: `OSF_SEO_AI_ALLOWED_PROJECTS` i `OSF_SEO_AI_ALLOWED_TYPES` (puste = bez ograniczeń) jako blokady planu płatnego (`project_not_allowed`, `type_not_allowed`), sprawdzane także przy wykonaniu z kolejki | Pierwsze płatne analizy na jednym projekcie i jednym typie bez zmian w kodzie. Sekcja 26.3 |
+| D119 | Jedno zatwierdzenie planu = jedno płatne wywołanie: plan płatny już wysłany i rozliczony bez gotowego wyniku (`uncertain`, `invalid`, `failed` z kosztem) → `plan_already_used`; ponowienie wyłącznie jawne (`--repeat`, „Wyślij ponownie świadomie”); odmowa dostawcy bez kosztu nie zużywa zatwierdzenia; `ai:run` pod tą samą blokadą zlecenia co analizy rekomendacji | Brak drugiego płatnego wywołania przez ponowne przesłanie formularza, drugą kartę albo równoległe CLI. Sekcja 26.6 |
+| D120 | Płatnej analizy z bieżącego miesiąca (UTC) nie można usunąć (`run_counts_toward_budget`) — koszt w budżecie liczony z wierszy historii; usuwanie analiz bez kosztu i starszych bez zmian | Usunięcie nie zwalnia budżetu. Sekcja 26.6 |
+| D121 | Niezawodność kolejek bez nowej infrastruktury: błąd jednej pozycji kolejki AI → `internal_error` bez wywołania (kolejne pozycje wykonywane), wyścig anulowania przed wysłaniem nie przerywa kroku; limit czasu PHP wydłużany przed wysłaniem płatnego żądania (gdy niezerowy); projekt zarchiwizowany nie wykonuje zleceń; `page_jobs` — wyłącznie zatwierdzony adres (`selection_changed`), wygasanie po 24 h (`job_expired`), anulowanie w panelu; `SyncScheduler` wykonuje kroki po kolejce także po błędzie importu GSC i zapisuje znacznik życia tła (`osf_seo_background_heartbeat`); zablokowana kolejka widoczna w panelu (status zlecenia, Ustawienia) i CLI (`ai:queue`, `pages:jobs`) | Kolejki nie blokują się niewidocznie; brak podwójnego wywołania i podwójnego rozliczenia. Sekcja 26.6 |
+| D122 | Wydajność ekranów AI (benchmark przed/po): jedno źródło danych tematu na ekranie tematu i przygotowania (`topicSectionFromView`, `planAnalysisFrom` — ten sam odcisk planu), tani zakres rynku (`StrategyService::scopeSummary`) zamiast pełnego stanu panelu w źródle kontekstu AI, pamięć źródeł tematów przy sprawdzaniu aktualności, historia z `COUNT` po indeksie zamiast `COUNT(*) OVER ()`; bez cache (nie trzeba strategii unieważniania) | Temat 82 → 46 zapytań, przygotowanie 97 → 31, historia 1 zapytanie / 25–53 ms → 2 zapytania / 1–5 ms przy 5000 analiz. Sekcja 26.7 |
+| D123 | Quality Evaluation Framework: ręczna ocena ekspercka (`ai_evaluations`, M0019, schemat 19, addytywnie) według rubryki `QualityRubric` v1 (10 kryteriów 1–5 albo „nie dotyczy”, błędy wskazane przy elemencie wyniku, werdykt, działanie naprawcze); ocenia wyłącznie człowiek z `osf_seo_manage_ai` (nigdy proces systemowy ani model); raport porównawczy typ × wersja instrukcji × model bez łącznego wyniku (rozkład i mediana każdego kryterium); dostawca testowy domyślnie pominięty; ocena nie zmienia wyniku, decyzji, Strategii ani statusu pracy | Kalibracja instrukcji i walidatora na prawdziwych wynikach bez pozornej metryki „SEO Score”. Sekcja 26.4 |
+| D124 | Raport AI: kody braków danych i ograniczeń oraz odwołania do dowodów w tekście wyniku zamieniane na polskie etykiety wyłącznie w prezentacji (`AiReport::humanize`); zapisany wynik bez zmian; nieznane kody i odwołania pozostają widoczne | Czytelny raport (obserwacja ze stagingu) bez zmiany historii i bez ukrywania ograniczeń. Sekcja 26.8 |
+| D125 | Transport Page Intelligence (audyt fazy E): IPv4 zagnieżdżony w IPv6 sprawdzany zawsze (także `::ffff:0.0.0.0`, kierowany przez Linux na loopback) i blokada `::ffff:0:0:0/96`; literały IP w zapisie mieszanym odrzucane; wymagany libcurl ≥ 7.59.0 (przypięcie wielu adresów i IPv6); błąd dopasowania wzorca robots.txt = brak zgody na pobranie | Zamknięte obejście SSRF i fail-open robots.txt. Sekcja 26.5 |
 
 ## 3. Repozytorium i środowiska
 
@@ -634,7 +645,8 @@ przypięcia i strony docelowej frazy w `osf_strategy_keywords`. Tabele Strategii
 **Analizy AI i Page Intelligence** (STEP 17): `osf_ai_runs` i `osf_ai_run_payloads` (schemat 15, `M0015`, sekcja 22.2), tabele stron
 `osf_page_*` i `ai_runs.evidence_fingerprint` (schemat 16, `M0016`, sekcja 23.3), kolumny analiz rekomendacji `ai_runs.plan_fingerprint`,
 `readiness`, `sources` i indeks `project_plan` (schemat 17, `M0017AiRecommendations`, sekcja 24.13), zlecenia pobrania stron z panelu
-`osf_page_jobs` (schemat 18, `M0018PageJobs`, sekcja 25.5) — wyłącznie addytywnie.
+`osf_page_jobs` (schemat 18, `M0018PageJobs`, sekcja 25.5), oceny jakości analiz `osf_ai_evaluations` (schemat 19, `M0019AiEvaluations`,
+sekcja 26.4) — wyłącznie addytywnie.
 
 **Wersja schematu**: opcja `osf_seo_db_version` (autoload), podbijana po każdej udanej migracji.
 
@@ -3001,6 +3013,9 @@ samej nazwie. W repozytorium wyłącznie placeholdery.
 | `OSF_SEO_AI_TIMEOUT` | (opcjonalnie) timeout żądania do dostawcy, 10–300 s, domyślnie 90 | STEP 17 |
 | `OSF_SEO_AI_TEMPERATURE` | (opcjonalnie) temperatura 0–2, wysyłana tylko, gdy ustawiona (część modeli jej nie obsługuje) | STEP 17 |
 | `OSF_SEO_AI_RETENTION_DAYS` | (opcjonalnie) retencja historii AI, 35–3650 dni, domyślnie 180 | STEP 17 |
+| `OSF_SEO_AI_REASONING_EFFORT` | (opcjonalnie) `reasoning.effort`: `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max` — wysyłany tylko, gdy ustawiony; wartość spoza listy blokuje płatne wywołanie | STEP 17 E |
+| `OSF_SEO_AI_PRICE_CACHE_WRITE_PER_MTOK` | (opcjonalnie) cena zapisu do cache dostawcy (USD / 1 mln); brak → cena wejścia | STEP 17 E |
+| `OSF_SEO_AI_ALLOWED_PROJECTS`, `OSF_SEO_AI_ALLOWED_TYPES` | (opcjonalnie) tryb kontrolowanego testu: płatne analizy tylko dla wskazanych projektów (ID publiczne) i typów (`page-optimization`, `new-page-brief`, `content-gap`, `topic-analysis`); puste — bez ograniczeń | STEP 17 E |
 | `OSF_SEO_PAGES_PROJECT_ENABLED`, `OSF_SEO_PAGES_COMPETITORS_ENABLED` | (opcjonalnie) `0` wyłącza pobieranie stron projektu / konkurencji (domyślnie włączone — zawsze jawną akcją administratora) | STEP 17 B |
 | `OSF_SEO_PAGES_TTL_HOURS` | (opcjonalnie) świeżość snapshotu, 1–720 h, domyślnie 24 | STEP 17 B |
 | `OSF_SEO_PAGES_MAX_BYTES`, `OSF_SEO_PAGES_TIMEOUT`, `OSF_SEO_PAGES_MAX_REDIRECTS` | (opcjonalnie) limity pobrania: rozmiar po dekompresji 64 KB–5 MB (2 MB), czas całkowity 3–60 s (15), przekierowania 0–5 (3) | STEP 17 B |
@@ -3075,13 +3090,13 @@ Warianty docelowe:
 | 19 | Pozycje SERP i konkurenci: monitorowane frazy, pomiary Google Organic (Standard, TOP100) z planem, rezerwacją kosztu i harmonogramem, pełne TOP N w historii, zmiany, konkurenci monitorowani i organiczni | ✅ STEP 14 (sekcja 13) |
 | 20 | Luki SEO: wspólne zbiory fraz domen konkurentów (Labs Ranked Keywords) z planem, limitami i importem w tle, punkt odniesienia projektu, widoczność SERP → GSC → Labs, typ i priorytet luki, filtry marki, grupy fraz, luka treści (heurystyka), strony konkurencji, historia zbiorów | ✅ STEP 15 (sekcja 14) |
 | 21 | Strategia i SERP Intelligence: kandydaci z modułów z dowodami, analiza zapisanych SERP-ów, strona docelowa, działania, priorytet i pewność, tematy, backlog z workflow | ⏳ STEP 16 (sekcja 15): fazy A (fundament), B (SERP Intelligence), C (rdzeń), D (panel) i E (tło i wydajność) zrobione; faza F według planu |
-| 22 | Analizy AI: dostawcy za interfejsem (testowy i OpenAI), deterministyczny kontekst tematu z proweniencją, wersjonowane instrukcje, kontrakt odpowiedzi z walidacją PHP, budżet AI z rezerwacją, historia, CLI; Page Intelligence: bezpieczne pobieranie stron projektu i wyników SERP, ekstrakcja, snapshoty, kontekst AI v2 | ⏳ STEP 17 (sekcje 22–25): faza A (fundament), B (Page Intelligence), C (rekomendacje AI i briefy SEO — CLI) i D (panel: przestrzeń robocza AI, raport, historia, Strony, pobieranie i analizy w tle) zrobione; faza E do akceptacji |
+| 22 | Analizy AI: dostawcy za interfejsem (testowy i OpenAI), deterministyczny kontekst tematu z proweniencją, wersjonowane instrukcje, kontrakt odpowiedzi z walidacją PHP, budżet AI z rezerwacją, historia, CLI; Page Intelligence: bezpieczne pobieranie stron projektu i wyników SERP, ekstrakcja, snapshoty, kontekst AI v2 | ⏳ STEP 17 (sekcje 22–25): faza A (fundament), B (Page Intelligence), C (rekomendacje AI i briefy SEO — CLI), D (panel: przestrzeń robocza AI, raport, historia, Strony, pobieranie i analizy w tle) i E (jakość, niezawodność i gotowość produkcyjna — sekcja 26) zrobione; kontrolowany test OpenAI (`docs/AI-LIVE-TESTING.md`) po osobnej zgodzie |
 
 **MVP 2**: ~~Opportunity Score~~ (STEP 11), Pages/landing pages, zaawansowane filtry, automatyczna synchronizacja, raporty.
 **MVP 3**: własny crawler, audyt techniczny, połączenie crawler + GSC.
 **MVP 4**: panel klienta, raporty, rekomendacje AI.
 **Kolejne etapy** (kolejność orientacyjna): ~~odkrywanie nowych fraz~~ (STEP 13), ~~monitoring konkurencji i ranking SERP~~ (STEP 14),
-~~luka fraz/treści~~ (STEP 15), strategia i backlog SEO (STEP 16), AI (STEP 17 — faza A: fundament, faza B: Page Intelligence, faza C: rekomendacje i briefy SEO, faza D: panel), retencja/rollupy historii SERP po pomiarze wzrostu.
+~~luka fraz/treści~~ (STEP 15), strategia i backlog SEO (STEP 16), AI (STEP 17 — faza A: fundament, faza B: Page Intelligence, faza C: rekomendacje i briefy SEO, faza D: panel, faza E: jakość i gotowość produkcyjna), retencja/rollupy historii SERP po pomiarze wzrostu.
 
 ## 20. Porządki w motywie (C1–C5)
 
@@ -4067,7 +4082,7 @@ każdy tekst jest oznaczony `[TEST]`, a atrapa sprawdza wyłącznie strukturę, 
   odrzucenia albo przeoczenia).
 - Wykrywanie etykiet interfejsu i kart (CTA, wersaliki, sekcje < 8 słów) to heurystyka — krótkie, ale merytoryczne sekcje są pomijane w porównaniach.
 - `ProjectPageIndex` nadal tylko z GSC — brief zawsze ma ograniczenie „indeks niepełny”; strony konkurencji tylko z jawnie pobranych snapshotów.
-- Aktualność listy (`--check-stale`) odbudowuje kontekst dla każdego tematu × typu — koszt rośnie z liczbą różnych tematów na liście.
+- Aktualność listy (`--check-stale`) odbudowuje kontekst dla każdego tematu (od fazy E jedno źródło na temat dla wszystkich typów — sekcja 26.7) — koszt rośnie z liczbą różnych tematów na liście.
 - Odcisk planu obejmuje szacunek tokenów — każda zmiana kontekstu (np. nowy snapshot, przeliczenie Strategii) wymaga ponownego zatwierdzenia planu.
 - Interfejs panelu — faza D (sekcja 25).
 
@@ -4076,7 +4091,7 @@ każdy tekst jest oznaczony `[TEST]`, a atrapa sprawdza wyłącznie strukturę, 
 | Faza | Zakres |
 |---|---|
 | D | ✅ Interfejs panelu (sekcja 25): gotowość i plan z kosztem → zatwierdzenie odcisku planu → zlecenie w tle; raport z dowodami, ograniczeniami, aktualnością i decyzją użytkownika; Strony i pobieranie z panelu |
-| E | Zakres do ustalenia z właścicielem (np. kalibracja walidatora na prawdziwych wynikach, ewentualne zadania w tle wyłącznie przez `SyncScheduler` i w budżecie AI) |
+| E | ✅ Jakość, niezawodność i gotowość produkcyjna (sekcja 26): audyt, adapter zgodny ze specyfikacją, tryb kontrolowanego testu, rama oceny jakości (rubryka, przypadki A–L), odporność kolejek, wydajność; kalibracja walidatora na prawdziwych wynikach — po kontrolowanym teście (`docs/AI-LIVE-TESTING.md`) |
 
 ## 25. Przestrzeń robocza AI i Page Intelligence w panelu (STEP 17, faza D)
 
@@ -4228,3 +4243,136 @@ projekt / jedna analiza), kolejka analiz i pobrań, konfiguracja pobierania stro
 - Tani wskaźnik w historii obejmuje dowody Strategii, nie treść stron (dokładna aktualność w raporcie).
 - Eksport to tekst do schowka i druk przeglądarki; brak PDF i udostępniania raportu poza panelem.
 - Wybór stron konkurencji z panelu — wyniki pomiaru SERP frazy odniesienia tematu (TOP 10); inne frazy — ręczne adresy z zapisanych wyników SERP.
+
+## 26. Jakość, niezawodność i gotowość produkcyjna AI (STEP 17, faza E)
+
+Ostatnia faza STEP 17: audyt faz A–D, poprawki bez przebudowy architektury, przygotowanie kontrolowanego testu OpenAI i ramy oceny jakości.
+Zero płatnych wywołań w trakcie fazy (dostawca testowy, atrapy HTTP, lokalne fixture). Procedury: `docs/AI-LIVE-TESTING.md`,
+`docs/AI-SETUP.md`, `docs/HOSTINGER-CRON.md`.
+
+### 26.1 Audyt (wyniki)
+
+| Obszar | Ustalenie | Ryzyko | Poprawka |
+|---|---|---|---|
+| Page Intelligence — SSRF | `::ffff:0.0.0.0` / `::ffff:0.0.0.1` omijały kontrolę IP (Linux kieruje na loopback); IPv4-translated `::ffff:0:a.b.c.d` niezablokowany | średnie | D125, testy regresyjne |
+| Page Intelligence — transport | przypięcie DNS zależne od wersji libcurl (≥ 7.59.0 dla wielu adresów i IPv6), nie sprawdzane | niskie | `CurlPageFetcher::available()` |
+| robots.txt | błąd dopasowania wzorca (limit backtrackingu) = brak reguły (fail open) | niskie | fail closed |
+| Zlecenia pobrań | krok w tle rozwiązywał wybór (temat / pozycja SERP) ponownie — mógł pobrać inny adres niż zatwierdzony | niskie | `selection_changed` |
+| Kolejka AI | wyjątek jednej pozycji przerywał krok; ta sama pozycja jako pierwsza w każdym kroku → kolejka zablokowana do 6 h | średnie | D121 |
+| Kolejka AI | długie kroki przed AI; przerwanie procesu w trakcie wywołania = wynik niepewny (pełna rezerwacja) | średnie | limit czasu PHP przed wysłaniem; cron WP-CLI (dokumentacja) |
+| Budżet | usunięcie płatnej analizy zwalniało budżet miesiąca | średnie | D120 |
+| Kolejki | zatrzymany cron niewidoczny; `page_jobs` bez wygasania i anulowania | średnie / niskie | D121 |
+| Zatwierdzenie planu | ponowne przesłanie tego samego planu po wyniku niepewnym = drugie płatne wywołanie; `ai:run` bez blokady zlecenia | niskie | D119 |
+| Projekty | projekt zarchiwizowany wykonywał zlecenia | niskie | D121 |
+| SyncScheduler | wyjątek importu GSC pomijał kroki po kolejce | niskie | `try/finally` |
+| OpenAI | brak `reasoning.effort` i `service_tier`; komentarze (`commentary`) sklejane z JSON-em; `cache_write_tokens` pomijane | średnie (koszt bez wyniku) | D117 |
+| Wydajność | ekran tematu 82 zapytania, przygotowanie 97 (podwójny odczyt), historia `COUNT(*) OVER()` | niskie | D122 |
+| Raport | kody `competitor_pages_not_fetched`, `page_index_incomplete`, `keywords_omitted`, `context_reduced` w tekście raportu | niskie | D124 |
+
+Zweryfikowane bez zmian: jedno wysłanie na uruchomienie (warunkowe `markRunning`, blokada zlecenia, ponowny odczyt), odzyskiwanie po
+przerwaniu (`not_sent` bez kosztu / `uncertain` z rezerwacją, nigdy ponowienie), rezerwacja pod `GET_LOCK ai_budget`, kolejność blokad
+(bez zakleszczeń), IDOR (każdy odczyt po `public_id` w obrębie projektu), nonce + Origin dla każdego POST, ograniczenia klienta w usługach,
+escapowanie w Blade (jedyne `{!! !!}` — nonce), linki tylko http(s), bloki niezaufane w instrukcjach (`JSON_HEX_TAG` — treść strony nie
+zamknie bloku). Odnotowane bez zmian (informacyjnie): klient widzi znacznik „raport testowy” przy wynikach dostawcy testowego (uczciwość
+wobec klienta); strony projektu odrzuconego tematu pozostają na liście Stron; etykiety innych tematów w starych raportach pochodzą
+z zapisanego kontekstu; równoległe przebiegi tego samego zlecenia stron po odzyskaniu mogą nadpisać postęp (ograniczone 60 s pobrania).
+
+### 26.2 Gotowość adaptera OpenAI (D117)
+
+Weryfikacja z oficjalną specyfikacją OpenAPI (`openai/openai-openapi`, Responses API): pola żądania (`model`, `instructions`, `input`,
+`text.format` `json_schema` + `strict`, `max_output_tokens` z tokenami rozumowania, `store: false`, `service_tier`, `reasoning.effort`),
+statusy odpowiedzi (`completed`, `incomplete` z `max_output_tokens` / `content_filter`, `failed`), części wiadomości (`output_text`,
+`refusal`, faza `final_answer`), zużycie (`cached_tokens`, `cache_write_tokens`, `reasoning_tokens` — część `output_tokens`). Schemat
+kontraktu v2: 81 właściwości, zagnieżdżenie 3, wyłącznie `type`/`properties`/`required`/`additionalProperties: false`/`items`/`enum`.
+Mapowanie błędów (D91) bez zmian: 401/403 `auth`, 429 `rate_limited`, inne 4xx `rejected` (bez kosztu), 408/5xx i sieć `uncertain` (pełna
+rezerwacja). Niezweryfikowane (dokumentacja przewodników niedostępna z sieci agenta — sprawdzić przed testem): dokładne limity schematu
+strict, obsługa `temperature` przez modele rozumujące (nie ustawiać), cennik zapisu do cache, gwarancje nienaliczania kosztu dla 4xx.
+
+### 26.3 Tryb kontrolowanego testu (D118)
+
+Domyślnie dostawca testowy; płatny wymaga wyłącznika, dostawcy, modelu, klucza, cen, limitów > 0, planu z kosztem maksymalnym i zatwierdzenia
+odcisku. `OSF_SEO_AI_ALLOWED_PROJECTS` / `OSF_SEO_AI_ALLOWED_TYPES` zawężają płatne analizy do jednego projektu i typu (blokady planu,
+ponownie sprawdzane w kolejce). Jedno zatwierdzenie = jedno wywołanie (D119), równoległe zlecenia blokowane, tokeny i koszt z zużycia w historii,
+czytelny status błędu (`ReportLabels::ERRORS`), wyłącznik natychmiast kończy zlecenia w kolejce bez wywołania (`ai_disabled`).
+
+### 26.4 Quality Evaluation Framework (D123)
+
+- `OsfSeo\Ai\Evaluation\QualityRubric` v1 — kryteria: konkretność, zgodność z GSC, zgodność z treścią strony, interpretacja SERP, trafność
+  intencji, użyteczność biznesowa, wykonalność, poprawność dowodów, uczciwość niepewności, brak halucynacji (1–5 albo „nie dotyczy”);
+  18 kodów błędów (np. `hallucination`, `wrong_evidence`, `gsc_misread`, `missing_not_proven`, `prompt_injection_followed`); werdykty
+  `accepted` / `accepted_with_edits` / `rejected`; działania `fix_prompt` / `fix_validator` / `fix_context` / `fix_data` / `model_config`.
+- `ai_evaluations` (M0019): jedna ocena na uruchomienie i oceniającego, kopia metadanych uruchomienia (zadanie, dostawca, model, wersje
+  instrukcji, kontraktu i rubryki), notatki zapisywane przez `insert()`/`update()`.
+- `AiEvaluationService`: `record` (człowiek z `osf_seo_manage_ai`; odrzucenie wymaga błędu; element wyniku `R…`/`F…` musi istnieć),
+  `list`, `report` (typ × wersja instrukcji × model × wersja rubryki; rozkład, mediana, werdykty, działania, błędy — bez łącznego wyniku).
+- CLI: `ai:eval-criteria`, `ai:eval-cases`, `ai:eval --user=…`, `ai:eval-list`, `ai:eval-report [--type] [--include-test]`.
+
+### 26.5 Przypadki testowe A–L
+
+`EvaluationCases` (A: strona usługowa, B: długi poradnik, C: kategoria e-commerce, D: brief nowej strony, E: luka treści z 2–3 konkurentami,
+F: niski CTR, G: niepełna kopia strony, H: nieaktualny SERP, I: konkurent o innej intencji, J: prompt injection w HTML, K: brak meta
+description, L: ryzyko kanibalizacji) — dane wejściowe, oczekiwany zakres, pułapki, kryteria sukcesu, wnioski zakazane, kryteria rubryki.
+`EvaluationCasesTest` sprawdza na syntetycznych danych to, co da się sprawdzić bez modelu: gotowość i ograniczenia (G, H), dane widoczne
+dla modelu (F, I, K, L), budżet kontekstu (B), blok niezaufany (J) i odrzucanie wniosków zakazanych przez walidator (A–E, K, L).
+
+### 26.6 Kolejki, cron i odzyskiwanie (D119–D121)
+
+| Sytuacja | Wynik | Koszt |
+|---|---|---|
+| Cron wstrzymany < 6 h | wykonanie po wznowieniu, plan przeliczany (inny odcisk → `plan_changed`) | jak zatwierdzono |
+| Analiza czeka > 6 h | `queue_expired` | 0 |
+| Zlecenie stron czeka > 24 h | `job_expired` | — |
+| Przerwanie przed wysłaniem | `not_sent` | 0 |
+| Przerwanie po wysłaniu / timeout | `uncertain` po timeout + 300 s, bez ponowienia | pełna rezerwacja |
+| Wyjątek jednej pozycji kolejki | `internal_error` bez wywołania; kolejne pozycje dalej | 0 |
+| Dwa kroki w tle naraz | blokada zlecenia + warunkowe `markRunning` — jedno wywołanie | raz |
+| Wyłącznik po zakolejkowaniu | `ai_disabled` | 0 |
+| Projekt zarchiwizowany | `project_unavailable` | 0 |
+
+Diagnostyka: `osf_seo_background_heartbeat` (start kroków po kolejce), `AiAnalysisService::queueHealth()` (najstarsze zlecenie, zablokowanie =
+zlecenie > 15 min i brak przebiegu tła > 15 min), `ai:queue`, `pages:jobs`, Ustawienia → „Przetwarzanie w tle”, ostrzeżenie w statusie zlecenia.
+Cron na Hostingerze: WP-CLI `sync:run` co minutę (bez limitu czasu serwera WWW — wymagane dla płatnych analiz).
+
+### 26.7 Wydajność (D122)
+
+Benchmark `composer test:performance:ai` (MariaDB 10.11, projekt z 50 tematami, 5000 analiz projektu + 5 × 500 innych; mediana z 3–5 przebiegów;
+czasy zależne od obciążenia bazy — zapytania są miarą stabilną):
+
+| Ekran / krok | Przed (zapytania / ms) | Po (zapytania / ms) |
+|---|---:|---:|
+| A. Szczegóły tematu (Strategia + sekcja AI) | 82 / 18 | 46 / 14–42 |
+| B. Przygotowanie analizy | 97 / 30 | 31 / 16 |
+| C. Historia, strona 1 | 1 / 53 | 2 / 1–2 |
+| C2. Historia, strona 100 | 1 / 25 | 2 / 5 |
+| D. Raport z dokładną aktualnością | 46 / 11 | 26 / 8 |
+| E. Lista stron | 2 / 2 | 2 / 1 |
+| F. Szczegóły kopii strony | 6 / 2 | 6 / 1 |
+| G. Status analizy (co 5 s) | 1 / 0,2 | 1 / 0,2 |
+| Gotowość / plan / wynik (CLI) | 40 / 41 / 43 | 20 / 21 / 23 |
+| Aktualność 20 wyników (`--check-stale`) | 782 / 187 | 382 / 86–134 |
+
+Pozostałe ok. 22 zapytania ekranu tematu to `StrategyService::panelState` (klucz danych Strategii) — poza zakresem fazy E.
+
+### 26.8 UX
+
+Polskie etykiety kodów w tekście raportu (D124), statusy i błędy nowych odmów (`ReportLabels`, `PageLabels`), ostrzeżenie o zatrzymanym
+przetwarzaniu w tle (status analizy i zlecenia stron, Ustawienia), anulowanie zlecenia stron, „plan już użyty” z jawnym ponowieniem na ekranie
+przygotowania, wyższy kontrast tekstów pomocniczych w historii, tryb testu i wysiłek rozumowania w Ustawieniach.
+
+### 26.9 Testy
+
+- Jednostkowe: `OpenAiProviderTest` (service tier, wysiłek rozumowania, `final_answer`, `cache_write_tokens`, kodowanie), `AiReportTest`
+  (kody i odwołania w tekście), `UrlSafetyPolicyTest` (IPv4 zagnieżdżony, zapis mieszany), `RobotsTxtTest` (fail closed),
+  `EvaluationCasesTest` (A–L, rubryka).
+- Integracyjne: `AiReliabilityTest` (wyłącznik, tryb testu, jedno zatwierdzenie, izolacja błędów kolejki, projekt zarchiwizowany, usuwanie
+  płatnej analizy, równoległe `ai:run`, zatwierdzony adres zlecenia stron, wygasanie i anulowanie, zablokowana kolejka), `AiEvaluationTest`
+  (ocena eksperta, uprawnienia, IDOR, raport wersji), `MigratorTest` (18 → 19).
+- Benchmark przed/po (26.7); smoke w przeglądarce na lokalnym WordPressie (dostawca testowy, lokalny serwer fixture).
+
+### 26.10 Ograniczenia
+
+- Brak testu z prawdziwym modelem — jakość odpowiedzi, rzeczywiste zużycie tokenów i czasy odpowiedzi poznamy w kontrolowanym teście
+  (`docs/AI-LIVE-TESTING.md`) po osobnej zgodzie.
+- Część dokumentacji OpenAI (przewodniki) niedostępna z sieci agenta — punkty niezweryfikowane w 26.2.
+- Konfiguracja crona na Hostingerze nie była weryfikowana przez agenta (brak dostępu do serwera z założenia).
+- Ocena jakości tylko w CLI (bez ekranu panelu); raport bez wykresów.

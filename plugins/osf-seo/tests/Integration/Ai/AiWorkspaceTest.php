@@ -429,7 +429,7 @@ final class AiWorkspaceTest extends PageTestCase
 
 		self::assertSame([23, 2, 20, 3], [$first['total'], $first['pages'], count($first['rows']), count($last['rows'])]);
 		self::assertSame([], array_intersect(array_column($first['rows'], 'id'), array_column($last['rows'], 'id')));
-		self::assertLessThanOrEqual(1, $firstQueries, 'Jedno zapytanie na stronę historii (bez odbudowy kontekstu dla wierszy).');
+		self::assertLessThanOrEqual(2, $firstQueries, 'Liczba wierszy (indeks) + jedna strona historii — bez odbudowy kontekstu dla wierszy (faza E: osobne COUNT zamiast COUNT(*) OVER()).');
 		self::assertSame($firstQueries, $lastQueries, 'Liczba zapytań nie zależy od liczby wierszy.');
 		self::assertSame(12, $this->workspace->history($context, ['type' => AnalysisType::PAGE_OPTIMIZATION])['total']);
 		self::assertSame(23, $this->workspace->history($context, ['status' => 'ready'])['total']);

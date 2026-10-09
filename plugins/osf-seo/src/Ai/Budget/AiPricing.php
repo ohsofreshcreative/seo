@@ -37,7 +37,14 @@ final class AiPricing
 	 */
 	public function prices(): array
 	{
-		return ['input' => $this->config->priceInput(), 'cached_input' => $this->config->priceCachedInput(), 'output' => $this->config->priceOutput()];
+		$prices = ['input' => $this->config->priceInput(), 'cached_input' => $this->config->priceCachedInput(), 'output' => $this->config->priceOutput()];
+
+		// Cena zapisu do cache tylko, gdy ustawiona — odcisk planu bez niej pozostaje taki jak przed fazą E.
+		if ($this->config->priceCacheWrite() !== null) {
+			$prices['cache_write'] = $this->config->priceCacheWrite();
+		}
+
+		return $prices;
 	}
 
 	public static function estimateInputTokens(string ...$parts): int
@@ -50,16 +57,21 @@ final class AiPricing
 	/** Maksymalny koszt (USD) albo null, gdy cen nie ustawiono. */
 	public function maxCost(int $inputTokens, int $maxOutputTokens): ?float
 	{
-		return $this->cost($inputTokens, 0, $maxOutputTokens);
+		// Górna granica: całe wejście po wyższej z cen zwykłego wejścia i zapisu do cache.
+		$cacheWrite = $this->config->priceCacheWrite();
+		$input = $this->config->priceInput();
+
+		return $this->cost($inputTokens, 0, $maxOutputTokens, $cacheWrite !== null && $input !== null && $cacheWrite > $input ? $inputTokens : 0);
 	}
 
 	/** Koszt ze zgłoszonego zużycia albo null bez cen. */
 	public function actualCost(AiUsage $usage): ?float
 	{
-		return $this->cost($usage->inputTokens, $usage->cachedTokens, $usage->outputTokens);
+		return $this->cost($usage->inputTokens, $usage->cachedTokens, $usage->outputTokens, $usage->cacheWriteTokens);
 	}
 
-	private function cost(int $input, int $cached, int $output): ?float
+	/** Wejście: zwykłe, odczyt z cache i zapis do cache (obie kategorie są częścią `input_tokens`). */
+	private function cost(int $input, int $cached, int $output, int $cacheWrite = 0): ?float
 	{
 		$priceInput = $this->config->priceInput();
 		$priceCached = $this->config->priceCachedInput();
@@ -69,8 +81,10 @@ final class AiPricing
 			return null;
 		}
 
+		$priceWrite = $this->config->priceCacheWrite() ?? $priceInput;
 		$cached = max(0, min($cached, $input));
+		$cacheWrite = max(0, min($cacheWrite, $input - $cached));
 
-		return round((($input - $cached) * $priceInput + $cached * $priceCached + $output * $priceOutput) / 1_000_000, 6);
+		return round((($input - $cached - $cacheWrite) * $priceInput + $cached * $priceCached + $cacheWrite * $priceWrite + $output * $priceOutput) / 1_000_000, 6);
 	}
 }

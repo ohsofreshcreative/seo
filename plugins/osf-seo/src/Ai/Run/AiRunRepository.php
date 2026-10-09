@@ -161,6 +161,21 @@ final class AiRunRepository
 		return $row === null ? null : AiRun::fromRow($row);
 	}
 
+	/**
+	 * Płatne uruchomienie z tym samym odciskiem planu, które zostało wysłane i rozliczone (z zużycia albo rezerwacji) bez gotowego wyniku —
+	 * niepewne, niepoprawne albo nieudane po wykonaniu. Odmowy dostawcy bez kosztu (`not_charged`) nie zużywają zatwierdzenia.
+	 */
+	public function sentWithPlan(int $projectId, string $planFingerprint): ?AiRun
+	{
+		$row = $this->db->fetchRow(
+			"{$this->select()} WHERE r.project_id = %d AND r.plan_fingerprint = UNHEX(%s) AND r.paid = 1 AND r.started_at IS NOT NULL
+				AND r.status IN (%s, %s, %s) AND r.cost_basis IN (%s, %s) ORDER BY r.id DESC LIMIT 1",
+			[$projectId, $planFingerprint, AiRun::STATUS_UNCERTAIN, AiRun::STATUS_INVALID, AiRun::STATUS_FAILED, AiRun::COST_USAGE, AiRun::COST_RESERVATION],
+		);
+
+		return $row === null ? null : AiRun::fromRow($row);
+	}
+
 	/** Uruchomienie projektu po identyfikatorze publicznym (inny projekt → null). */
 	public function find(int $projectId, string $publicId): ?AiRun
 	{
@@ -265,15 +280,28 @@ final class AiRunRepository
 			array_push($params, ...$statuses);
 		}
 
+		// Liczba osobnym zapytaniem po indeksie (bez materializowania wszystkich wierszy z `COUNT(*) OVER ()`), strona — przegląd indeksu
+		// `project_created` zatrzymany po LIMIT (faza E: 5000 analiz projektu — strona 1 bez sortowania całej historii).
+		$topics = $this->db->table('strategy_topics');
+		$filter = implode(' AND ', $where);
+		$total = (int) $this->db->fetchValue(
+			"SELECT COUNT(*) FROM `{$this->table()}` r" . ($restricted ? " LEFT JOIN `{$topics}` t ON t.id = r.topic_id AND t.project_id = r.project_id" : '') . ' WHERE ' . $filter,
+			$params,
+		);
+
+		if ($total === 0 || $offset >= $total) {
+			return ['rows' => [], 'total' => $total];
+		}
+
 		$params[] = max(1, min(100, $limit));
 		$params[] = max(0, $offset);
 		$rows = $this->db->fetchAll(
 			"SELECT r.*, t.public_id AS topic_public_id, t.label AS topic_label, t.status AS topic_status, LOWER(HEX(t.evidence_hash)) AS topic_evidence_hash,
-				p.public_id AS project_public_id, COUNT(*) OVER () AS total_rows
+				p.public_id AS project_public_id
 			FROM `{$this->table()}` r
-			LEFT JOIN `{$this->db->table('strategy_topics')}` t ON t.id = r.topic_id AND t.project_id = r.project_id
+			LEFT JOIN `{$topics}` t ON t.id = r.topic_id AND t.project_id = r.project_id
 			LEFT JOIN `{$this->db->table('projects')}` p ON p.id = r.project_id
-			WHERE " . implode(' AND ', $where) . ' ORDER BY r.created_at DESC, r.id DESC LIMIT %d OFFSET %d',
+			WHERE {$filter} ORDER BY r.created_at DESC, r.id DESC LIMIT %d OFFSET %d",
 			$params,
 		);
 
@@ -283,7 +311,7 @@ final class AiRunRepository
 				'topic_status' => $row['topic_status'],
 				'topic_evidence_hash' => $row['topic_evidence_hash'],
 			], $rows),
-			'total' => $rows === [] ? 0 : (int) $rows[0]['total_rows'],
+			'total' => $total,
 		];
 	}
 
@@ -369,6 +397,22 @@ final class AiRunRepository
 		} while (count($ids) === $batch);
 
 		return $deleted;
+	}
+
+	/**
+	 * Najstarsze zlecenie w kolejce i najstarsze uruchomienie w toku (UTC) — diagnostyka zablokowanej kolejki.
+	 *
+	 * @return array{oldest_queued: ?string, oldest_running: ?string}
+	 */
+	public function queueAges(): array
+	{
+		$row = $this->db->fetchRow(
+			"SELECT MIN(CASE WHEN status = %s THEN created_at END) AS oldest_queued, MIN(CASE WHEN status IN (%s, %s) THEN COALESCE(started_at, created_at) END) AS oldest_running
+			FROM `{$this->table()}` WHERE status IN (%s, %s, %s)",
+			[AiRun::STATUS_QUEUED, AiRun::STATUS_RUNNING, AiRun::STATUS_RESERVED, AiRun::STATUS_QUEUED, AiRun::STATUS_RUNNING, AiRun::STATUS_RESERVED],
+		) ?? [];
+
+		return ['oldest_queued' => $row['oldest_queued'] ?? null, 'oldest_running' => $row['oldest_running'] ?? null];
 	}
 
 	/**

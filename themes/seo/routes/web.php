@@ -175,6 +175,8 @@ Route::middleware([Authenticate::class, VerifyNonce::class])->group(function () 
 			->where('job', '[0-9A-Za-z]{26}');
 		Route::get('/projects/{project}/pages/jobs/{job}/status', [PagesController::class, 'jobStatus'])
 			->where('job', '[0-9A-Za-z]{26}');
+		Route::post('/projects/{project}/pages/jobs/{job}/cancel', [PagesController::class, 'cancel'])
+			->where('job', '[0-9A-Za-z]{26}');
 	});
 
 	Route::middleware(ResolveProject::class)->group(function () {

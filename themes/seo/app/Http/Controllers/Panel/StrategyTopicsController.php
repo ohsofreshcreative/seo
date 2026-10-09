@@ -209,8 +209,9 @@ final class StrategyTopicsController
 
 		try {
 			$data = $service->topicView($context, $publicId);
-			// Sekcja „Analiza AI”: wyłącznie odczyt zapisanych danych (bez pobierania stron i bez wywołań modelu).
-			$ai = osf_seo()->get(AiWorkspaceService::class)->topicSection($context, $data['topic']->publicId);
+			$state = $service->panelState($context);
+			// Sekcja „Analiza AI”: wyłącznie odczyt zapisanych danych (bez pobierania stron i bez wywołań modelu), z tych samych odczytów Strategii.
+			$ai = osf_seo()->get(AiWorkspaceService::class)->topicSectionFromView($context, $data, $state);
 		} catch (StrategyNotFound) {
 			return PanelResponse::notFound();
 		}
@@ -218,7 +219,7 @@ final class StrategyTopicsController
 		return response()->view('panel.strategy.topic', $data + [
 			'ai' => $ai,
 			'project' => $context->project(),
-			'state' => $service->panelState($context),
+			'state' => $state,
 			'canManage' => $context->can('osf_seo_manage_strategy'),
 			'canAnalyze' => $context->can('osf_seo_manage_strategy') && $context->can('osf_seo_manage_serp_tracking'),
 			'errors' => $errors,

@@ -41,6 +41,26 @@ final class RobotsTxtTest extends TestCase
 		self::assertFalse(RobotsTxt::parse("User-agent: *\nDisallow: /%7Ejan/\n", 'whack-a-mole')->allows('/~jan/'));
 	}
 
+	/** Faza E (audyt): błąd dopasowania wrogiego wzorca (limit backtrackingu) nie może otworzyć dostępu — brak zgody na pobranie. */
+	public function test_pattern_errors_fail_closed(): void
+	{
+		$robots = RobotsTxt::parse("User-agent: *\nDisallow: /*a*a*a*a*a*a*a*a*a*a*a*a*c\n", 'whack-a-mole');
+		$limit = ini_get('pcre.backtrack_limit');
+		$jit = ini_get('pcre.jit');
+		ini_set('pcre.jit', '0');
+		ini_set('pcre.backtrack_limit', '10000');
+
+		try {
+			self::assertFalse($robots->allows('/c' . str_repeat('a', 2000)));
+		} finally {
+			ini_set('pcre.backtrack_limit', (string) $limit);
+			ini_set('pcre.jit', (string) $jit);
+		}
+
+		self::assertTrue($robots->allows('/oferta/'), 'Ścieżka bez dopasowania pozostaje dozwolona.');
+		self::assertFalse(RobotsTxt::parse("User-agent: *\nDisallow: /**/tajne\n", 'whack-a-mole')->allows('/x/tajne'), 'Kolejne gwiazdki = jedna.');
+	}
+
 	public function test_policy_fetches_robots_once_and_treats_unreachable_as_disallowed(): void
 	{
 		$cache = new class implements RobotsCache {

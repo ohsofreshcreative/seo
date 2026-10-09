@@ -212,7 +212,7 @@ final class MigratorTest extends IntegrationTestCase
 
 		// Ponowne uruchomienie migracji 5 (np. utracona wersja schematu) jest bezpieczne.
 		update_option(Migrator::OPTION_VERSION, '4');
-		self::assertSame(['0005 create_opportunities', '0006 create_market_data', '0007 create_keyword_discovery', '0008 create_serp_tracking', '0009 create_keyword_gap', '0010 create_strategy', '0011 serp_intelligence', '0012 strategy_topics', '0013 strategy_panel', '0014 strategy_refresh_queue', '0015 ai_foundation', '0016 page_intelligence', '0017 ai_recommendations', '0018 page_jobs'], $this->migrator()->migrate());
+		self::assertSame(['0005 create_opportunities', '0006 create_market_data', '0007 create_keyword_discovery', '0008 create_serp_tracking', '0009 create_keyword_gap', '0010 create_strategy', '0011 serp_intelligence', '0012 strategy_topics', '0013 strategy_panel', '0014 strategy_refresh_queue', '0015 ai_foundation', '0016 page_intelligence', '0017 ai_recommendations', '0018 page_jobs', '0019 ai_evaluations'], $this->migrator()->migrate());
 		self::assertSame([], $inspector->problems());
 	}
 
@@ -258,7 +258,7 @@ final class MigratorTest extends IntegrationTestCase
 
 		// Ponowne uruchomienie migracji 6 (utracona wersja schematu) jest bezpieczne.
 		update_option(Migrator::OPTION_VERSION, '5');
-		self::assertSame(['0006 create_market_data', '0007 create_keyword_discovery', '0008 create_serp_tracking', '0009 create_keyword_gap', '0010 create_strategy', '0011 serp_intelligence', '0012 strategy_topics', '0013 strategy_panel', '0014 strategy_refresh_queue', '0015 ai_foundation', '0016 page_intelligence', '0017 ai_recommendations', '0018 page_jobs'], $this->migrator()->migrate());
+		self::assertSame(['0006 create_market_data', '0007 create_keyword_discovery', '0008 create_serp_tracking', '0009 create_keyword_gap', '0010 create_strategy', '0011 serp_intelligence', '0012 strategy_topics', '0013 strategy_panel', '0014 strategy_refresh_queue', '0015 ai_foundation', '0016 page_intelligence', '0017 ai_recommendations', '0018 page_jobs', '0019 ai_evaluations'], $this->migrator()->migrate());
 		self::assertSame([], $inspector->problems());
 		self::assertSame($before, $this->dataSnapshot());
 	}
@@ -321,7 +321,7 @@ final class MigratorTest extends IntegrationTestCase
 
 		// Ponowne uruchomienie migracji 7 (utracona wersja schematu) jest bezpieczne.
 		update_option(Migrator::OPTION_VERSION, '6');
-		self::assertSame(['0007 create_keyword_discovery', '0008 create_serp_tracking', '0009 create_keyword_gap', '0010 create_strategy', '0011 serp_intelligence', '0012 strategy_topics', '0013 strategy_panel', '0014 strategy_refresh_queue', '0015 ai_foundation', '0016 page_intelligence', '0017 ai_recommendations', '0018 page_jobs'], $this->migrator()->migrate());
+		self::assertSame(['0007 create_keyword_discovery', '0008 create_serp_tracking', '0009 create_keyword_gap', '0010 create_strategy', '0011 serp_intelligence', '0012 strategy_topics', '0013 strategy_panel', '0014 strategy_refresh_queue', '0015 ai_foundation', '0016 page_intelligence', '0017 ai_recommendations', '0018 page_jobs', '0019 ai_evaluations'], $this->migrator()->migrate());
 		self::assertSame([], $inspector->problems());
 		self::assertSame($before, $this->dataSnapshot());
 		self::assertSame($tasks, $rows('market_tasks'));
@@ -398,7 +398,7 @@ final class MigratorTest extends IntegrationTestCase
 
 		// Ponowne uruchomienie migracji 8 (utracona wersja schematu) jest bezpieczne.
 		update_option(Migrator::OPTION_VERSION, '7');
-		self::assertSame(['0008 create_serp_tracking', '0009 create_keyword_gap', '0010 create_strategy', '0011 serp_intelligence', '0012 strategy_topics', '0013 strategy_panel', '0014 strategy_refresh_queue', '0015 ai_foundation', '0016 page_intelligence', '0017 ai_recommendations', '0018 page_jobs'], $this->migrator()->migrate());
+		self::assertSame(['0008 create_serp_tracking', '0009 create_keyword_gap', '0010 create_strategy', '0011 serp_intelligence', '0012 strategy_topics', '0013 strategy_panel', '0014 strategy_refresh_queue', '0015 ai_foundation', '0016 page_intelligence', '0017 ai_recommendations', '0018 page_jobs', '0019 ai_evaluations'], $this->migrator()->migrate());
 		self::assertSame([], $inspector->problems());
 		self::assertSame($before, $this->dataSnapshot());
 	}
@@ -475,7 +475,7 @@ final class MigratorTest extends IntegrationTestCase
 
 		// Ponowne uruchomienie migracji 9 (utracona wersja schematu) jest bezpieczne.
 		update_option(Migrator::OPTION_VERSION, '8');
-		self::assertSame(['0009 create_keyword_gap', '0010 create_strategy', '0011 serp_intelligence', '0012 strategy_topics', '0013 strategy_panel', '0014 strategy_refresh_queue', '0015 ai_foundation', '0016 page_intelligence', '0017 ai_recommendations', '0018 page_jobs'], $this->migrator()->migrate());
+		self::assertSame(['0009 create_keyword_gap', '0010 create_strategy', '0011 serp_intelligence', '0012 strategy_topics', '0013 strategy_panel', '0014 strategy_refresh_queue', '0015 ai_foundation', '0016 page_intelligence', '0017 ai_recommendations', '0018 page_jobs', '0019 ai_evaluations'], $this->migrator()->migrate());
 		self::assertSame([], $inspector->problems());
 		self::assertSame($before, $this->dataSnapshot());
 		self::assertSame('gap', $db->fetchValue("SELECT source FROM `{$db->table('serp_tracked_keywords')}` WHERE market_keyword_id = 2"));
@@ -514,9 +514,9 @@ final class MigratorTest extends IntegrationTestCase
 		$inspector = new SchemaInspector(self::db());
 		self::assertSame([...self::schema11Enums("enum('manual','gsc','discovery','gap')"), ...self::schema10Tables(), ...self::schema11Tables(), ...self::schema12Tables(), ...self::schema15Tables(), ...self::schema16Tables(), ...self::schema18Tables()], $inspector->problems());
 
-		self::assertSame(['0010 create_strategy', '0011 serp_intelligence', '0012 strategy_topics', '0013 strategy_panel', '0014 strategy_refresh_queue', '0015 ai_foundation', '0016 page_intelligence', '0017 ai_recommendations', '0018 page_jobs'], $this->migrator()->migrate());
-		self::assertSame(18, $this->migrator()->currentVersion());
-		self::assertSame([], $inspector->problems(), 'Schemat 18 zgodny ze specyfikacją.');
+		self::assertSame(['0010 create_strategy', '0011 serp_intelligence', '0012 strategy_topics', '0013 strategy_panel', '0014 strategy_refresh_queue', '0015 ai_foundation', '0016 page_intelligence', '0017 ai_recommendations', '0018 page_jobs', '0019 ai_evaluations'], $this->migrator()->migrate());
+		self::assertSame(19, $this->migrator()->currentVersion());
+		self::assertSame([], $inspector->problems(), 'Schemat 19 zgodny ze specyfikacją.');
 		self::assertSame($before, $this->dataSnapshot(), 'Projekty, słownik i fakty GSC bez zmian.');
 
 		foreach ($existing as $table => $data) {
@@ -532,7 +532,7 @@ final class MigratorTest extends IntegrationTestCase
 
 		// Ponowne uruchomienie migracji 10 (utracona wersja schematu) jest bezpieczne.
 		update_option(Migrator::OPTION_VERSION, '9');
-		self::assertSame(['0010 create_strategy', '0011 serp_intelligence', '0012 strategy_topics', '0013 strategy_panel', '0014 strategy_refresh_queue', '0015 ai_foundation', '0016 page_intelligence', '0017 ai_recommendations', '0018 page_jobs'], $this->migrator()->migrate());
+		self::assertSame(['0010 create_strategy', '0011 serp_intelligence', '0012 strategy_topics', '0013 strategy_panel', '0014 strategy_refresh_queue', '0015 ai_foundation', '0016 page_intelligence', '0017 ai_recommendations', '0018 page_jobs', '0019 ai_evaluations'], $this->migrator()->migrate());
 		self::assertSame([], $inspector->problems());
 		self::assertSame($before, $this->dataSnapshot());
 	}
@@ -581,9 +581,9 @@ final class MigratorTest extends IntegrationTestCase
 		$inspector = new SchemaInspector(self::db());
 		self::assertSame([...self::schema11Enums("enum('manual','gsc','discovery','gap')"), ...self::settingsColumnsSince13(), ...self::schema12Columns(), ...self::schema11Tables(), ...self::schema12Tables(), ...self::schema15Tables(), ...self::schema16Tables(), ...self::schema18Tables()], $inspector->problems());
 
-		self::assertSame(['0011 serp_intelligence', '0012 strategy_topics', '0013 strategy_panel', '0014 strategy_refresh_queue', '0015 ai_foundation', '0016 page_intelligence', '0017 ai_recommendations', '0018 page_jobs'], $this->migrator()->migrate());
-		self::assertSame(18, $this->migrator()->currentVersion());
-		self::assertSame([], $inspector->problems(), 'Schemat 18 zgodny ze specyfikacją.');
+		self::assertSame(['0011 serp_intelligence', '0012 strategy_topics', '0013 strategy_panel', '0014 strategy_refresh_queue', '0015 ai_foundation', '0016 page_intelligence', '0017 ai_recommendations', '0018 page_jobs', '0019 ai_evaluations'], $this->migrator()->migrate());
+		self::assertSame(19, $this->migrator()->currentVersion());
+		self::assertSame([], $inspector->problems(), 'Schemat 19 zgodny ze specyfikacją.');
 		self::assertSame($before, $this->dataSnapshot(), 'Projekty, słownik i fakty GSC bez zmian.');
 
 		foreach ($existing as $table => $data) {
@@ -607,7 +607,7 @@ final class MigratorTest extends IntegrationTestCase
 
 		// Ponowne uruchomienie migracji 11 (utracona wersja schematu) jest bezpieczne.
 		update_option(Migrator::OPTION_VERSION, '10');
-		self::assertSame(['0011 serp_intelligence', '0012 strategy_topics', '0013 strategy_panel', '0014 strategy_refresh_queue', '0015 ai_foundation', '0016 page_intelligence', '0017 ai_recommendations', '0018 page_jobs'], $this->migrator()->migrate());
+		self::assertSame(['0011 serp_intelligence', '0012 strategy_topics', '0013 strategy_panel', '0014 strategy_refresh_queue', '0015 ai_foundation', '0016 page_intelligence', '0017 ai_recommendations', '0018 page_jobs', '0019 ai_evaluations'], $this->migrator()->migrate());
 		self::assertSame([], $inspector->problems());
 		self::assertSame($before, $this->dataSnapshot());
 		self::assertSame('analysis', $db->fetchValue("SELECT status FROM `{$db->table('serp_tracked_keywords')}` WHERE market_keyword_id = 2"));
@@ -651,9 +651,9 @@ final class MigratorTest extends IntegrationTestCase
 		$inspector = new SchemaInspector(self::db());
 		self::assertSame([...self::settingsColumnsSince13(), ...self::schema12Columns(), ...self::schema12Tables(), ...self::schema15Tables(), ...self::schema16Tables(), ...self::schema18Tables()], $inspector->problems());
 
-		self::assertSame(['0012 strategy_topics', '0013 strategy_panel', '0014 strategy_refresh_queue', '0015 ai_foundation', '0016 page_intelligence', '0017 ai_recommendations', '0018 page_jobs'], $this->migrator()->migrate());
-		self::assertSame(18, $this->migrator()->currentVersion());
-		self::assertSame([], $inspector->problems(), 'Schemat 18 zgodny ze specyfikacją.');
+		self::assertSame(['0012 strategy_topics', '0013 strategy_panel', '0014 strategy_refresh_queue', '0015 ai_foundation', '0016 page_intelligence', '0017 ai_recommendations', '0018 page_jobs', '0019 ai_evaluations'], $this->migrator()->migrate());
+		self::assertSame(19, $this->migrator()->currentVersion());
+		self::assertSame([], $inspector->problems(), 'Schemat 19 zgodny ze specyfikacją.');
 		self::assertSame($before, $this->dataSnapshot(), 'Projekty, słownik i fakty GSC bez zmian.');
 
 		foreach ($existing as $table => $data) {
@@ -682,7 +682,7 @@ final class MigratorTest extends IntegrationTestCase
 
 		// Ponowne uruchomienie migracji 12 (utracona wersja schematu) jest bezpieczne i nie kasuje danych.
 		update_option(Migrator::OPTION_VERSION, '11');
-		self::assertSame(['0012 strategy_topics', '0013 strategy_panel', '0014 strategy_refresh_queue', '0015 ai_foundation', '0016 page_intelligence', '0017 ai_recommendations', '0018 page_jobs'], $this->migrator()->migrate());
+		self::assertSame(['0012 strategy_topics', '0013 strategy_panel', '0014 strategy_refresh_queue', '0015 ai_foundation', '0016 page_intelligence', '0017 ai_recommendations', '0018 page_jobs', '0019 ai_evaluations'], $this->migrator()->migrate());
 		self::assertSame([], $inspector->problems());
 		self::assertSame($before, $this->dataSnapshot());
 		self::assertSame('1', (string) $db->fetchValue("SELECT topic_id FROM `{$db->table('strategy_keywords')}` WHERE public_id = '01J0000000000000000000STR2'"));
@@ -724,9 +724,9 @@ final class MigratorTest extends IntegrationTestCase
 		$inspector = new SchemaInspector(self::db());
 		self::assertSame([...self::settingsColumnsSince13(), 'column strategy_keywords.serp_intel_at is missing', ...self::schema13TopicColumns(), ...self::schema15Tables(), ...self::schema16Tables(), ...self::schema18Tables()], $inspector->problems());
 
-		self::assertSame(['0013 strategy_panel', '0014 strategy_refresh_queue', '0015 ai_foundation', '0016 page_intelligence', '0017 ai_recommendations', '0018 page_jobs'], $this->migrator()->migrate());
-		self::assertSame(18, $this->migrator()->currentVersion());
-		self::assertSame([], $inspector->problems(), 'Schemat 18 zgodny ze specyfikacją.');
+		self::assertSame(['0013 strategy_panel', '0014 strategy_refresh_queue', '0015 ai_foundation', '0016 page_intelligence', '0017 ai_recommendations', '0018 page_jobs', '0019 ai_evaluations'], $this->migrator()->migrate());
+		self::assertSame(19, $this->migrator()->currentVersion());
+		self::assertSame([], $inspector->problems(), 'Schemat 19 zgodny ze specyfikacją.');
 		self::assertSame($before, $this->dataSnapshot());
 		$topicDefaults = ['sources' => '0', 'serp_rank' => null, 'serp_checked_at' => null, 'gsc_impressions' => null, 'gsc_position' => null];
 
@@ -742,7 +742,7 @@ final class MigratorTest extends IntegrationTestCase
 
 		// Ponowne uruchomienie migracji 13 jest bezpieczne.
 		update_option(Migrator::OPTION_VERSION, '12');
-		self::assertSame(['0013 strategy_panel', '0014 strategy_refresh_queue', '0015 ai_foundation', '0016 page_intelligence', '0017 ai_recommendations', '0018 page_jobs'], $this->migrator()->migrate());
+		self::assertSame(['0013 strategy_panel', '0014 strategy_refresh_queue', '0015 ai_foundation', '0016 page_intelligence', '0017 ai_recommendations', '0018 page_jobs', '0019 ai_evaluations'], $this->migrator()->migrate());
 		self::assertSame([], $inspector->problems());
 		self::assertSame('completed', $db->fetchValue("SELECT status FROM `{$db->table('strategy_topics')}` WHERE public_id = '01J0000000000000000000TOP2'"));
 	}
@@ -775,9 +775,9 @@ final class MigratorTest extends IntegrationTestCase
 			...self::schema15Tables(), ...self::schema16Tables(), ...self::schema18Tables(),
 		], $inspector->problems());
 
-		self::assertSame(['0014 strategy_refresh_queue', '0015 ai_foundation', '0016 page_intelligence', '0017 ai_recommendations', '0018 page_jobs'], $this->migrator()->migrate());
-		self::assertSame(18, $this->migrator()->currentVersion());
-		self::assertSame([], $inspector->problems(), 'Schemat 18 zgodny ze specyfikacją.');
+		self::assertSame(['0014 strategy_refresh_queue', '0015 ai_foundation', '0016 page_intelligence', '0017 ai_recommendations', '0018 page_jobs', '0019 ai_evaluations'], $this->migrator()->migrate());
+		self::assertSame(19, $this->migrator()->currentVersion());
+		self::assertSame([], $inspector->problems(), 'Schemat 19 zgodny ze specyfikacją.');
 		self::assertSame($before, $this->dataSnapshot());
 		self::assertSame(array_map(static fn (array $row): array => $row + self::schema14SettingsDefaults(), $existing['strategy_settings']), $rows('strategy_settings'), 'Klucz danych, wynik przeliczenia i zlecenie z panelu zachowane; zadanie bezczynne.');
 		self::assertSame($existing['strategy_topics'], $rows('strategy_topics'), 'Tematy i decyzje użytkownika bez zmian.');
@@ -786,7 +786,7 @@ final class MigratorTest extends IntegrationTestCase
 		// Ponowne uruchomienie migracji 14 jest bezpieczne i nie zmienia stanu zadania.
 		$db->execute("UPDATE `{$db->table('strategy_settings')}` SET refresh_status = 'queued', refresh_source = 'manual', refresh_due_at = %s WHERE project_id = 1", [$now]);
 		update_option(Migrator::OPTION_VERSION, '13');
-		self::assertSame(['0014 strategy_refresh_queue', '0015 ai_foundation', '0016 page_intelligence', '0017 ai_recommendations', '0018 page_jobs'], $this->migrator()->migrate());
+		self::assertSame(['0014 strategy_refresh_queue', '0015 ai_foundation', '0016 page_intelligence', '0017 ai_recommendations', '0018 page_jobs', '0019 ai_evaluations'], $this->migrator()->migrate());
 		self::assertSame([], $inspector->problems());
 		self::assertSame(['queued', 'manual'], array_values($db->fetchRow("SELECT refresh_status, refresh_source FROM `{$db->table('strategy_settings')}` WHERE project_id = 1") ?? []));
 	}
@@ -816,9 +816,9 @@ final class MigratorTest extends IntegrationTestCase
 		$inspector = new SchemaInspector(self::db());
 		self::assertSame([...self::schema15Tables(), ...self::schema16Tables(), ...self::schema18Tables()], $inspector->problems());
 
-		self::assertSame(['0015 ai_foundation', '0016 page_intelligence', '0017 ai_recommendations', '0018 page_jobs'], $this->migrator()->migrate());
-		self::assertSame(18, $this->migrator()->currentVersion());
-		self::assertSame([], $inspector->problems(), 'Schemat 18 zgodny ze specyfikacją.');
+		self::assertSame(['0015 ai_foundation', '0016 page_intelligence', '0017 ai_recommendations', '0018 page_jobs', '0019 ai_evaluations'], $this->migrator()->migrate());
+		self::assertSame(19, $this->migrator()->currentVersion());
+		self::assertSame([], $inspector->problems(), 'Schemat 19 zgodny ze specyfikacją.');
 		self::assertSame($before, $this->dataSnapshot());
 
 		foreach ($existing as $table => $data) {
@@ -839,7 +839,7 @@ final class MigratorTest extends IntegrationTestCase
 		$db->insert($db->table('ai_run_payloads'), ['run_id' => 1, 'project_id' => 1, 'input' => '{"keyword":"pozycjonowanie łódź"}']);
 		self::assertSame('{"keyword":"pozycjonowanie łódź"}', $db->fetchValue("SELECT input FROM `{$db->table('ai_run_payloads')}` WHERE run_id = 1"));
 		update_option(Migrator::OPTION_VERSION, '14');
-		self::assertSame(['0015 ai_foundation', '0016 page_intelligence', '0017 ai_recommendations', '0018 page_jobs'], $this->migrator()->migrate());
+		self::assertSame(['0015 ai_foundation', '0016 page_intelligence', '0017 ai_recommendations', '0018 page_jobs', '0019 ai_evaluations'], $this->migrator()->migrate());
 		self::assertSame([], $inspector->problems());
 		self::assertSame('1', $db->fetchValue("SELECT COUNT(*) FROM `{$db->table('ai_runs')}`"));
 	}
@@ -873,9 +873,9 @@ final class MigratorTest extends IntegrationTestCase
 		$inspector = new SchemaInspector(self::db());
 		self::assertSame(['column ai_runs.evidence_fingerprint is missing', ...self::schema17Columns(), ...self::schema16Tables(), ...self::schema18Tables()], $inspector->problems());
 
-		self::assertSame(['0016 page_intelligence', '0017 ai_recommendations', '0018 page_jobs'], $this->migrator()->migrate());
-		self::assertSame(18, $this->migrator()->currentVersion());
-		self::assertSame([], $inspector->problems(), 'Schemat 18 zgodny ze specyfikacją.');
+		self::assertSame(['0016 page_intelligence', '0017 ai_recommendations', '0018 page_jobs', '0019 ai_evaluations'], $this->migrator()->migrate());
+		self::assertSame(19, $this->migrator()->currentVersion());
+		self::assertSame([], $inspector->problems(), 'Schemat 19 zgodny ze specyfikacją.');
 		self::assertSame($before, $this->dataSnapshot());
 		self::assertSame($existing['strategy_topics'], $rows('strategy_topics'));
 		self::assertSame($existing['ai_run_payloads'], $rows('ai_run_payloads'));
@@ -902,7 +902,7 @@ final class MigratorTest extends IntegrationTestCase
 		]);
 		self::assertSame('Strony WWW — Łódź', $db->fetchValue("SELECT title FROM `{$db->table('page_snapshots')}` WHERE id = 1"));
 		update_option(Migrator::OPTION_VERSION, '15');
-		self::assertSame(['0016 page_intelligence', '0017 ai_recommendations', '0018 page_jobs'], $this->migrator()->migrate());
+		self::assertSame(['0016 page_intelligence', '0017 ai_recommendations', '0018 page_jobs', '0019 ai_evaluations'], $this->migrator()->migrate());
 		self::assertSame([], $inspector->problems());
 		self::assertSame('1', $db->fetchValue("SELECT COUNT(*) FROM `{$db->table('page_snapshots')}`"));
 	}
@@ -926,9 +926,9 @@ final class MigratorTest extends IntegrationTestCase
 		$inspector = new SchemaInspector(self::db());
 		self::assertSame([...self::schema17Columns(), ...self::schema18Tables()], $inspector->problems());
 
-		self::assertSame(['0017 ai_recommendations', '0018 page_jobs'], $this->migrator()->migrate());
-		self::assertSame(18, $this->migrator()->currentVersion());
-		self::assertSame([], $inspector->problems(), 'Schemat 18 zgodny ze specyfikacją.');
+		self::assertSame(['0017 ai_recommendations', '0018 page_jobs', '0019 ai_evaluations'], $this->migrator()->migrate());
+		self::assertSame(19, $this->migrator()->currentVersion());
+		self::assertSame([], $inspector->problems(), 'Schemat 19 zgodny ze specyfikacją.');
 		self::assertSame($before, $this->dataSnapshot());
 		self::assertSame(array_map(static fn (array $row): array => $row + ['plan_fingerprint' => null, 'readiness' => null, 'sources' => null], $runs), $db->fetchAll("SELECT * FROM `{$db->table('ai_runs')}` ORDER BY id"), 'Historia AI zachowana (typ analizy w istniejącej kolumnie task).');
 		self::assertSame($payloads, $db->fetchAll("SELECT * FROM `{$db->table('ai_run_payloads')}` ORDER BY run_id"));
@@ -937,7 +937,7 @@ final class MigratorTest extends IntegrationTestCase
 		// Polski tekst w źródłach analizy; ponowne uruchomienie migracji 17 jest bezpieczne.
 		$db->update($db->table('ai_runs'), ['sources' => '{"limitations":["żółć"]}', 'readiness' => 'partial'], ['id' => 1]);
 		update_option(Migrator::OPTION_VERSION, '16');
-		self::assertSame(['0017 ai_recommendations', '0018 page_jobs'], $this->migrator()->migrate());
+		self::assertSame(['0017 ai_recommendations', '0018 page_jobs', '0019 ai_evaluations'], $this->migrator()->migrate());
 		self::assertSame([], $inspector->problems());
 		self::assertSame('{"limitations":["żółć"]}', $db->fetchValue("SELECT sources FROM `{$db->table('ai_runs')}` WHERE id = 1"));
 	}
@@ -964,9 +964,9 @@ final class MigratorTest extends IntegrationTestCase
 		$inspector = new SchemaInspector(self::db());
 		self::assertSame(self::schema18Tables(), $inspector->problems());
 
-		self::assertSame(['0018 page_jobs'], $this->migrator()->migrate());
-		self::assertSame(18, $this->migrator()->currentVersion());
-		self::assertSame([], $inspector->problems(), 'Schemat 18 zgodny ze specyfikacją.');
+		self::assertSame(['0018 page_jobs', '0019 ai_evaluations'], $this->migrator()->migrate());
+		self::assertSame(19, $this->migrator()->currentVersion());
+		self::assertSame([], $inspector->problems(), 'Schemat 19 zgodny ze specyfikacją.');
 		self::assertSame($before, $this->dataSnapshot());
 		self::assertSame($runs, $db->fetchAll("SELECT * FROM `{$db->table('ai_runs')}` ORDER BY id"), 'Historia AI bez zmian (status „queued” mieści się w istniejącej kolumnie).');
 		self::assertSame($targets, $db->fetchAll("SELECT * FROM `{$db->table('page_targets')}` ORDER BY id"));
@@ -978,20 +978,56 @@ final class MigratorTest extends IntegrationTestCase
 			'request_key' => hash('sha256', 'k', true), 'created_at' => $now, 'run_after' => $now,
 		]);
 		update_option(Migrator::OPTION_VERSION, '17');
-		self::assertSame(['0018 page_jobs'], $this->migrator()->migrate());
+		self::assertSame(['0018 page_jobs', '0019 ai_evaluations'], $this->migrator()->migrate());
 		self::assertSame([], $inspector->problems());
 		self::assertSame('[{"url":"https://example.pl/łódź/"}]', $db->fetchValue("SELECT items FROM `{$db->table('page_jobs')}` WHERE id = 1"));
 		self::assertSame('queued', $db->fetchValue("SELECT status FROM `{$db->table('page_jobs')}` WHERE id = 1"));
 	}
 
+	public function test_upgrade_from_schema_18_adds_ai_evaluations_and_keeps_runs_and_jobs(): void
+	{
+		// Stan po fazie D STEP 17: schemat 18 z analizą i zleceniem pobrania.
+		$this->migrator(array_slice(Migrator::defaultMigrations(), 0, 18))->migrate();
+		$this->seedData();
+		$db = self::db();
+		$now = gmdate('Y-m-d H:i:s');
+		$db->insert($db->table('ai_runs'), [
+			'public_id' => '01J0000000000000000000AIR5', 'project_id' => 1, 'topic_id' => 1, 'task' => 'content_gap', 'provider' => 'fake', 'model' => 'fake-1',
+			'prompt_version' => 'content-gap.v1', 'context_version' => 3, 'contract_version' => 2, 'context_fingerprint' => hash('sha256', 'a', true),
+			'status' => 'queued', 'trigger_type' => 'panel', 'created_at' => $now,
+		]);
+		$before = $this->dataSnapshot();
+		$runs = $db->fetchAll("SELECT * FROM `{$db->table('ai_runs')}` ORDER BY id");
+		$inspector = new SchemaInspector(self::db());
+		self::assertSame(['table ai_evaluations is missing'], $inspector->problems());
+
+		self::assertSame(['0019 ai_evaluations'], $this->migrator()->migrate());
+		self::assertSame(19, $this->migrator()->currentVersion());
+		self::assertSame([], $inspector->problems(), 'Schemat 19 zgodny ze specyfikacją.');
+		self::assertSame($before, $this->dataSnapshot());
+		self::assertSame($runs, $db->fetchAll("SELECT * FROM `{$db->table('ai_runs')}` ORDER BY id"));
+		self::assertSame(['unique' => true, 'columns' => ['run_id', 'evaluator_id']], $inspector->inspect()['ai_evaluations']['indexes']['run_evaluator']);
+
+		// Ocena z polską notatką; ponowne uruchomienie migracji 19 jest bezpieczne.
+		$db->insert($db->table('ai_evaluations'), [
+			'public_id' => '01J0000000000000000000EVA1', 'project_id' => 1, 'run_id' => 1, 'evaluator_id' => 1, 'task' => 'content_gap', 'provider' => 'fake',
+			'model' => 'fake-1', 'prompt_version' => 'content-gap.v1', 'contract_version' => 2, 'rubric_version' => 1, 'scores' => '{"specificity":3}', 'issues' => '[]',
+			'verdict' => 'rejected', 'fix_action' => 'fix_prompt', 'notes' => 'Zażółć gęślą jaźń — rekomendacja R2 zbyt ogólna.', 'created_at' => $now, 'updated_at' => $now,
+		]);
+		update_option(Migrator::OPTION_VERSION, '18');
+		self::assertSame(['0019 ai_evaluations'], $this->migrator()->migrate());
+		self::assertSame([], $inspector->problems());
+		self::assertSame('Zażółć gęślą jaźń — rekomendacja R2 zbyt ogólna.', $db->fetchValue("SELECT notes FROM `{$db->table('ai_evaluations')}` WHERE id = 1"));
+	}
+
 	/**
-	 * Tabele schematu 18 (zlecenia pobrania stron z panelu) — braki zgłaszane na końcu listy.
+	 * Tabele schematów 18 i 19 (zlecenia pobrania stron z panelu, oceny jakości analiz AI) — braki zgłaszane na końcu listy.
 	 *
 	 * @return list<string>
 	 */
 	private static function schema18Tables(): array
 	{
-		return ['table page_jobs is missing'];
+		return ['table page_jobs is missing', 'table ai_evaluations is missing'];
 	}
 
 	/**

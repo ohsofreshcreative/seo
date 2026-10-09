@@ -50,8 +50,19 @@ define('OSF_SEO_AI_PROJECT_MONTHLY_LIMIT', '2.00');
 define('OSF_SEO_AI_ENABLED', '1');
 ```
 
-Opcjonalnie: `OSF_SEO_AI_MAX_OUTPUT_TOKENS` (domyślnie 3000), `OSF_SEO_AI_TIMEOUT` (90 s), `OSF_SEO_AI_TEMPERATURE` (wysyłana tylko, gdy
-ustawiona — część modeli jej nie obsługuje), `OSF_SEO_AI_RETENTION_DAYS` (historia, domyślnie 180 dni).
+Opcjonalnie: `OSF_SEO_AI_MAX_OUTPUT_TOKENS` (domyślnie 3000; obejmuje tokeny rozumowania — dla analiz rekomendacji zalecane 8000),
+`OSF_SEO_AI_TIMEOUT` (90 s; zalecane 240), `OSF_SEO_AI_REASONING_EFFORT` (`none|minimal|low|medium|high|xhigh|max` — wysyłany tylko, gdy
+ustawiony; wartość nieobsługiwana przez model = odmowa dostawcy bez kosztu, wartość spoza listy blokuje płatne wywołanie),
+`OSF_SEO_AI_PRICE_CACHE_WRITE_PER_MTOK` (tylko gdy cennik modelu nalicza zapis do cache inaczej niż wejście), `OSF_SEO_AI_TEMPERATURE`
+(wysyłana tylko, gdy ustawiona — modele rozumujące zwykle jej nie obsługują; nie ustawiaj), `OSF_SEO_AI_RETENTION_DAYS` (historia,
+domyślnie 180 dni).
+
+Tryb kontrolowanego testu (faza E): `OSF_SEO_AI_ALLOWED_PROJECTS` (identyfikatory publiczne projektów, rozdzielone przecinkami) i
+`OSF_SEO_AI_ALLOWED_TYPES` (`page-optimization`, `new-page-brief`, `content-gap`, `topic-analysis`) — płatne analizy tylko w tym zakresie,
+sprawdzane przy planie i ponownie przy wykonaniu z kolejki. Procedura pierwszych płatnych testów: **`docs/AI-LIVE-TESTING.md`**.
+
+Adapter wysyła `service_tier: default` (ceny z konfiguracji = przetwarzanie standardowe) i `store: false`; z odpowiedzi czyta tylko
+wiadomości końcowe (`final_answer`), zużycie (także tokeny z cache i rozumowania) oraz model i poziom przetwarzania (do logu).
 
 ## 3. Uprawnienia
 
@@ -77,6 +88,8 @@ wp osf-seo ai:plan --project=<id> --topic="<fraza>" --provider=openai      # pla
 | `missing_prices` | ustaw ceny wejścia i wyjścia |
 | `run_cost_limit`, `budget_daily`, `budget_monthly`, `budget_project` | podnieś odpowiedni limit albo poczekaj na nowy dzień / miesiąc (UTC) |
 | `context_too_large` | kontekst tematu przekracza 32 KB mimo redukcji — zgłoś zespołowi |
+| `project_not_allowed`, `type_not_allowed` | tryb kontrolowanego testu — dopisz projekt / typ do `OSF_SEO_AI_ALLOWED_*` |
+| `invalid_reasoning_effort` | popraw `OSF_SEO_AI_REASONING_EFFORT` (jedna z wartości z rozdziału 2) |
 
 ## 5. Pierwsze uruchomienie
 
@@ -101,7 +114,15 @@ wp osf-seo ai:generate … --provider=openai --yes --plan=<odcisk planu z ai:pla
 Zmiana kontekstu (np. nowy snapshot strony), modelu, cen albo limitu tokenów po podglądzie → odmowa `plan_changed` (trzeba ponownie
 obejrzeć plan). Gotowość `insufficient` / `blocked` → odmowa bez żadnego wywołania.
 
+Jedno zatwierdzenie = jedno wywołanie: plan już wysłany i rozliczony bez gotowego wyniku (wynik niepewny, niepoprawny, przerwany na limicie)
+nie zostanie wysłany ponownie przez ponowne przesłanie formularza ani `--plan` (`plan_already_used`) — tylko świadomie (`--repeat` albo
+„Wyślij ponownie świadomie” w panelu, nowy koszt). Odmowa dostawcy bez kosztu (np. 429) nie zużywa zatwierdzenia.
+
+W panelu (faza D) analizę zleca się na ekranie przygotowania (temat → „Analiza AI” → Przygotuj); wykonuje ją przetwarzanie w tle (cron —
+`docs/HOSTINGER-CRON.md`). Ocena jakości wyników przez eksperta: `wp osf-seo ai:eval …` (`docs/AI-LIVE-TESTING.md`, rozdział 6).
+
 ## 6. Wyłączenie
 
-Usuń albo ustaw na `0` stałą `OSF_SEO_AI_ENABLED` — płatne wywołania są natychmiast blokowane (historia zostaje). Klucz można usunąć
+Usuń albo ustaw na `0` stałą `OSF_SEO_AI_ENABLED` — płatne wywołania są natychmiast blokowane (historia zostaje), a płatne analizy
+czekające w kolejce panelu kończą się bez wywołania (`ai_disabled`, rezerwacja zwolniona). Dostawca testowy działa dalej. Klucz można usunąć
 z `wp-config.php` w dowolnej chwili; po rotacji klucza w panelu dostawcy wystarczy podmienić wartość stałej.

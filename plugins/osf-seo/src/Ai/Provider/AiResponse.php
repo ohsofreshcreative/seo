@@ -14,6 +14,7 @@ final class AiResponse
 		public readonly ?AiUsage $usage,
 		public readonly ?string $responseId = null,
 		public readonly ?string $model = null,
+		public readonly ?string $serviceTier = null,
 	) {
 	}
 

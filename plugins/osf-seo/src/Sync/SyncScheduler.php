@@ -23,6 +23,12 @@ final class SyncScheduler
 
 	private const PLANNED_TRANSIENT = 'osf_seo_sync_planned';
 
+	/** Znacznik życia kroków po kolejce (UTC) — także gdy kolejka GSC jest zajęta albo pusta; diagnostyka kolejek AI i stron. */
+	public const BACKGROUND_HEARTBEAT_OPTION = 'osf_seo_background_heartbeat';
+
+	/** Brak znacznika życia tła dłużej niż tyle sekund — panel i CLI ostrzegają, że cron nie działa. */
+	public const BACKGROUND_STALE_SECONDS = 900;
+
 	/** @var list<\Closure(): mixed> */
 	private array $followUps = [];
 
@@ -75,10 +81,12 @@ final class SyncScheduler
 			$this->planAll();
 		}
 
-		$report = $this->runner->run($this->config->timeBudget(), SyncConfig::MAX_JOBS_PER_RUN);
-		$this->runFollowUps();
-
-		return $report;
+		try {
+			return $this->runner->run($this->config->timeBudget(), SyncConfig::MAX_JOBS_PER_RUN);
+		} finally {
+			// Błąd importu GSC nie zatrzymuje kolejek AI, stron i Strategii (każdy krok ma własne blokady).
+			$this->runFollowUps();
+		}
 	}
 
 	/**
@@ -95,6 +103,7 @@ final class SyncScheduler
 	public function runFollowUps(): void
 	{
 		$this->runStartedAt ??= microtime(true);
+		update_option(self::BACKGROUND_HEARTBEAT_OPTION, gmdate('Y-m-d H:i:s'), false);
 
 		try {
 			foreach ($this->followUps as $step) {
@@ -118,6 +127,20 @@ final class SyncScheduler
 		$elapsed = $this->runStartedAt === null ? 0.0 : microtime(true) - $this->runStartedAt;
 
 		return max(0.0, (float) $this->config->timeBudget() - $elapsed);
+	}
+
+	/**
+	 * Stan przetwarzania w tle (bez sekretów): ostatni przebieg kroków po kolejce i czy jest przeterminowany (cron nie działa).
+	 *
+	 * @return array{heartbeat: ?string, age_seconds: ?int, stale: bool}
+	 */
+	public static function backgroundHealth(?int $now = null): array
+	{
+		$heartbeat = get_option(self::BACKGROUND_HEARTBEAT_OPTION, null);
+		$heartbeat = is_string($heartbeat) && $heartbeat !== '' ? $heartbeat : null;
+		$age = $heartbeat === null ? null : max(0, ($now ?? time()) - (int) strtotime($heartbeat . ' UTC'));
+
+		return ['heartbeat' => $heartbeat, 'age_seconds' => $age, 'stale' => $age === null || $age > self::BACKGROUND_STALE_SECONDS];
 	}
 
 	/** Planowanie wszystkich kwalifikujących się projektów (codzienne odświeżanie, wznowienie łańcuchów). */

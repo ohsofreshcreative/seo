@@ -218,10 +218,43 @@
         </dd>
       </div>
       <div class="flex justify-between gap-4 py-3">
+        <dt class="text-slate-500">Żądanie do modelu</dt>
+        <dd class="text-right font-medium text-slate-900">
+          maks. {{ number_format($aiConfig['max_output_tokens'], 0, ',', ' ') }} tokenów odpowiedzi; limit czasu {{ $aiConfig['timeout'] }} s; wysiłek rozumowania: {{ $aiConfig['reasoning_effort'] ?? 'domyślny modelu' }}
+          <span class="block text-xs font-normal text-slate-500">jedno wywołanie na jedno zatwierdzenie planu, bez automatycznych ponowień</span>
+        </dd>
+      </div>
+      <div class="flex justify-between gap-4 py-3">
+        <dt class="text-slate-500">Tryb testu kontrolowanego</dt>
+        <dd class="min-w-0 break-all text-right font-medium text-slate-900">
+          @if ($aiConfig['live_test']['projects'] === [] && $aiConfig['live_test']['types'] === [])
+            bez ograniczeń (wszystkie projekty i typy)
+          @else
+            projekty: {{ $aiConfig['live_test']['projects'] === [] ? 'wszystkie' : implode(', ', $aiConfig['live_test']['projects']) }};
+            typy: {{ $aiConfig['live_test']['types'] === [] ? 'wszystkie' : implode(', ', array_map(static fn (string $type): string => \OsfSeo\Ai\Workspace\ReportLabels::type($type), $aiConfig['live_test']['types'])) }}
+          @endif
+          <span class="block text-xs font-normal text-slate-500">płatne analizy tylko dla wskazanych w OSF_SEO_AI_ALLOWED_PROJECTS / OSF_SEO_AI_ALLOWED_TYPES</span>
+        </dd>
+      </div>
+      <div class="flex justify-between gap-4 py-3">
         <dt class="text-slate-500">Kolejka analiz AI</dt>
         <dd class="text-right font-medium text-slate-900">
           w kolejce: {{ $ai['runs']['queued'] ?? 0 }}, w trakcie: {{ ($ai['runs']['running'] ?? 0) + ($ai['runs']['reserved'] ?? 0) }}, niepewne: {{ $ai['runs']['uncertain'] ?? 0 }}
           <span class="block text-xs font-normal text-slate-500">wykonuje przetwarzanie w tle (WP-Cron albo wp osf-seo sync:run); bez automatycznego harmonogramu analiz i bez ponowień</span>
+          @if ($ai['queue']['stuck'])
+            <span class="mt-1 block text-xs font-normal text-amber-700">Zlecenia czekają od {{ \App\Panel\Format::datetime($ai['queue']['oldest_queued']) }}, a przetwarzanie w tle nie działa — sprawdź cron serwera.</span>
+          @endif
+        </dd>
+      </div>
+      <div class="flex justify-between gap-4 py-3">
+        <dt class="text-slate-500">Przetwarzanie w tle</dt>
+        <dd @class(['text-right font-medium', 'text-amber-700' => $ai['background']['stale'], 'text-slate-900' => ! $ai['background']['stale']])>
+          @if ($ai['background']['heartbeat'] === null)
+            jeszcze nie uruchomione
+          @else
+            ostatni przebieg {{ \App\Panel\Format::datetime($ai['background']['heartbeat']) }}{{ $ai['background']['stale'] ? ' — dawno, sprawdź cron serwera' : '' }}
+          @endif
+          <span class="block text-xs font-normal text-slate-500">kolejki analiz AI, pobierania stron i Strategii (co minutę: WP-Cron albo cron systemowy z wp osf-seo sync:run)</span>
         </dd>
       </div>
       <div class="flex justify-between gap-4 py-3">

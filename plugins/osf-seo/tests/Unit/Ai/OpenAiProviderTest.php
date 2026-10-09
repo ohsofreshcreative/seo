@@ -22,7 +22,7 @@ use PHPUnit\Framework\TestCase;
  */
 final class OpenAiProviderTest extends TestCase
 {
-	private const ENV = [AiConfig::OPENAI_API_KEY, AiConfig::MODEL];
+	private const ENV = [AiConfig::OPENAI_API_KEY, AiConfig::MODEL, AiConfig::REASONING_EFFORT, AiConfig::PRICE_INPUT, AiConfig::PRICE_OUTPUT, AiConfig::PRICE_CACHED_INPUT, AiConfig::PRICE_CACHE_WRITE];
 
 	protected function tearDown(): void
 	{
@@ -41,16 +41,17 @@ final class OpenAiProviderTest extends TestCase
 		self::assertSame(['POST', 'https://api.openai.com/v1/responses'], [$http->requests[0]['method'], $http->requests[0]['url']]);
 		self::assertSame('Bearer ' . AiFakes::apiKey(), $http->requests[0]['headers']['Authorization']);
 		$body = json_decode((string) $http->requests[0]['body'], true);
-		self::assertSame(['model', 'instructions', 'input', 'text', 'max_output_tokens', 'store'], array_keys($body));
+		self::assertSame(['model', 'instructions', 'input', 'text', 'max_output_tokens', 'store', 'service_tier'], array_keys($body));
 		self::assertSame('test-model-1', $body['model']);
 		self::assertFalse($body['store']);
+		self::assertSame('default', $body['service_tier'], 'Ceny z konfiguracji dotyczą przetwarzania standardowego (nie `auto` z ustawień projektu).');
 		self::assertSame(2000, $body['max_output_tokens']);
 		self::assertSame(['type' => 'json_schema', 'name' => AnalysisContract::NAME, 'schema' => AnalysisContract::schema(), 'strict' => true], $body['text']['format']);
 		self::assertStringNotContainsString('hints', (string) $http->requests[0]['body']);
 		self::assertStringNotContainsString(AiFakes::apiKey(), (string) $http->requests[0]['body']);
 
 		self::assertSame('{"ok":true}', $response->text);
-		self::assertSame(['input' => 1200, 'cached' => 200, 'output' => 300, 'reasoning' => 100], $response->usage?->toArray());
+		self::assertSame(['input' => 1200, 'cached' => 200, 'cache_write' => 0, 'output' => 300, 'reasoning' => 100], $response->usage?->toArray());
 		self::assertSame('test-model-1', $response->model);
 		self::assertStringStartsWith('resp_', (string) $response->responseId);
 	}
@@ -60,6 +61,70 @@ final class OpenAiProviderTest extends TestCase
 		$request = new AiRequest('test-model-1', 'i', 'x', AnalysisContract::NAME, AnalysisContract::schema(), 500, 0.2);
 		self::assertSame(0.2, json_decode(OpenAiProvider::body($request), true)['temperature']);
 		self::assertArrayNotHasKey('temperature', json_decode(OpenAiProvider::body($this->request()), true));
+	}
+
+	/** Faza E: `reasoning.effort` tylko z konfiguracji (wartości ze specyfikacji), niepoprawna wartość blokuje płatne wywołanie. */
+	public function test_reasoning_effort_is_sent_only_when_configured_and_validated(): void
+	{
+		$request = new AiRequest('test-model-1', 'i', 'x', AnalysisContract::NAME, AnalysisContract::schema(), 500, null, [], 'low');
+		self::assertSame(['effort' => 'low'], json_decode(OpenAiProvider::body($request), true)['reasoning']);
+		self::assertArrayNotHasKey('reasoning', json_decode(OpenAiProvider::body($this->request()), true));
+
+		putenv(AiConfig::REASONING_EFFORT . '=LOW');
+		self::assertSame('low', (new AiConfig())->reasoningEffort());
+		putenv(AiConfig::REASONING_EFFORT . '=turbo');
+		$config = new AiConfig();
+		self::assertNull($config->reasoningEffort());
+		self::assertContains('invalid_reasoning_effort', (new OpenAiProvider($config, new FakeHttpTransport()))->problems());
+	}
+
+	/** Faza E: wiadomość `commentary` nie jest częścią odpowiedzi — tylko `final_answer`, gdy model oznacza fazy. */
+	public function test_only_final_answer_messages_form_the_output(): void
+	{
+		putenv(AiConfig::OPENAI_API_KEY . '=' . AiFakes::apiKey());
+		$json = AiFakes::openAiResponse('{"ok":true}');
+		$json['output'][1]['phase'] = 'final_answer';
+		array_splice($json['output'], 1, 0, [['type' => 'message', 'id' => 'msg_0', 'role' => 'assistant', 'phase' => 'commentary', 'content' => [['type' => 'output_text', 'text' => 'Sprawdzam dane…']]]]);
+		$json['service_tier'] = 'default';
+		$response = (new OpenAiProvider(new AiConfig(), (new FakeHttpTransport())->pushJson(200, $json)))->generate($this->request());
+
+		self::assertSame('{"ok":true}', $response->text);
+		self::assertSame('default', $response->serviceTier);
+	}
+
+	/** Faza E: zapis do cache (`cache_write_tokens`) jest częścią wejścia — osobna cena tylko z konfiguracji, rezerwacja jako górna granica. */
+	public function test_cache_write_tokens_are_parsed_and_priced(): void
+	{
+		$usage = \OsfSeo\Ai\Provider\AiUsage::fromArray(['input_tokens' => 10000, 'input_tokens_details' => ['cached_tokens' => 2000, 'cache_write_tokens' => 3000], 'output_tokens' => 1000]);
+		self::assertSame(['input' => 10000, 'cached' => 2000, 'cache_write' => 3000, 'output' => 1000, 'reasoning' => 0], $usage?->toArray());
+
+		putenv(AiConfig::PRICE_INPUT . '=1');
+		putenv(AiConfig::PRICE_OUTPUT . '=4');
+		putenv(AiConfig::PRICE_CACHED_INPUT . '=0.1');
+		$pricing = new \OsfSeo\Ai\Budget\AiPricing(new AiConfig());
+		self::assertSame(round((8000 * 1 + 2000 * 0.1 + 1000 * 4) / 1e6, 6), $pricing->actualCost($usage), 'Bez ceny zapisu — jak zwykłe wejście.');
+		self::assertArrayNotHasKey('cache_write', $pricing->prices(), 'Odcisk planu bez nowej ceny pozostaje bez zmian.');
+
+		putenv(AiConfig::PRICE_CACHE_WRITE . '=1.5');
+		$pricing = new \OsfSeo\Ai\Budget\AiPricing(new AiConfig());
+		self::assertSame(round((5000 * 1 + 2000 * 0.1 + 3000 * 1.5 + 1000 * 4) / 1e6, 6), $pricing->actualCost($usage));
+		self::assertSame(round((10000 * 1.5 + 2000 * 4) / 1e6, 6), $pricing->maxCost(10000, 2000), 'Rezerwacja: całe wejście po wyższej cenie.');
+	}
+
+	/** Faza E: błąd kodowania treści (niepoprawny UTF-8) — odmowa przed wysłaniem, nigdy puste ciało płatnego żądania. */
+	public function test_unencodable_request_is_refused_before_sending(): void
+	{
+		putenv(AiConfig::OPENAI_API_KEY . '=' . AiFakes::apiKey());
+		$http = new FakeHttpTransport();
+
+		try {
+			(new OpenAiProvider(new AiConfig(), $http))->generate(new AiRequest('test-model-1', 'i', "zły \xB1 bajt", AnalysisContract::NAME, AnalysisContract::schema(), 500));
+			self::fail('Oczekiwana odmowa.');
+		} catch (AiProviderException $exception) {
+			self::assertSame([AiProviderException::CONFIG, 'request_encoding'], [$exception->kind(), $exception->providerCode()]);
+		}
+
+		self::assertSame([], $http->requests);
 	}
 
 	public function test_10_missing_key_means_no_request(): void

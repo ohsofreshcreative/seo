@@ -40,9 +40,18 @@ final class CurlPageFetcher implements PageFetcher
 	) {
 	}
 
+	/** libcurl ≥ 7.59.0 — wiele adresów w jednym wpisie `CURLOPT_RESOLVE` i IPv6 w nawiasach (starsza wersja pomija wpis i sama pyta DNS). */
+	public const MIN_CURL_VERSION = 0x073B00;
+
 	public static function available(): bool
 	{
-		return function_exists('curl_init') && defined('CURLOPT_RESOLVE') && defined('CURLINFO_PRIMARY_IP');
+		if (! function_exists('curl_init') || ! function_exists('curl_version') || ! defined('CURLOPT_RESOLVE') || ! defined('CURLINFO_PRIMARY_IP')) {
+			return false;
+		}
+
+		$version = curl_version();
+
+		return is_array($version) && (int) ($version['version_number'] ?? 0) >= self::MIN_CURL_VERSION;
 	}
 
 	public function fetch(FetchRequest $request): FetchResult

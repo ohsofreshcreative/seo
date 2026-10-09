@@ -80,8 +80,6 @@ final class AiController
 		$type = AnalysisType::fromInput($request->query('type'));
 
 		try {
-			$section = $this->service()->topicSection($context, $topic);
-			$type ??= $section['recommended'] ?? AnalysisType::PAGE_OPTIMIZATION;
 			$data = $this->service()->prepare($context, $topic, $type, $request->boolean('explicit'), self::provider($request->query('provider')));
 		} catch (AccessDenied) {
 			return PanelResponse::forbidden();
@@ -95,7 +93,6 @@ final class AiController
 
 		return response()->view('panel.ai.prepare', $data + [
 			'project' => $context->project(),
-			'section' => $section,
 			'canFetch' => $context->can('osf_seo_manage_page_intelligence'),
 		]);
 	}

@@ -14,6 +14,8 @@ use OsfSeo\Ai\Provider\AiProviderRegistry;
 use OsfSeo\Ai\Provider\FakeProvider;
 use OsfSeo\Ai\Provider\OpenAiProvider;
 use OsfSeo\Ai\Run\AiRunRepository;
+use OsfSeo\Ai\Evaluation\AiEvaluationRepository;
+use OsfSeo\Ai\Evaluation\AiEvaluationService;
 use OsfSeo\Ai\Workspace\AiWorkspaceService;
 use OsfSeo\Analytics\KeywordReport;
 use OsfSeo\PageIntelligence\Extract\HtmlExtractor;
@@ -38,6 +40,7 @@ use OsfSeo\Auth\WpAdminAccess;
 use OsfSeo\Auth\WpRoleStore;
 use OsfSeo\Branding\BrandingService;
 use OsfSeo\Cli\AiCommand;
+use OsfSeo\Cli\AiEvalCommand;
 use OsfSeo\Cli\PagesCommand;
 use OsfSeo\Cli\DbCommand;
 use OsfSeo\Cli\CompetitorCommand;
@@ -184,7 +187,7 @@ use OsfSeo\Support\SystemSleeper;
 final class Plugin
 {
 	/** Musi być zgodna z nagłówkiem `Version` w osf-seo.php (pilnuje tego test). */
-	public const VERSION = '0.20.0';
+	public const VERSION = '0.21.0';
 
 	public const MIN_PHP = '8.2';
 
@@ -715,6 +718,13 @@ final class Plugin
 			$c->get(Logger::class),
 			guard: $c->get(ProjectGuard::class),
 		));
+		// Faza E: ręczna ocena jakości analiz (QEF) — wyłącznie człowiek, bez wywołań modelu.
+		$container->singleton(AiEvaluationRepository::class, static fn (Container $c): AiEvaluationRepository => new AiEvaluationRepository($c->get(Connection::class), $c->get(Clock::class)));
+		$container->singleton(AiEvaluationService::class, static fn (Container $c): AiEvaluationService => new AiEvaluationService(
+			$c->get(AiRunRepository::class),
+			$c->get(AiEvaluationRepository::class),
+			$c->get(Logger::class),
+		));
 		// Przestrzeń robocza AI w panelu (faza D): wyłącznie odczyt i przygotowanie — wywołanie modelu tylko przez kolejkę AiAnalysisService.
 		$container->singleton(AiWorkspaceService::class, static fn (Container $c): AiWorkspaceService => new AiWorkspaceService(
 			$c->get(AiTopicContextBuilder::class),
@@ -874,6 +884,7 @@ final class Plugin
 			StrategyTopicCommand::register($this);
 			SyncCommand::register($this);
 			AiCommand::register($this);
+			AiEvalCommand::register($this);
 			PagesCommand::register($this);
 		}
 	}

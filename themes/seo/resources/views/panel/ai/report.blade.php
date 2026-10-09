@@ -51,9 +51,10 @@
 
   {{-- Analiza w toku: status odświeżany co 5 s (wykonuje ją przetwarzanie w tle, nie przeglądarka). --}}
   @if ($run['active'])
-    <div x-data="runProgress(@js($runUrl . '/status'), @js(['active' => true, 'label' => $run['status_label']]))"
+    <div x-data="runProgress(@js($runUrl . '/status'), @js(['active' => true, 'label' => $run['status_label'], 'stuck' => false]))"
       class="mb-6 rounded-lg border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-900" role="status">
       <p class="font-semibold">Analiza: <span x-text="label">{{ $run['status_label'] }}</span></p>
+      <p x-show="stuck" x-cloak class="mt-2 rounded bg-amber-100 px-2 py-1 text-xs text-amber-900">Zlecenie czeka dłużej niż 15 minut, a przetwarzanie w tle nie działa — sprawdź cron serwera (wp osf-seo sync:run). Możesz anulować zlecenie (bez kosztu); po 6 h czekania wygasa bez kosztu.</p>
       <p class="mt-1 text-xs">Wykona ją przetwarzanie w tle (zwykle do kilku minut). Możesz opuścić tę stronę — wynik pojawi się tutaj i w historii analiz.</p>
       @if ($manage && $run['status'] === 'queued')
         <form method="post" action="{{ $runUrl }}/cancel" class="mt-2 print:hidden">

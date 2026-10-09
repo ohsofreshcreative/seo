@@ -24,6 +24,7 @@ final class AiRequest
 		public readonly int $maxOutputTokens,
 		public readonly ?float $temperature = null,
 		public readonly array $hints = [],
+		public readonly ?string $reasoningEffort = null,
 	) {
 	}
 

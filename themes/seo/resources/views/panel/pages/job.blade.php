@@ -23,12 +23,19 @@
 
   <x-panel.page-header title="Zlecenie pobrania stron" :description="'Zlecone ' . Format::datetime($job['created_at']) . '. Pobiera przetwarzanie w tle — możesz opuścić tę stronę.'" />
 
-  <div x-data="runProgress(@js($statusUrl), @js(['active' => $job['active'], 'status_label' => PageLabels::jobStatus($job['status']), 'items_done' => $job['items_done'], 'items_total' => $job['items_total']]))"
+  <div x-data="runProgress(@js($statusUrl), @js(['active' => $job['active'], 'status_label' => PageLabels::jobStatus($job['status']), 'items_done' => $job['items_done'], 'items_total' => $job['items_total'], 'stuck' => false]))"
     @class(['mb-6 rounded-lg border px-4 py-3 text-sm', 'border-sky-200 bg-sky-50 text-sky-900' => $job['active'], 'border-slate-200 bg-white text-slate-800' => ! $job['active']]) role="status">
     <p class="font-semibold">Status: <span x-text="status_label">{{ PageLabels::jobStatus($job['status']) }}</span>
       · <span class="tabular-nums" x-text="items_done + ' z ' + items_total">{{ $job['items_done'] }} z {{ $job['items_total'] }}</span> przetworzonych</p>
     @if ($job['active'])
       <p class="mt-1 text-xs">Strony tej samej witryny pobieramy po kolei, z odstępami — przy odstępie zlecenie czeka na kolejny krok przetwarzania w tle.</p>
+    @endif
+    <p x-show="stuck" x-cloak class="mt-2 rounded bg-amber-100 px-2 py-1 text-xs text-amber-900">Zlecenie czeka dłużej niż 15 minut, a przetwarzanie w tle nie działa — sprawdź cron serwera (wp osf-seo sync:run). Możesz anulować zlecenie; po 24 h czekania wygasa.</p>
+    @if ($job['status'] === 'queued')
+      <form method="post" action="{{ PagesController::jobUrl($projectId, $job['id']) }}/cancel" class="mt-2 print:hidden">
+        <x-panel.nonce />
+        <button type="submit" class="text-xs font-medium text-sky-800 underline">Anuluj zlecenie</button>
+      </form>
     @endif
     @if ($job['error'] !== null)
       <p class="mt-1 text-xs text-red-700">{{ PageLabels::error($job['error']) }}</p>

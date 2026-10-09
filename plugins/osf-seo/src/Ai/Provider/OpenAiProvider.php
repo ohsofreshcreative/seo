@@ -17,6 +17,10 @@ use OsfSeo\Http\TransportException;
  *
  * Klucz `OSF_SEO_OPENAI_API_KEY` czytany w chwili budowania nagłówka; brak klucza → wyjątek `config` bez żadnego żądania.
  * Bez ponowień (płatne żądanie mogło zostać wykonane). Wyjątki i logi: rodzaj, status HTTP i kod błędu — bez treści i nagłówków.
+ *
+ * Faza E (weryfikacja ze specyfikacją OpenAPI): `service_tier: default` (ceny z konfiguracji dotyczą przetwarzania standardowego —
+ * `auto` oznaczałoby poziom z ustawień projektu u dostawcy), `reasoning.effort` tylko z `OSF_SEO_AI_REASONING_EFFORT`, z wyjścia wyłącznie
+ * wiadomości `final_answer`, gdy model oznacza fazy (`commentary` nie jest częścią odpowiedzi JSON).
  */
 final class OpenAiProvider implements AiProvider
 {
@@ -57,6 +61,10 @@ final class OpenAiProvider implements AiProvider
 			$problems[] = 'model_not_configured';
 		}
 
+		if ($this->config->invalidReasoningEffort()) {
+			$problems[] = 'invalid_reasoning_effort';
+		}
+
 		return $problems;
 	}
 
@@ -70,12 +78,19 @@ final class OpenAiProvider implements AiProvider
 			throw new AiProviderException(AiProviderException::CONFIG, null, 'invalid_model');
 		}
 
+		$body = self::body($request);
+
+		// Niepoprawne kodowanie (np. UTF-8) — odmowa przed wysłaniem, nigdy puste ciało płatnego żądania.
+		if ($body === '') {
+			throw new AiProviderException(AiProviderException::CONFIG, null, 'request_encoding');
+		}
+
 		try {
 			$response = $this->http->request('POST', self::ENDPOINT, [
 				'Authorization' => 'Bearer ' . $this->config->apiKey(AiConfig::OPENAI_API_KEY),
 				'Content-Type' => 'application/json',
 				'Accept' => 'application/json',
-			], self::body($request));
+			], $body);
 		} catch (TransportException) {
 			throw new AiProviderException(AiProviderException::TRANSPORT);
 		}
@@ -102,13 +117,20 @@ final class OpenAiProvider implements AiProvider
 			],
 			'max_output_tokens' => $request->maxOutputTokens,
 			'store' => false,
+			'service_tier' => 'default',
 		];
+
+		if ($request->reasoningEffort !== null) {
+			$body['reasoning'] = ['effort' => $request->reasoningEffort];
+		}
 
 		if ($request->temperature !== null) {
 			$body['temperature'] = $request->temperature;
 		}
 
-		return (string) json_encode($body, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_PRESERVE_ZERO_FRACTION);
+		$json = json_encode($body, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_PRESERVE_ZERO_FRACTION);
+
+		return is_string($json) ? $json : '';
 	}
 
 	/**
@@ -155,12 +177,10 @@ final class OpenAiProvider implements AiProvider
 
 		$text = '';
 		$refused = false;
+		$messages = array_values(array_filter((array) ($json['output'] ?? []), static fn (mixed $item): bool => is_array($item) && ($item['type'] ?? null) === 'message'));
+		$final = array_values(array_filter($messages, static fn (array $item): bool => ($item['phase'] ?? null) === 'final_answer'));
 
-		foreach ((array) ($json['output'] ?? []) as $item) {
-			if (! is_array($item) || ($item['type'] ?? null) !== 'message') {
-				continue;
-			}
-
+		foreach ($final !== [] ? $final : $messages as $item) {
 			foreach ((array) ($item['content'] ?? []) as $part) {
 				if (! is_array($part)) {
 					continue;
@@ -183,7 +203,8 @@ final class OpenAiProvider implements AiProvider
 		}
 
 		$model = is_string($json['model'] ?? null) && AiConfig::validModel($json['model']) ? $json['model'] : null;
+		$tier = is_string($json['service_tier'] ?? null) && preg_match('/^[a-z_]{1,20}$/', $json['service_tier']) === 1 ? $json['service_tier'] : null;
 
-		return new AiResponse($text, $usage, $id, $model);
+		return new AiResponse($text, $usage, $id, $model, $tier);
 	}
 }

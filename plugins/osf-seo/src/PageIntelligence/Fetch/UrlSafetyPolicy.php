@@ -49,6 +49,7 @@ final class UrlSafetyPolicy
 		'240.0.0.0/4' => 'ip_reserved',
 		'::/128' => 'ip_unspecified',
 		'::1/128' => 'ip_loopback',
+		'::ffff:0:0:0/96' => 'ip_embedded',
 		'64:ff9b::/96' => 'ip_embedded',
 		'64:ff9b:1::/48' => 'ip_reserved',
 		'100::/64' => 'ip_reserved',
@@ -106,7 +107,9 @@ final class UrlSafetyPolicy
 
 		$host = rtrim(strtolower($parts['host']), '.');
 
-		if (str_starts_with($host, '[') || filter_var($host, FILTER_VALIDATE_IP) !== false || preg_match('/^[0-9.]+$|^0x/i', $host) === 1) {
+		// Literał IP w dowolnym zapisie (także mieszanym: `127.0x1`, `0x7f.1`) — etykieta szesnastkowa albo ostatnia etykieta z samych cyfr
+		// (prawdziwa domena najwyższego poziomu nigdy nie jest liczbą).
+		if (str_starts_with($host, '[') || filter_var($host, FILTER_VALIDATE_IP) !== false || preg_match('/^[0-9.]+$|(^|\.)0x[0-9a-f]*(\.|$)|(^|\.)[0-9]+$/i', $host) === 1) {
 			return $deny('ip_literal_not_allowed', $host);
 		}
 
@@ -285,10 +288,15 @@ final class UrlSafetyPolicy
 			return 'invalid_ip';
 		}
 
-		// IPv4 zagnieżdżony w IPv6 (::ffff:a.b.c.d, ::a.b.c.d) — kontrola jak IPv4.
-		if (strlen($binary) === 16 && (str_starts_with($binary, str_repeat("\0", 10) . "\xff\xff") || str_starts_with($binary, str_repeat("\0", 12)))
-			&& substr($binary, 12) !== "\0\0\0\0" && substr($binary, 12) !== "\0\0\0\1") {
-			return self::ipReason((string) inet_ntop(substr($binary, 12))) ?? 'ip_embedded';
+		// IPv4 zagnieżdżony w IPv6 (::ffff:a.b.c.d — zawsze, także ::ffff:0.0.0.0, który Linux kieruje na loopback; ::a.b.c.d — poza
+		// `::` i `::1`, sprawdzanymi niżej jako IPv6) — kontrola jak IPv4, a adres publiczny i tak blokowany jako zagnieżdżony.
+		if (strlen($binary) === 16) {
+			$mapped = str_starts_with($binary, str_repeat("\0", 10) . "\xff\xff");
+			$compatible = str_starts_with($binary, str_repeat("\0", 12)) && ! in_array(substr($binary, 12), ["\0\0\0\0", "\0\0\0\1"], true);
+
+			if ($mapped || $compatible) {
+				return self::ipReason((string) inet_ntop(substr($binary, 12))) ?? 'ip_embedded';
+			}
 		}
 
 		foreach (self::BLOCKED_RANGES as $cidr => $reason) {
